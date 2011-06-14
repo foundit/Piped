@@ -1,0 +1,69 @@
+# add our package as a plugin bundle:
+plugins:
+    bundles:
+        twitter:
+            # the name of the packages that contains plugins:
+            - twitter_tutorial
+
+# define a twitter account
+twitter:
+    my_account:
+        auth:
+            consumer_key: CONSUMER_KEY
+            consumer_secret: CONSUMER_SECRET
+
+            # .. and when you have the access token key and secret:
+            access_token:
+                key: ACCESS_KEY
+                secret: ACCESS_SECRET
+
+        # track a stream using a pipeline:
+        streams:
+            track_happy:
+                method: filter
+                pipeline: status.tracked
+                
+                track:
+                    - happy
+
+# use a shared context to store the markov model
+contexts:
+    markov: {}
+
+# make a web frontend:
+web:
+    site:
+        routing:
+            # when a user visits /generate, we will generate a tweet
+            generate:
+                __config__:
+                    pipeline: web.generate
+
+
+pipelines:
+    status:
+        tracked:
+            - train-markov:
+                input_path: status.text
+                
+            - remap:
+                mapping:
+                    status.user.screen_name: screen_name
+                    status.user.followers_count: followers_count
+                    status.text: text
+            
+            - pretty-print:
+                formatter: "baton: '%(screen_name)s(%(followers_count)s): %(text)s'%baton"
+        
+    web:
+        generate:
+            - generate-markov
+
+            # write the header so we can tell the browser we're using utf8.
+            - format-string:
+                format: |
+                    <html><head><meta http-equiv="Content-type" content="text/html;charset=UTF-8"></head><body>{0}</body></html>
+                input_path: generated
+                output_path: content
+
+            - write-web-response

@@ -1,0 +1,9 @@
+logging:
+    # specify the default log level
+    default: INFO
+
+# this overrides the default configuration when running the unit tests
+runmodes:
+    unittest:
+        logging:
+            default: CRITICAL

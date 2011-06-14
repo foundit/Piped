@@ -1,0 +1,35 @@
+*.pyc
+*.swp
+*.pid
+_trial_temp
+dropin.cache
+*.tmp
+._*
+twistd.log*
+*pem
+.DS_Store
+.ropeproject
+
+
+# Sphinx
+
+doc/_build
+
+
+# Setuptools
+
+distribute-*.tar.gz
+build
+dist
+*.egg-info
+MANIFEST.in
+
+# Files installed by buildout
+
+.installed.cfg
+hostoutversions.cfg
+eggs/
+develop-eggs/
+parts/
+bin/
+var/

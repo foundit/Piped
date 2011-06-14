@@ -1,0 +1,97 @@
+includes:
+    - queues.yaml
+
+zmq:
+    queues:
+        server_sum_in:
+            pipeline: zmq.partial_response
+        server_square_in:
+            pipeline: zmq.partial_response
+web:
+    site:
+        port: 8080
+        debug:
+            allow:
+                - localhost
+        routing:
+            __config__:
+                pipeline: web.compute
+
+# We use a shared context (that starts out as an empty dictionary) to
+# store requests that haven't been completed yet.
+contexts:
+    pending: {}
+    
+pipelines:
+    web:
+        compute:
+            - fetch-context:
+                context: pending
+            
+            - exec-code:
+                code: |
+                    request = baton['request']
+                    request_id = id(request)
+
+                    # store the baton by the request id in the pending context
+                    baton['pending'][request_id] = baton
+
+                    # return a baton that can be json-encoded and sent to the workers
+                    return dict(id=request_id, numbers=[int(a) for a in request.args['n']])
+
+            - encode-json
+
+            # send the encoded baton to both the sum and the square output queue.
+            - send-zmq-message:
+                queue_name: server_sum_out
+                retries: 10
+            - send-zmq-message:
+                queue_name: server_square_out
+                retries: 10
+                
+        write-response:
+            - eval-lambda:
+                output_path: content
+                lambda: "baton: dict(sum=baton['sum'], square=baton['square'], diff=baton['square']-baton['sum'])"
+            
+            - encode-json:
+                input_path: content 
+            
+            - write-web-response
+
+    zmq:
+        partial_response:
+            # the workers send their answer as a json-encoded baton
+            - decode-json
+            
+            - fetch-context:
+                context: pending
+
+            # there's nothing we can do if we cant find a pending baton with the given id:
+            - stop:
+                decider: "baton: baton.get('id') not in baton['pending']"
+
+            # retrieve our pending baton
+            - eval-lambda:
+                output_path: pending_baton
+                lambda: "baton: baton['pending'][baton['id']]"
+
+            # copy the sum/square to the pending baton if sum/square exists:
+            - remap:
+                mapping:
+                    sum: pending_baton.sum
+                    square: pending_baton.square
+
+            # if we don't have a complete response to the client, we can't continue
+            - stop:
+                input_path: pending_baton
+                decider: "pending_baton: 'sum' not in pending_baton or 'square' not in pending_baton"
+
+            # remove the request from the pending requests
+            - eval-lambda:
+                output_path: null
+                lambda: "baton: baton['pending'].pop(baton['id'])"
+           
+            - run-pipeline:
+                input_path: pending_baton
+                pipeline: web.write-response

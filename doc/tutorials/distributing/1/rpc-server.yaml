@@ -1,0 +1,40 @@
+web:
+    site:
+        routing:
+            __config__:
+                pipeline: web.compute
+
+pipelines:
+    web:
+        compute:
+            # parse the request arguments
+            - eval-lambda:
+                input_path: request
+                output_path: numbers
+                lambda: "request: [int(a) for a in request.args['n']]"
+
+            # calculate the sum of the squares
+            - eval-lambda:
+                input_path: numbers
+                output_path: sum
+                lambda: "numbers: sum([number**2 for number in numbers])"
+
+            # calculate the square of the sum
+            - eval-lambda:
+                input_path: numbers
+                output_path: square
+                lambda: "numbers: sum(numbers)**2"
+
+            - run-pipeline:
+                pipeline: .write-response
+
+        write-response:
+            # create a json-encoded response and write it to the client
+            - eval-lambda:
+                output_path: content
+                lambda: "baton: dict(sum=baton['sum'], square=baton['square'], diff=baton['square']-baton['sum'])"
+
+            - encode-json:
+                input_path: content
+
+            - write-web-response

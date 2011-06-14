@@ -1,0 +1,8 @@
+includes:
+    - !pipedpath test/data/test_conf.yml
+
+
+root_level:
+    added: 123
+    nested:
+        another_leaf: overridden

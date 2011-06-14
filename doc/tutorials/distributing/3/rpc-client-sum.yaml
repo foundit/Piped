@@ -1,0 +1,19 @@
+includes:
+    - queues.yaml
+
+zmq:
+    queues:
+        worker_sum_in:
+            pipeline: zmq.sum
+    
+pipelines:
+    zmq:
+        sum:
+            - decode-json
+            - eval-lambda:
+                input_path: numbers
+                output_path: sum
+                lambda: "numbers: sum([number**2 for number in numbers])"
+            - encode-json
+            - send-zmq-message:
+                queue_name: worker_sum_out

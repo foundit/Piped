@@ -1,0 +1,7 @@
+web:
+    # create our web site, called "tutorial":
+    tutorial:
+        routing:
+            __config__:
+                # serve the current directory as a static resource:
+                static: .

@@ -1,0 +1,3 @@
+includes:
+    - rpc-client-sum.yaml
+    - rpc-client-square.yaml

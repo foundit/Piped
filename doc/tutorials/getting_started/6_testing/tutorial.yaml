@@ -1,0 +1,34 @@
+includes:
+    - visualize-pipelines.yaml
+    - visualize-dependencies.yaml
+
+web:
+    tutorial:
+        debug:
+            allow:
+                - localhost
+        routing:
+            __config__:
+                pipeline: hello
+
+plugins:
+    bundles:
+        my_bundle:
+            - tutorial_bundle
+
+pb:
+    clients:
+        tutorial:
+            endpoint: tcp:host=localhost:port=8789
+
+pipelines:
+    hello:
+        - pb-call-remote:
+            client: tutorial
+            name: test
+            output_path: content
+
+        - uppercase:
+            input_path: content
+
+        - write-web-response

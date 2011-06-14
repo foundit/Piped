@@ -1,0 +1,15 @@
+web:
+    # create our web site, called "tutorial":
+    tutorial:
+        routing:
+            __config__:
+                # use the hello pipeline to render the requests to this resource
+                pipeline: hello
+
+pipelines:
+    hello:
+        - set-value:
+            path: content
+            value: Hello from a pipeline.
+
+        - write-web-response

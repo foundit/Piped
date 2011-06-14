@@ -1,0 +1,32 @@
+# we include both the pb server and the web server in this file so we can access all the
+# resources in this process
+includes:
+    - pb-server.yaml
+    - tutorial.yaml
+
+# we use the system-events provider in order to run the
+# system-testing.start pipeline once when the process starts
+system-events:
+    startup:
+        test: system-testing.start
+
+pipelines:
+    system-testing:
+        # we make sure that shutdown will be called even if the status test
+        # pipeline fails processing.
+        start:
+            chained_consumers:
+                - create-statustest-reporter
+                - run-pipeline:
+                    pipeline: .run
+                - wait-for-statustest-reporter:
+                    done: True
+                - shutdown
+
+            chained_error_consumers:
+                - print-failure-traceback
+                - shutdown
+
+        # add any test-processors to this test-pipeline:
+        run:
+            - test-tutorial

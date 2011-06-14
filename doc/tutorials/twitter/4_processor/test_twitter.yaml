@@ -1,0 +1,21 @@
+includes:
+    - ~/.piped/doc_secrets.yaml
+
+# add our package as a plugin bundle:
+plugins:
+    bundles:
+        twitter:
+            # the name of the packages that contains plugins:
+            - twitter_tutorial
+
+system-events:
+    startup:
+        test: system-testing
+
+pipelines:
+    system-testing:
+        - create-statustest-reporter
+        - test-twitter
+        - wait-for-statustest-reporter:
+            done: true
+        - shutdown

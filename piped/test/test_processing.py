@@ -1,0 +1,1890 @@
+# encoding: utf8
+# Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
+# See LICENSE for details.
+import difflib
+import pprint
+import warnings
+
+from twisted.internet import reactor, defer
+from twisted.trial import unittest
+from zope import interface
+
+from piped import exceptions, processing
+from piped.processors import base, util_processors
+
+
+class StubProcessorGraphFactory(processing.ProcessorGraphFactory):
+    pipeline_configuration_path = 'stub'
+
+
+class StubProcessor(base.Processor):
+    @property
+    def name(self):
+        return self.__class__.__name__
+
+    def process(self, baton):
+        pass
+
+
+class StubException(Exception):
+    pass
+
+
+class StubPluginManager(object):
+
+    def __init__(self):
+        self.plugins = set([ReversingProcessor, UppercasingProcessor, LowercasingProcessor, ExceptionRaisingProcessor])
+        self.plugin_by_name = {}
+        self._providers_by_keyword = dict()
+        for plugin_class in self.plugins:
+            self.plugin_by_name[plugin_class.name] = plugin_class
+
+        self.get_plugin_factory = self.plugin_by_name.get
+
+    def get_providers_of_keyword(self, keyword):
+        return self._providers_by_keyword.get(keyword, tuple())
+
+
+class ExceptionRaisingProcessor(StubProcessor):
+    """ Simple processor that raises an Exception. """
+    name = "raise-exception"
+
+    def process(self, baton):
+        raise StubException()
+
+
+class ReversingProcessor(StubProcessor):
+    """ Simple processor that reverses the input. """
+    name = "reverse"
+
+    def process(self, baton):
+        return baton[::-1]
+
+
+class UppercasingProcessor(StubProcessor):
+    """ Simple processor that uppercases the input. """
+    name = "uppercase"
+
+    def process(self, baton):
+        return baton.upper()
+
+
+class LowercasingProcessor(StubProcessor):
+    """ Simple processor that uppercases the input. """
+    name = "lowercase"
+
+    def process(self, baton):
+        return baton.lower()
+
+
+class CallbackingLaterProcessor(StubProcessor):
+    """ Simple processor that callbacks a deferred in the next mainloop iteration. """
+    name = "callback-later"
+
+    def process(self, baton):
+        d = defer.Deferred()
+        reactor.callLater(0, d.callback, baton)
+        return d
+
+
+class ListAppendingProcessor(StubProcessor):
+    name = 'list-appender'
+
+    def __init__(self, list_, **kw):
+        super(ListAppendingProcessor, self).__init__(**kw)
+        self.list = list_
+
+    def process(self, baton):
+        self.list.append(baton)
+        return baton
+
+
+class IncrementingProcessor(StubProcessor):
+    def process(self, baton):
+        baton['n'] += 1
+        return baton
+
+
+class ProcessorGraphTest(unittest.TestCase):
+
+    def setUp(self):
+        self.plugin_manager = StubPluginManager()
+
+    def get_processor_graph_factory(self, pipelines_configuration):
+        pgf = processing.ProcessorGraphFactory()
+        runtime_environment = processing.RuntimeEnvironment()
+        runtime_environment.configuration_manager.set('pipelines', pipelines_configuration)
+        pgf.configure(runtime_environment)
+        pgf.plugin_manager = self.plugin_manager
+        return pgf
+
+
+class TestProcessorGraphFactory(ProcessorGraphTest):
+
+    def assertConfigurationProperlyTransformed(self, pipeline_configuration,
+                                               expected_pipeline_configuration, msg=''):
+        pgf = self.get_processor_graph_factory(pipeline_configuration)
+        self.assertFalse(pgf.pipelines_configuration is pipeline_configuration, msg)
+        self.assertEquals(pgf.pipelines_configuration, expected_pipeline_configuration, msg)
+
+    def get_processor_definitions(self, processor_name, **processor_kwargs):
+        """ Returns a list of possible processor definitions. """
+        possibilities = list()
+
+        if not processor_kwargs:
+            # if it does not have any arguments, we can use the processor name as a string.
+            possibilities.append(processor_name)
+
+        possibilities.append({processor_name:dict(processor_kwargs)})
+        possibilities.append(dict(processor=processor_name, **processor_kwargs))
+
+        return possibilities
+
+
+    @defer.inlineCallbacks
+    def test_simple_chain(self):
+        # source -> uppercase -> reverse -> sink
+        pipeline_configuration = {
+            'only-pipeline': {
+                'chained_consumers': [
+                    {'processor': 'uppercase'},
+                    {'processor': 'reverse'},
+                ]
+            }
+        }
+
+        gf = self.get_processor_graph_factory(pipeline_configuration)
+        pg = gf.make_processor_graph('only-pipeline')
+
+        self.assertEquals(len(pg.sinks), 1)
+
+        l = []
+        sink = ListAppendingProcessor(l)
+
+        last_processor = list(pg.sinks)[0]
+        pg.add_producer_and_consumer(last_processor, sink)
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg)
+        yield evaluator.process('abc')
+        self.assertEquals(l, ['CBA'])
+
+    def test_unicode_in_processor_configuration_key_raises(self):
+        # source -> uppercase -> reverse -> sink
+        pipeline_configuration = {
+            'only-pipeline': {
+                'chained_consumers': [
+                    {'processor': 'any', u'æøå':'value'},
+                ]
+            }
+        }
+
+        gf = self.get_processor_graph_factory(pipeline_configuration)
+
+        # non-ascii characters in kwargs keys are not allowed
+        self.assertRaises(exceptions.ConfigurationError, gf.make_processor_graph, 'only-pipeline')
+
+    @defer.inlineCallbacks
+    def test_failures_are_propagated_to_the_caller(self):
+        # source -> raise-exception -> uppercase -> sink
+        #                           e> reverse -> sink
+        pipeline_configuration = {
+            'only-pipeline': {
+                'chained_consumers': [
+                    {'processor': 'raise-exception'},
+                ]
+            }
+        }
+
+        gf = self.get_processor_graph_factory(pipeline_configuration)
+        pg = gf.make_processor_graph('only-pipeline')
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg)
+
+        try:
+            yield evaluator.process('abc')
+            self.fail('StubException not raised')
+        except StubException:
+            pass
+        except Exception, e:
+            self.fail('Unexpected exception raised: %s'%e)
+
+    @defer.inlineCallbacks
+    def test_simple_chain_with_chained_error_consumers(self):
+        # source -> raise-exception -> uppercase -> sink
+        #                           e> reverse -> sink
+        pipeline_configuration = {
+            'only-pipeline': {
+                'chained_consumers': [
+                    {'processor': 'raise-exception'},
+                    {'processor': 'uppercase'},
+                ],
+                'chained_error_consumers': [
+                    {'processor': 'reverse'},
+                ]
+            }
+        }
+
+        gf = self.get_processor_graph_factory(pipeline_configuration)
+        pg = gf.make_processor_graph('only-pipeline')
+
+        self.assertEquals(len(pg.sinks), 2)
+
+        l = []
+        list_appender = ListAppendingProcessor(l)
+
+        for sink in list(pg.sinks):
+            pg.add_producer_and_consumer(sink, list_appender)
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg)
+        yield evaluator.process('abc')
+        self.assertEquals(l, ['cba'])
+
+    @defer.inlineCallbacks
+    def test_simple_chain_with_error_consumers(self):
+        # source -> raise-exception -> uppercase -> sink
+        #                           e> reverse -> sink
+        pipeline_configuration = {
+            'only-pipeline': {
+                'chained_consumers': [
+                    {'processor': 'raise-exception'},
+                    {'processor': 'uppercase'},
+                ],
+                'error_consumers': [
+                    {'processor': 'reverse'},
+                ],
+            }
+        }
+
+        gf = self.get_processor_graph_factory(pipeline_configuration)
+        pg = gf.make_processor_graph('only-pipeline')
+
+        self.assertEquals(len(pg.sinks), 2)
+
+        l = []
+        list_appender = ListAppendingProcessor(l)
+
+        for sink in list(pg.sinks):
+            pg.add_producer_and_consumer(sink, list_appender)
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg)
+        yield evaluator.process('abc')
+        self.assertEquals(l, ['cba'])
+
+    @defer.inlineCallbacks
+    def test_simple_chain_with_chained_error_consumers_and_error_consumers(self):
+        # source -> raise-exception -> uppercase -> sink
+        #                           e> reverse -> sink
+        #                           e> reverse -> uppercase -> sink
+        pipeline_configuration = {
+            'only-pipeline': {
+                'chained_consumers': [
+                    {'processor': 'raise-exception'},
+                    {'processor': 'uppercase'},
+                ],
+                'error_consumers': [
+                    {'processor': 'reverse'},
+                ],
+                'chained_error_consumers':[
+                    {'processor': 'reverse'},
+                    {'processor': 'uppercase'},
+                ],
+            }
+        }
+
+        gf = self.get_processor_graph_factory(pipeline_configuration)
+        pg = gf.make_processor_graph('only-pipeline')
+
+        self.assertEquals(len(pg.sinks), 3)
+
+        l = []
+        list_appender = ListAppendingProcessor(l)
+
+        for sink in list(pg.sinks):
+            pg.add_producer_and_consumer(sink, list_appender)
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg)
+        yield evaluator.process('abc')
+        self.assertEquals(l, ['cba', 'CBA'])
+
+    @defer.inlineCallbacks
+    def test_simple_chain_with_error_handler_but_no_exception_raised(self):
+        # source -> uppercase -> reverse -> sink
+        #                     e> raise-exception -> sink
+        pipeline_configuration = {
+            'only-pipeline': {
+                'chained_consumers': [
+                    {'processor': 'uppercase'},
+                    {'processor': 'reverse'},
+                ],
+                'chained_error_consumers': [
+                    {'processor': 'raise-exception'},
+                ]
+            }
+        }
+
+        gf = self.get_processor_graph_factory(pipeline_configuration)
+        pg = gf.make_processor_graph('only-pipeline')
+
+        self.assertEquals(len(pg.sinks), 2)
+
+        l = []
+        sink = ListAppendingProcessor(l)
+
+        last_processor = list(pg.sinks)[0]
+        pg.add_producer_and_consumer(last_processor, sink)
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg)
+        yield evaluator.process('abc')
+        self.assertEquals(l, ['CBA'])
+
+    @defer.inlineCallbacks
+    def test_simple_tree(self):
+        #                 / upper \
+        # source - reverse         sink
+        #                 \ lower /
+        pipeline_configuration = {
+            'only-pipeline': {
+                    'consumers': [
+                        {
+                            'processor': 'reverse',
+                            'consumers': [
+                                {'processor': 'uppercase'},
+                                {'processor': 'lowercase'},
+                            ]
+                        }
+                    ]
+             }
+        }
+
+        gf = self.get_processor_graph_factory(pipeline_configuration)
+        pg = gf.make_processor_graph('only-pipeline')
+
+        self.assertEquals(len(pg.sinks), 2)
+
+        l = []
+        sink = ListAppendingProcessor(l)
+
+        for processor in list(pg.sinks):
+            pg.add_producer_and_consumer(processor, sink)
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg)
+        yield evaluator.process('aBc')
+        self.assertEquals(l, ['CBA', 'cba'])
+
+    @defer.inlineCallbacks
+    def test_two_sources_in_a_pipeline(self):
+        #       / upper \
+        # source         sink
+        #       \ lower /
+        pipeline_configuration = {
+            'only-pipeline': {
+                'consumers': [
+                    {'processor': 'uppercase'},
+                    {'processor': 'lowercase'},
+                ]
+            }
+        }
+
+        gf = self.get_processor_graph_factory(pipeline_configuration)
+        pg = gf.make_processor_graph('only-pipeline')
+
+        self.assertEquals(len(pg.sources), 2)
+        self.assertEquals(len(pg.sinks), 2)
+
+        l = []
+        sink = ListAppendingProcessor(l)
+
+        for processor in list(pg.sinks):
+            pg.add_producer_and_consumer(processor, sink)
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg)
+        yield evaluator.process('aBc')
+        self.assertEquals(l, ['ABC', 'abc'])
+
+    @defer.inlineCallbacks
+    def test_simple_dag(self):
+        #       /  upper \
+        # source          reverse - sink
+        #       \  lower /
+        pipeline_configuration = {
+            'only-pipeline': {
+                'consumers': [
+                    {
+                        'processor': 'uppercase',
+                        'consumers': [
+                            {'processor': 'reverse', 'id': 'reuse_me'},
+                        ]
+                    },
+                    {
+                        'processor': 'lowercase',
+                        'consumers': [{'existing': 'reuse_me'}]
+                    }
+                ]
+            }
+        }
+
+        gf = self.get_processor_graph_factory(pipeline_configuration)
+        pg = gf.make_processor_graph('only-pipeline')
+
+        self.assertEquals(len(pg.sinks), 1)
+
+        l = []
+        sink = ListAppendingProcessor(l)
+
+        last_processor = list(pg.sinks)[0]
+        pg.add_producer_and_consumer(last_processor, sink)
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg)
+        yield evaluator.process('aBc')
+        self.assertEquals(l, ['CBA', 'cba'])
+
+    def test_nested_pipelines(self):
+        pipeline_configuration = {
+            'reverse-and-uppercase': {
+                'chained_consumers': [
+                    {'processor': 'reverse'},
+                    {'processor': 'uppercase'},
+                ]
+            },
+            'reverse-and-lowercase': {
+                'chained_consumers': [
+                    {'processor': 'reverse'},
+                    {'processor': 'lowercase'},
+                ]
+            },
+            'use-the-others': {
+                 'consumers': [
+                    {'inline-pipeline': 'reverse-and-uppercase'},
+                    {'inline-pipeline': 'reverse-and-lowercase'},
+                ]
+            },
+        }
+
+        expected_pipeline_configuration = {
+            'reverse-and-uppercase': {
+                'consumers': [
+                    {'processor': 'reverse',
+                     'consumers': [
+                            {'processor': 'uppercase'},
+                        ]
+                    }
+                ]
+            },
+            'reverse-and-lowercase': {
+                'consumers': [
+                    {'processor': 'reverse',
+                     'consumers': [
+                            {'processor': 'lowercase'},
+                        ]
+                    }
+                ]
+            },
+            'use-the-others': {
+                 'consumers': [
+                    {'processor': 'reverse',
+                     'consumers': [
+                            {'processor': 'uppercase'},
+                        ]
+                    },
+                    {'processor': 'reverse',
+                     'consumers': [
+                            {'processor': 'lowercase'},
+                        ]
+                    }
+                ]
+            },
+        }
+
+        self.assertConfigurationProperlyTransformed(pipeline_configuration,
+                                                    expected_pipeline_configuration)
+
+    def test_nested_pipelines_with_error_consumers(self):
+        pipeline_configuration = {
+            'reverse-and-uppercase': {
+                'chained_consumers': [
+                    {'processor': 'reverse'},
+                    {'processor': 'uppercase'},
+                ]
+            },
+            'reverse-and-lowercase': {
+                'chained_consumers': [
+                    {'processor': 'reverse'},
+                    {'processor': 'lowercase'},
+                ],
+                'chained_error_consumers': [{'processor': 'reverse'}],
+            },
+            'use-the-others': {
+                 'consumers': [
+                    {'inline-pipeline': 'reverse-and-uppercase'},
+                    {'inline-pipeline': 'reverse-and-lowercase'},
+                ]
+            },
+        }
+
+        expected_pipeline_configuration = {
+            'reverse-and-uppercase': {
+                'consumers': [
+                    {'processor': 'reverse',
+                     'consumers': [
+                            {'processor': 'uppercase'},
+                        ]
+                    }
+                ]
+            },
+            'reverse-and-lowercase': {
+                'consumers': [
+                    {'processor': 'reverse',
+                     'consumers': [
+                            {'processor': 'lowercase'},
+                        ],
+                     'error_consumers': [{'processor': 'reverse'}],
+                    }
+                ]
+            },
+            'use-the-others': {
+                 'consumers': [
+                    {'processor': 'reverse',
+                     'consumers': [
+                            {'processor': 'uppercase'},
+                        ]
+                    },
+                    {'processor': 'reverse',
+                     'consumers': [
+                            {'processor': 'lowercase'},
+                        ],
+                     'error_consumers': [{'processor': 'reverse'}],
+                    }
+                ]
+            },
+        }
+
+        self.assertConfigurationProperlyTransformed(pipeline_configuration,
+                                                    expected_pipeline_configuration)
+
+
+    def test_consume_nested_pipeline(self):
+        pipeline_configuration = {
+            'reverse-and-uppercase': {
+                'chained_consumers': [
+                    {'processor': 'reverse'},
+                    {'processor': 'uppercase'},
+                ]
+            },
+            'consume-the-other': {
+                 'chained_consumers': [
+                    {'inline-pipeline': 'reverse-and-uppercase'},
+                    {'processor': 'reverse'},
+                ]
+            },
+        }
+
+        expected_pipeline_configuration = {
+            'reverse-and-uppercase': {
+                'consumers': [
+                    {'processor': 'reverse',
+                     'consumers': [
+                            {'processor': 'uppercase'},
+                        ]
+                    }
+                ]
+            },
+            'consume-the-other': {
+                'consumers': [
+                    {'processor': 'reverse',
+                     'consumers': [
+                            {'processor': 'uppercase',
+                             'consumers': [{'processor': 'reverse'}]},
+                        ]
+                    }
+                ]
+            },
+        }
+
+        self.assertConfigurationProperlyTransformed(pipeline_configuration,
+                                                    expected_pipeline_configuration)
+
+    def test_consume_nested_pipeline_with_error_handler(self):
+        pipeline_configuration = {
+            'reverse-and-uppercase': {
+                'chained_consumers': [
+                    {'processor': 'reverse-in-pipeline'},
+                    {'processor': 'uppercase'},
+                ]
+            },
+            'consume-the-other': {
+                 'chained_consumers': [
+                    {'inline-pipeline': 'reverse-and-uppercase'},
+                    {'processor': 'reverse'},
+                 ],
+                 'chained_error_consumers': [{'inline-pipeline':'reverse-and-uppercase'}]
+            },
+        }
+
+        expected_pipeline_configuration = {
+            'reverse-and-uppercase': {
+                'consumers': [
+                    {'processor': 'reverse-in-pipeline',
+                     'consumers': [
+                            {'processor': 'uppercase'},
+                        ]
+                    }
+                ]
+            },
+            'consume-the-other': {
+                'consumers': [
+                    {'processor': 'reverse-in-pipeline',
+                     'consumers': [
+                            {'processor': 'uppercase',
+                             'consumers': [{'processor': 'reverse'}]},
+                       ],
+                     'error_consumers': [
+                         {'processor': 'reverse-in-pipeline',
+                          'consumers': [
+                                 {'processor': 'uppercase'},
+                             ]
+                         }
+                     ]
+                    }
+                ]
+            },
+        }
+
+        self.assertConfigurationProperlyTransformed(pipeline_configuration,
+                                                    expected_pipeline_configuration)
+
+
+    def test_deeply_nested_pipelines(self):
+        pipeline_configuration = {
+            'A': {
+                'chained_consumers': [
+                    {'inline-pipeline': 'B'},
+                    {'processor': 'P1'},
+                ]
+            },
+            'B': {
+                 'chained_consumers': [
+                    {'processor': 'P2'},
+                    {'inline-pipeline': 'C'},
+                ]
+            },
+            'C': {
+                'consumers': [{'processor': 'P3'}],
+            }
+        }
+
+        expected_pipeline_configuration = {
+            'A': {
+                 'consumers': [
+                    {'processor': 'P2',
+                     'consumers': [{'processor': 'P3',
+                                    'consumers': [
+                                    {'processor': 'P1'}]}]
+                    }]
+            },
+            'B': {
+                 'consumers': [
+                    {'processor': 'P2',
+                     'consumers': [{'processor': 'P3'}]}
+                ]
+            },
+            'C': {
+                'consumers': [{'processor': 'P3'}],
+            }
+        }
+
+        self.assertConfigurationProperlyTransformed(pipeline_configuration,
+                                                    expected_pipeline_configuration)
+
+    def test_deeply_nested_pipelines_with_error_consumers(self):
+        # -> = consumer, e> = error_consumer
+        # A, B, C, D, E and F are pipelines.
+        #
+        #  A: B -> P1
+        #  B: P2 -> C
+        #  C: P3
+        #  D: C e> D-handler
+        #  E: solo-e
+        #     E1 -> D
+        #        e> E1-fail-handler
+        #  F: solo-f
+        #     F1 -> D
+        #        e> E
+
+        pipeline_configuration = {
+            'A': {
+                'chained_consumers': [
+                    {'inline-pipeline': 'B'},
+                    {'processor': 'P1'},
+                ]
+            },
+            'B': {
+                 'chained_consumers': [
+                    {'processor': 'P2'},
+                    {'inline-pipeline': 'C'},
+                ]
+            },
+            'C': {
+                'consumers': [{'processor': 'P3'}],
+            },
+            'D': {
+                'chained_consumers': [
+                    {
+                        'inline-pipeline':'C',
+                    },
+                ],
+                'chained_error_consumers': [
+                    {'processor': 'D-handler'}
+                ]
+            },
+            'E': {
+                'consumers': [
+                    {'processor': 'solo-e'},
+                    {
+                        'processor': 'E1',
+                        'error_consumers': [{'processor': 'E1-fail-handler'}],
+                        'consumers': [{'inline-pipeline': 'D'}],
+                    }
+                ]
+            },
+            'F': {
+                'consumers': [
+                    {'processor': 'solo-f'},
+                    {
+                        'processor': 'F1',
+                        'error_consumers': [{'inline-pipeline': 'E'}],
+                        'consumers': [{'inline-pipeline': 'D'}],
+                    }
+                ]
+            }
+        }
+
+        expected_pipeline_configuration = {
+            'A': {
+                 'consumers': [
+                    {'processor': 'P2',
+                     'consumers': [{'processor': 'P3',
+                                    'consumers': [
+                                    {'processor': 'P1'}]}]
+                    }]
+            },
+            'B': {
+                 'consumers': [
+                    {'processor': 'P2',
+                     'consumers': [{'processor': 'P3'}]}
+                ]
+            },
+            'C': {
+                'consumers': [{'processor': 'P3'}],
+            },
+            'D': {
+                'consumers': [
+                    {
+                        'processor': 'P3',
+                        'error_consumers': [
+                            {'processor':'D-handler'}
+                        ]
+                    }
+                ]
+            },
+            'E': {
+                'consumers': [
+                    {'processor': 'solo-e'},
+                    {
+                        'processor': 'E1',
+                        'error_consumers': [
+                            {
+                                'processor': 'E1-fail-handler',
+                            }
+                        ],
+                        'consumers': [
+                            {
+                                'processor': 'P3',
+                                'error_consumers': [
+                                    {'processor':'D-handler'}
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            'F': {
+                'consumers': [
+                    {'processor': 'solo-f'},
+                    {
+                        'processor': 'F1',
+                        'error_consumers': [
+                            {'processor': 'solo-e'},
+                            {
+                                'processor': 'E1',
+                                'error_consumers': [
+                                    {
+                                        'processor': 'E1-fail-handler',
+                                    }
+                                ],
+                                'consumers': [
+                                    {
+                                        'processor': 'P3',
+                                        'error_consumers': [
+                                            {'processor':'D-handler'}
+                                        ]
+                                    }
+                                ]
+                            }
+                        ],
+                        'consumers': [
+                            {
+                                'processor': 'P3',
+                                'error_consumers': [
+                                    {'processor':'D-handler'}
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+
+        self.assertConfigurationProperlyTransformed(pipeline_configuration,
+                                                    expected_pipeline_configuration)
+
+    def test_appending_to_chained_error_consumers(self):
+        pipeline_configuration = {
+            'included-pipeline': {
+                'chained_consumers': [
+                    {'processor': 'do-something'}
+                ],
+                'chained_error_consumers': [
+                    {'processor': 'handle-error'},
+                ],
+            },
+            'some-pipeline': {
+                'chained_consumers': [
+                    {'inline-pipeline': 'included-pipeline'}
+                ],
+                'chained_error_consumers': [
+                    {'processor': 'some-error-consumer'},
+                ],
+            }
+        }
+
+        expected_pipeline_configuration = {
+            'included-pipeline': {
+                'consumers': [
+                    {
+                        'processor': 'do-something',
+                        'error_consumers': [{'processor': 'handle-error'}],
+                    },
+                ]
+            },
+            'some-pipeline': {
+                'consumers': [
+                    {
+                        'processor': 'do-something',
+                        'error_consumers': [{'processor': 'handle-error'}, {'processor': 'some-error-consumer'}],
+                    }
+                ]
+            }
+        }
+
+        self.assertConfigurationProperlyTransformed(pipeline_configuration, expected_pipeline_configuration)
+
+    def test_error_consumers_chained(self):
+        pipeline_configuration = {
+            'my-pipeline': {
+                'chained_consumers': [
+                    {'processor': 'do-something'}
+                ],
+                'chained_error_consumers': [
+                    {'processor': 'handle-error'},
+                    {'processor': 'assume-error-is-handled'}
+                ],
+            },
+        }
+
+        expected_pipeline_configuration = {
+            'my-pipeline': {
+                'consumers': [
+                    {
+                        'processor': 'do-something',
+                        'error_consumers': [
+                            {
+                                'processor': 'handle-error',
+                                'consumers': [
+                                    {'processor': 'assume-error-is-handled'}
+                                ],
+                            }
+                        ],
+                    },
+                ]
+            },
+        }
+
+        self.assertConfigurationProperlyTransformed(pipeline_configuration, expected_pipeline_configuration)
+
+
+
+    def test_consume_nested_pipeline_with_multiple_sinks(self):
+        pipeline_configuration = {
+            'reverse-and-uppercase': {
+                'consumers': [ # Diff to previous test, these are not chained.
+                    {'processor': 'reverse'},
+                    {'processor': 'uppercase'},
+                ]
+            },
+            'consume-the-other': {
+                 'chained_consumers': [
+                    {'inline-pipeline': 'reverse-and-uppercase'},
+                    {'processor': 'reverse'},
+                ]
+            },
+        }
+
+        expected_pipeline_configuration = {
+            'reverse-and-uppercase': {
+                'consumers': [
+                    {'processor': 'reverse'},
+                    {'processor': 'uppercase'},
+                ]
+            },
+            'consume-the-other': {
+                'consumers': [
+                    {'processor': 'reverse',
+                     'consumers': [{'processor': 'reverse'}]},
+                    {'processor': 'uppercase',
+                     'consumers': [{'processor': 'reverse'}]},
+                ]
+            },
+        }
+
+        self.assertConfigurationProperlyTransformed(pipeline_configuration,
+                                                    expected_pipeline_configuration)
+
+    def test_nest_chained_consumers(self):
+        pipeline_configuration = {
+            'some-pipeline': {
+                'chained_consumers': [
+                    {'processor': 'A'},
+                    {'processor': 'B'},
+                ]
+            }
+        }
+
+        expected_pipeline_configuration = {
+            'some-pipeline': {
+                'consumers': [
+                    {'processor': 'A',
+                     'consumers': [
+                            {'processor': 'B'},
+                    ]}
+                ]
+            }
+        }
+
+        self.assertConfigurationProperlyTransformed(pipeline_configuration,
+                                                    expected_pipeline_configuration)
+
+    def test_deeply_nest_chained_consumers(self):
+        #
+        #        / C
+        # source - A - D
+        #           \ B - E - F
+        pipeline_configuration = {
+            'some-pipeline': {
+                'consumers': [
+                    {'processor': 'C'},
+                ],
+                'chained_consumers': [
+                    {'processor': 'A',
+                     'consumers': [{'processor':'D'}]
+                    },
+                    {'processor': 'B',
+                     'chained_consumers': [
+                            {'processor': 'E'},
+                            {'processor': 'F'},
+                        ]
+                    },
+                ]
+            }
+        }
+
+        expected_pipeline_configuration = {
+            'some-pipeline': {
+                'consumers': [
+                    {'processor': 'C'},
+                    {'processor': 'A',
+                     'consumers': [
+                            {'processor': 'D'},
+                            {'processor': 'B',
+                             'consumers': [
+                                    {'processor': 'E',
+                                     'consumers': [{'processor':'F'}]},
+                                    ]
+                            },
+                        ]
+                     }
+                ]
+            }
+        }
+
+        self.assertConfigurationProperlyTransformed(pipeline_configuration,
+                                                    expected_pipeline_configuration)
+
+    def test_pipeline_alias(self):
+        pipeline_configuration = {
+            'only-pipeline': {
+                'chained_consumers': [
+                    {'processor': 'uppercase'},
+                    {'processor': 'reverse'},
+                ]
+            },
+            'alias': {
+                'consumers': [
+                    {'inline-pipeline': 'only-pipeline'},
+                ]
+            }
+        }
+
+        expected_pipeline_configuration = {
+            'only-pipeline': {
+                'consumers': [
+                    {'processor': 'uppercase',
+                     'consumers': [{'processor': 'reverse'}],
+                    }
+                ]
+            },
+            'alias': {
+                'consumers': [
+                    {'processor': 'uppercase',
+                     'consumers': [{'processor': 'reverse'}],
+                    }
+                ]
+            },
+        }
+
+        self.assertConfigurationProperlyTransformed(pipeline_configuration,
+                                                    expected_pipeline_configuration)
+
+    def test_fails_when_given_invalid_plugin_name(self):
+        pipeline_configuration = {
+            'only-pipeline': {
+                'chained_consumers': [
+                    {'processor': 'uppercase'},
+                    {'processor': 'i-do-not-exist'},
+                ]
+            }
+        }
+
+        gf = self.get_processor_graph_factory(pipeline_configuration)
+        try:
+            gf.make_processor_graph('only-pipeline')
+            self.fail('Expected Misconfiguration exception')
+        except exceptions.InvalidConfigurationError, e:
+            self.assertEquals(e.msg, 'no such plug-in: i-do-not-exist')
+
+    def test_fails_when_configuration_keywords_are_missing(self):
+
+        class MustHaveFoo(StubProcessor):
+            interface.classProvides(processing.IProcessor)
+
+            def __init__(self, foo, **kw):
+                super(MustHaveFoo, self).__init__(**kw)
+
+        self.plugin_manager.plugin_by_name['must-have-foo'] = MustHaveFoo
+        pipeline_configuration = {
+            'only-pipeline': {
+                'chained_consumers': [
+                    {'processor': 'must-have-foo', 'notfoo': 'though'}, # but it won't get it
+                ]
+            }
+        }
+        gf = self.get_processor_graph_factory(pipeline_configuration)
+        try:
+            gf.make_processor_graph('only-pipeline')
+            self.fail('Expected ConfigurationError')
+        except exceptions.ConfigurationError, e:
+            expected_e_msg = 'insufficient configuration of processor: must-have-foo'
+            expected_detail = "Missing arguments: ['foo']"
+            self.assertEquals(e.msg, expected_e_msg)
+            self.assertTrue(expected_detail in e.detail)
+
+    def test_fails_when_configuration_keywords_are_unknown(self):
+
+        class MustHaveFoo(StubProcessor):
+            interface.classProvides(processing.IProcessor)
+
+            def __init__(self, foo, **kw):
+                super(MustHaveFoo, self).__init__(**kw)
+
+        self.plugin_manager.plugin_by_name['must-have-foo'] = MustHaveFoo
+        pipeline_configuration = {
+            'only-pipeline': {
+                'chained_consumers': [
+                    {'processor': 'must-have-foo', 'foo': 'GOT IT', 'bar': 'nooo'},
+                ]
+            }
+        }
+        gf = self.get_processor_graph_factory(pipeline_configuration)
+        try:
+            gf.make_processor_graph('only-pipeline')
+            self.fail('Expected ConfigurationError')
+        except exceptions.ConfigurationError, e:
+            expected_e_msg = 'invalid keyword "bar" for processor: must-have-foo'
+            self.assertEquals(e.msg, expected_e_msg)
+
+    def test_inheriting_pipelines(self):
+        pipeline_configuration = {
+            'base-pipeline': {
+                'chained_consumers': [
+                    {'processor': 'uppercase',
+                     'option': 'to-override',
+                     'this-option': 'will be gone'},
+                    {'processor': 'reverse'},
+                ]
+            },
+            'inheriting-pipeline': {
+                'inherits': 'base-pipeline',
+                'overrides': [
+                    {'processor': 'uppercase',
+                     'option': 'now overridden'}
+                ]
+            }
+        }
+
+        expected_pipeline_configuration = {
+            'base-pipeline': {
+                'consumers': [
+                    {'processor': 'uppercase',
+                     'option': 'to-override',
+                     'this-option': 'will be gone',
+                     'consumers': [{'processor': 'reverse'}],
+                    }
+                ]
+            },
+            'inheriting-pipeline': {
+                'inherits': 'base-pipeline',
+                'consumers': [
+                    {'processor': 'uppercase',
+                     'option': 'now overridden',
+                     'consumers': [{'processor': 'reverse'}],
+                    }
+                ]
+            },
+        }
+
+        self.assertConfigurationProperlyTransformed(pipeline_configuration, expected_pipeline_configuration)
+
+    def test_inheriting_fails_with_deep_nesting(self):
+        pipeline_configuration = {
+            'a': {
+                'chained_consumers': [{'processor': 'uppercase'}]
+            },
+            'b': {
+                'inherits': 'a',
+                'overrides': [{'processor': 'uppercase', 'foo': 'bar'}]
+            },
+            'c': {
+                'inherits': 'b',
+                'overrides': []
+            }
+        }
+
+        self.assertRaises(exceptions.ConfigurationError, self.get_processor_graph_factory, pipeline_configuration)
+
+    def test_inheriting_bogus_pipeline(self):
+        pipeline_configuration = {
+            'a': {
+                'chained_consumers': [{'processor': 'uppercase'}]
+            },
+            'b': {
+                'inherits': 'not a',
+                'overrides': [{'processor': 'uppercase', 'foo': 'bar'}]
+            },
+        }
+
+        self.assertRaises(exceptions.ConfigurationError, self.get_processor_graph_factory, pipeline_configuration)
+
+    def test_not_all_overrides_used(self):
+        pipeline_configuration = {
+            'a': {
+                'chained_consumers': [{'processor': 'uppercase'}]
+            },
+            'b': {
+                'inherits': 'a',
+                'overrides': [{'processor': 'uppercase', 'foo': 'bar'}, {'processor': 'reverse', 'bar': 'baz'}],
+            },
+        }
+        self.assertRaises(exceptions.ConfigurationError, self.get_processor_graph_factory, pipeline_configuration)
+
+    def test_inheriting_and_overriding_in_expected_order(self):
+        #
+        #        / C
+        # source - A - D
+        #           \ C - E - F
+        pipeline_configuration = {
+            'some-pipeline': {
+                'consumers': [
+                    {'processor': 'C'},
+                ],
+                'chained_consumers': [
+                    {'processor': 'A',
+                     'consumers': [{'processor':'D'}]
+                    },
+                    {'processor': 'C',
+                     'chained_consumers': [
+                            {'processor': 'E'},
+                            {'processor': 'F'},
+                        ]
+                    },
+                ]
+            },
+            'other-pipeline': {
+                'inherits': 'some-pipeline',
+                'overrides': [
+                    {'processor': 'C', 'some_option': 'this processor should not have consumers'},
+                    {'processor': 'C', 'other_option': 'this processor should have E as a consumer'},
+                    {'processor': 'F', 'foo': 'bar'},
+                ]
+            }
+        }
+
+        expected_pipeline_configuration = {
+            'other-pipeline': {
+                'consumers': [
+                    {'processor': 'C', 'some_option': 'this processor should not have consumers'},
+                    {'consumers': [{'processor': 'D'},
+                                   {'consumers': [{'consumers': [{'foo': 'bar', 'processor': 'F'}],
+                                                   'processor': 'E'}],
+                                    'other_option': 'this processor should have E as a consumer',
+                                    'processor': 'C'}],
+                     'processor': 'A'}],
+                'inherits': 'some-pipeline'
+            },
+            'some-pipeline': {
+                'consumers': [
+                    {'processor': 'C'},
+                    {'consumers': [
+                            {'processor': 'D'},
+                            {'consumers': [
+                                    {'consumers': [{'processor': 'F'}],
+                                     'processor': 'E'}],
+                             'processor': 'C'}],
+                     'processor': 'A'}
+                ]
+            }
+        }
+
+        self.assertConfigurationProperlyTransformed(pipeline_configuration, expected_pipeline_configuration)
+
+    def test_inheriting_pipeline_with_new_consumers_fails(self):
+        pipeline_configuration = {
+            'base-pipeline': {
+                'chained_consumers': [
+                    {'processor': 'uppercase'}
+                ]
+            },
+            'inheriting-pipeline': {
+                'inherits': 'base-pipeline',
+                'consumers': ['whatever']
+            }
+        }
+
+        self.assertRaises(exceptions.ConfigurationError, self.get_processor_graph_factory, pipeline_configuration)
+
+    def test_rewriting_pipelines(self):
+        expected_pipeline_configuration = dict(
+            my_pipeline=dict(
+                consumers=[
+                    dict(
+                        processor='uppercase',
+                        consumers=[
+                            dict(processor='lowercase')
+                        ]
+                    )
+                ]
+            )
+        )
+
+        # test combinations of processor definitions in both chained_consumers and listed notations:
+
+        for uppercase_processor in self.get_processor_definitions('uppercase'):
+            for lowercase_processor in self.get_processor_definitions('lowercase'):
+                # using list
+                pipeline_configuration = dict(my_pipeline=[uppercase_processor, lowercase_processor])
+                self.assertConfigurationProperlyTransformed(pipeline_configuration, expected_pipeline_configuration)
+
+                # using chained_consumers
+                pipeline_configuration = dict(my_pipeline=dict(chained_consumers=[uppercase_processor, lowercase_processor]))
+                self.assertConfigurationProperlyTransformed(pipeline_configuration, expected_pipeline_configuration)
+
+    def test_rewriting_invalid_configurations(self):
+
+        invalid_processor_configurations = [
+            (1, 'a number is not a processor definition'),
+            (dict(), 'an empty dict'),
+            (list(), 'an empty list'),
+            (dict(fooar=list()), 'a dict with a non-dict entry'),
+            (dict(foo=dict(),bar=dict()), 'a dict with two entries')
+        ]
+
+        for invalid_processor_configuration, reason in invalid_processor_configurations:
+            invalid_pipeline_configuration = dict(
+                my_pipeline=[
+                    invalid_processor_configuration
+                ]
+            )
+            # These should not be recognized as pipeline configurations at all..
+            self.assertConfigurationProperlyTransformed(invalid_pipeline_configuration, dict(), reason)
+
+    def test_rewriting_invalid_processor_when_in_pipeline(self):
+
+        invalid_processor_configurations = [
+            (1, 'a number is not a processor definition'),
+            (dict(), 'an empty dict'),
+            (list(), 'an empty list'),
+            (dict(fooar=list()), 'a dict with a non-dict entry'),
+            (dict(foo=dict(),bar=dict()), 'a dict with two entries')
+        ]
+
+        for invalid_processor_configuration, reason in invalid_processor_configurations:
+            invalid_pipeline_configuration = dict(
+                my_pipeline=dict(chained_consumers=[
+                    invalid_processor_configuration
+                ])
+            )
+            # Since these are nested in a pipeline, an attempt will be made to configure the pipeline, but they should
+            # fail, pointing at an invalid configuration
+            self.assertRaises(exceptions.ConfigurationError, self.get_processor_graph_factory, invalid_pipeline_configuration)
+
+    def test_rewriting_pipelines_with_processor_arguments(self):
+        expected_pipeline_configuration = dict(
+            my_pipeline=dict(
+                consumers=[
+                    dict(
+                        processor='uppercase',
+                        uppercaser='UPPERCASER',
+                        consumers=[
+                            dict(processor='lowercase', lowercaser='LOWERCASER')
+                        ]
+                    )
+                ]
+            )
+        )
+
+        # test combinations of processor definitions in both chained_consumers and listed notations:
+
+        for uppercase_processor in self.get_processor_definitions('uppercase', uppercaser='UPPERCASER'):
+            for lowercase_processor in self.get_processor_definitions('lowercase', lowercaser='LOWERCASER'):
+                # using list
+                pipeline_configuration = dict(my_pipeline=[uppercase_processor, lowercase_processor])
+                self.assertConfigurationProperlyTransformed(pipeline_configuration, expected_pipeline_configuration)
+
+                # using chained_consumers
+                pipeline_configuration = dict(my_pipeline=dict(chained_consumers=[uppercase_processor, lowercase_processor]))
+                self.assertConfigurationProperlyTransformed(pipeline_configuration, expected_pipeline_configuration)
+
+    def test_rewriting_pipelines_in_nested_pipeline(self):
+        expected_pipeline_configuration = {
+            'namespace1.namespace2.my_pipeline':dict(
+                consumers=[
+                    dict(
+                        processor='uppercase',
+                        uppercaser='UPPERCASER',
+                        consumers=[
+                            dict(processor='lowercase', lowercaser='LOWERCASER')
+                        ]
+                    )
+                ]
+            )
+        }
+
+        # test combinations of processor definitions in both chained_consumers and listed notations:
+
+        for uppercase_processor in self.get_processor_definitions('uppercase', uppercaser='UPPERCASER'):
+            for lowercase_processor in self.get_processor_definitions('lowercase', lowercaser='LOWERCASER'):
+                # using list
+                pipeline_configuration = dict(namespace1=dict(namespace2=dict(my_pipeline=[uppercase_processor, lowercase_processor])))
+                self.assertConfigurationProperlyTransformed(pipeline_configuration, expected_pipeline_configuration)
+
+                # using chained_consumers
+                pipeline_configuration = dict(namespace1=dict(namespace2=dict(my_pipeline=dict(chained_consumers=[uppercase_processor, lowercase_processor]))))
+                self.assertConfigurationProperlyTransformed(pipeline_configuration, expected_pipeline_configuration)
+
+    def test_namespaced_imports(self):
+        expected_pipeline_configuration = {
+            'ns1.ns2.ns3.lower':dict(consumers=[{'processor':'lowercaser'}]),
+            'ns1.upper':dict(consumers=[{'processor':'uppercaser'}]),
+            'ns1.ns2.side':dict(consumers=[{'processor':'sidecaser'}]),
+            'ns1.ns2.my_pipeline':dict(
+                consumers=[
+                    dict(
+                        processor='uppercaser',
+                        consumers=[
+                            dict(processor='lowercaser',
+                                 consumers=[
+                                    dict(processor='sidecaser',
+                                         consumers=[
+                                            dict(processor='rootcaser',
+                                                consumers=[
+                                                    dict(processor='rootcaser')
+                                                ]
+                                            )
+                                         ]
+                                    )
+                                 ]
+                            )
+                        ]
+                    )
+                ]
+            ),
+            'root':dict(consumers=[{'processor':'rootcaser'}])
+        }
+
+        # create a pipeline that uses different imports:
+        pipeline_configuration = dict(
+            root=['rootcaser'],
+            ns1=dict(
+                upper=['uppercaser'],
+                ns2=dict(
+                    side=['sidecaser'],
+                    my_pipeline=[
+                        {'inline-pipeline': '..upper'},
+                        {'inline-pipeline': '.ns3.lower'},
+                        {'inline-pipeline': '.side'}, # sibling import
+                        {'inline-pipeline': 'root'}, # absolute import
+                        {'inline-pipeline': '...root'},
+                    ],
+                    ns3=dict(
+                        lower=['lowercaser']
+                    )
+                )
+            )
+        )
+
+        self.assertConfigurationProperlyTransformed(pipeline_configuration, expected_pipeline_configuration)
+
+    def test_nested_pipelines_with_import(self):
+        expected_pipeline_configuration = {
+            'namespace1.namespace2.my_pipeline':dict(
+                consumers=[
+                    dict(
+                        processor='uppercase',
+                        uppercaser='UPPERCASER',
+                        consumers=[
+                            dict(processor='lowercase', lowercaser='LOWERCASER')
+                        ]
+                    )
+                ]
+            ),
+            'namespace1.namespace2.included_pipeline':dict(
+                consumers=[
+                    dict(processor='lowercase', lowercaser='LOWERCASER')
+                ]
+            )
+        }
+
+        # test combinations of processor definitions in both chained_consumers and listed notations:
+
+        for uppercase_processor in self.get_processor_definitions('uppercase', uppercaser='UPPERCASER'):
+            for lowercase_processor in self.get_processor_definitions('lowercase', lowercaser='LOWERCASER'):
+                # using list
+                pipeline_configuration = dict(namespace1=
+                                              dict(namespace2=
+                                                   dict(my_pipeline=[uppercase_processor, {'inline-pipeline':'.included_pipeline'}],
+                                                        included_pipeline=[lowercase_processor]
+                                                   )
+                                              )
+                                         )
+                self.assertConfigurationProperlyTransformed(pipeline_configuration, expected_pipeline_configuration)
+
+                # using chained_consumers:
+                pipeline_configuration = dict(namespace1=
+                                              dict(namespace2=
+                                                   dict(my_pipeline=dict(chained_consumers=[uppercase_processor, {'inline-pipeline':'.included_pipeline'}]),
+                                                        included_pipeline=[lowercase_processor]
+                                                   )
+                                              )
+                                         )
+                self.assertConfigurationProperlyTransformed(pipeline_configuration, expected_pipeline_configuration)
+
+
+class FooProvider(StubProcessor):
+    provides = ['foo']
+    name = 'foo-provider'
+
+
+class BarProvider(StubProcessor):
+    provides = ['bar']
+    name = 'bar-provider'
+
+
+class FooConsumer(StubProcessor):
+    depends_on = ['foo']
+    name = 'foo-consumer'
+
+
+class FooConsumer2(StubProcessor):
+    depends_on = ['foo']
+    name = 'foo-consumer2'
+
+
+class BarConsumer(StubProcessor):
+    depends_on = ['bar']
+    name = 'bar-consumer'
+
+
+class TestMisconfigurationHinting(ProcessorGraphTest):
+
+    def setUp(self):
+        super(TestMisconfigurationHinting, self).setUp()
+        for plugin_factory in (FooProvider, FooConsumer, FooConsumer2, BarProvider, BarConsumer):
+            self.plugin_manager.plugin_by_name[plugin_factory.name] = plugin_factory
+            for keyword in plugin_factory.provides:
+                self.plugin_manager._providers_by_keyword.setdefault(keyword, []).append(plugin_factory.name)
+
+    def assertEquals(self, a, b, msg=None):
+        if not a == b:
+            if msg is None:
+                msg = ''
+            if len(msg) > 0:
+                msg += '\n'
+
+            diff = '\n'.join(difflib.context_diff(pprint.pformat(a).split('\n'), pprint.pformat(b).split('\n')))
+            diff = diff.split('****')[-1].strip() # Remove the header
+            msg = '%sdifferences:\n%s' % (msg, diff)
+            raise self.failureException(msg)
+        return a
+
+    def test_no_warnings_when_correctly_configured(self):
+        pipeline_configuration = {
+            'only-pipeline': {
+                'chained_consumers': [
+                    {'processor': 'foo-provider'},
+                    {'processor': 'bar-provider'},
+                    {'processor': 'bar-consumer'},
+                    {'processor': 'foo-consumer'},
+                ]
+            }
+        }
+
+        gf = self.get_processor_graph_factory(pipeline_configuration)
+        with warnings.catch_warnings(record=True) as recorded_warnings:
+            pg = gf.make_processor_graph('only-pipeline')
+        self.assertEqual(pg.configuration_anomalies, [])
+        self.assertEqual(len(recorded_warnings), 0)
+
+    def test_warn_that_consumer_precedes_provider(self):
+        pipeline_configuration = {
+            'only-pipeline': {
+                'chained_consumers': [
+                    {'processor': 'foo-consumer'},
+                    {'processor': 'foo-provider'},
+                    {'processor': 'bar-provider'},
+                    {'processor': 'bar-consumer'},
+                ]
+            }
+        }
+
+        gf = self.get_processor_graph_factory(pipeline_configuration)
+
+        with warnings.catch_warnings(record=True) as recorded_warnings:
+            pg = gf.make_processor_graph('only-pipeline')
+        expected_anomalies = [dict(processor='foo-consumer', configuration=dict(),
+                                   missing_dependencies=set(['foo']),
+                                   providers=dict(foo=['foo-provider']))]
+        self.assertEquals(pg.configuration_anomalies, expected_anomalies)
+
+        expected_warnings = ['ConfigurationWarning: processor with unsatisfied dependencies: "foo-consumer" in pipeline "only-pipeline"']
+        self.assertEquals([repr(w.message) for w in recorded_warnings], expected_warnings)
+
+
+    def test_multiple_warnings_that_consumers_precede_providers(self):
+        pipeline_configuration = {
+            'only-pipeline': {
+                'chained_consumers': [
+                    {'processor': 'foo-consumer'},
+                    {'processor': 'bar-consumer'},
+                    {'processor': 'foo-provider'},
+                    {'processor': 'bar-provider'},
+                ]
+            }
+        }
+
+        gf = self.get_processor_graph_factory(pipeline_configuration)
+
+        with warnings.catch_warnings(record=True) as recorded_warnings:
+            pg = gf.make_processor_graph('only-pipeline')
+
+        expected_anomalies = [dict(processor='foo-consumer', configuration=dict(),
+                                   missing_dependencies=set(['foo'],), providers=dict(foo=['foo-provider'])),
+                              dict(processor='bar-consumer', configuration=dict(),
+                                   missing_dependencies=set(['bar']), providers=dict(bar=['bar-provider']))]
+        self.assertEquals(pg.configuration_anomalies, expected_anomalies)
+
+        expected_warnings = ['ConfigurationWarning: processor with unsatisfied dependencies: "foo-consumer" in pipeline "only-pipeline"',
+                             'ConfigurationWarning: processor with unsatisfied dependencies: "bar-consumer" in pipeline "only-pipeline"']
+        self.assertEquals([repr(w.message) for w in recorded_warnings], expected_warnings)
+
+    def test_simple_dag(self):
+        #       /  foo-consumer2 \
+        # source                  foo-consumer - sink
+        #       \  foo-provider  /
+        pipeline_configuration = {
+            'only-pipeline': {
+                'consumers': [
+                    {
+                        'processor': 'foo-consumer2',
+                        'consumers': [
+                            {'processor': 'foo-consumer', 'id': 'reuse_me'},
+                        ]
+                    },
+                    {
+                        'processor': 'foo-provider',
+                        'consumers': [{'existing': 'reuse_me'}]
+                    }
+                ]
+            }
+        }
+
+        gf = self.get_processor_graph_factory(pipeline_configuration)
+        with warnings.catch_warnings(record=True) as recorded_warnings:
+            pg = gf.make_processor_graph('only-pipeline')
+
+        expected_anomaly = dict(processor='foo-consumer2', configuration=dict(), missing_dependencies=set(['foo'],),
+                                providers=dict(foo=['foo-provider']))
+
+        self.assertEquals(pg.configuration_anomalies, [expected_anomaly])
+
+        expected_warning = 'ConfigurationWarning: processor with unsatisfied dependencies: "foo-consumer2" in pipeline "only-pipeline"'
+        self.assertEquals([repr(w.message) for w in recorded_warnings], [expected_warning])
+
+
+class TestConditional(ProcessorGraphTest):
+
+    def setUp(self):
+        ProcessorGraphTest.setUp(self)
+
+        for additional_plugin in (util_processors.LambdaConditional, util_processors.Passthrough):
+            self.plugin_manager.plugins.add(additional_plugin)
+            self.plugin_manager.plugin_by_name[additional_plugin.name] = additional_plugin
+
+    @defer.inlineCallbacks
+    def test_deciding_consumer(self):
+        #       /  upper \
+        # decide          - reverse - sink
+        #       \  lower /
+        pipeline_configuration = {
+            'only-pipeline': {
+                'consumers': [
+                    {
+                        'processor': 'lambda-decider',
+                        'lambda': 'input, map=["upper", "lower"]: map.index(input.lower())',
+                        'consumers': [
+                            {
+                                'processor': 'uppercase',
+                                'consumers': [{'existing': 'exit'}]
+                            },
+                            {
+                                'processor': 'lowercase',
+                                'consumers': [{'existing': 'exit'}]
+                            },
+                        ]
+                    },
+                    {
+                        'processor': 'reverse',
+                        'id': 'exit'
+                    },
+                ]
+            }
+        }
+
+        gf = self.get_processor_graph_factory(pipeline_configuration)
+        pg = gf.make_processor_graph('only-pipeline')
+
+        l = []
+        sink = ListAppendingProcessor(l)
+
+        last_processor = list(pg.sinks)[0]
+        pg.add_producer_and_consumer(last_processor, sink)
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg)
+        evaluator.configure_processors(processing.RuntimeEnvironment())
+        yield evaluator.process('uPpEr')
+        self.assertEquals(l, ['REPPU'])
+        del l[:]
+        yield evaluator.process('lOwEr')
+        self.assertEquals(l, ['rewol'])
+
+
+class TwistedEvaluatorTest(ProcessorGraphTest):
+    @defer.inlineCallbacks
+    def test_just_one_processor(self):
+        l = []
+        only_processor = ListAppendingProcessor(l)
+        pipeline = processing.ProcessorGraph()
+        pipeline.get_builder().add_processor(only_processor)
+        evaluator = processing.TwistedProcessorGraphEvaluator(pipeline)
+        yield evaluator.process('foo')
+        self.assertEquals(l, ['foo'])
+
+    @defer.inlineCallbacks
+    def test_simple_pipeline(self):
+        uppercaser = UppercasingProcessor()
+        reverser = ReversingProcessor()
+        l = []
+        sink = ListAppendingProcessor(l)
+
+        pipeline = processing.ProcessorGraph()
+
+        builder = pipeline.get_builder()
+        builder.add_processor(uppercaser).add_processor(reverser).add_processor(sink)
+        evaluator = processing.TwistedProcessorGraphEvaluator(pipeline)
+        yield evaluator.process('foo')
+        yield evaluator.process('bar')
+        self.assertEquals(l, ['OOF', 'RAB'])
+
+    @defer.inlineCallbacks
+    def test_simple_pipeline_with_callbacking_processor(self):
+        uppercaser = UppercasingProcessor()
+        reverser = ReversingProcessor()
+        later = CallbackingLaterProcessor()
+        later2 = CallbackingLaterProcessor()
+        l = []
+        sink = ListAppendingProcessor(l)
+
+        pipeline = processing.ProcessorGraph()
+
+        builder = pipeline.get_builder()
+        builder.add_processor(uppercaser).add_processor(later).add_processor(reverser).add_processor(later2).add_processor(sink)
+        evaluator = processing.TwistedProcessorGraphEvaluator(pipeline)
+        yield evaluator.process('foo')
+        yield evaluator.process('bar')
+        self.assertEquals(l, ['OOF', 'RAB'])
+
+    @defer.inlineCallbacks
+    def test_broadcast(self):
+        collected_by_a = []
+        a = ListAppendingProcessor(collected_by_a)
+        collected_by_b = []
+        b = ListAppendingProcessor(collected_by_b)
+
+        pg = processing.ProcessorGraph()
+        builder = pg.get_builder()
+        builder.add_processor(UppercasingProcessor()).add_processor(a)
+        builder.add_processor(ReversingProcessor()).add_processor(b)
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg)
+        yield evaluator.process('abc')
+
+        self.assertEquals(collected_by_a, ['ABC'])
+        self.assertEquals(collected_by_b, ['cba'])
+
+    @defer.inlineCallbacks
+    def test_consume_multiple(self):
+        l = []
+        sink = ListAppendingProcessor(l)
+
+        pg = processing.ProcessorGraph()
+        builder = pg.get_builder()
+        builder.add_processors(UppercasingProcessor(), ReversingProcessor()).add_processor(sink)
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg)
+        yield evaluator.process('abc')
+
+        self.assertEquals(l, ['ABC', 'cba'])
+
+    @defer.inlineCallbacks
+    def test_consume_multiple_ordering_matters(self):
+        l = []
+        sink = ListAppendingProcessor(l)
+
+        pg = processing.ProcessorGraph()
+        builder = pg.get_builder()
+        builder.add_processors(ReversingProcessor(), UppercasingProcessor()).add_processor(sink)
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg)
+        yield evaluator.process('abc')
+
+        self.assertEquals(l, ['cba', 'ABC'])
+
+    @defer.inlineCallbacks
+    def test_broadcast_and_consume_multiple(self):
+        l = []
+        sink = ListAppendingProcessor(l)
+        pg = processing.ProcessorGraph()
+        builder = pg.get_builder()
+        reversing = builder.add_processor(ReversingProcessor())
+        upper_and_lower = reversing.add_processors(UppercasingProcessor(),
+                                                   LowercasingProcessor())
+        upper_and_lower.add_processor(sink)
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg)
+        yield evaluator.process('aBc')
+
+        self.assertEquals(l, ['CBA', 'cba'])
+
+    @defer.inlineCallbacks
+    def test_broadcast_and_consume_multiple_and_ordering_matters(self):
+        l = []
+        sink = ListAppendingProcessor(l)
+        pg = processing.ProcessorGraph()
+        builder = pg.get_builder()
+        reversing = builder.add_processor(ReversingProcessor())
+        upper_and_lower = reversing.add_processors(LowercasingProcessor(),
+                                                   UppercasingProcessor())
+        upper_and_lower.add_processor(sink)
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg)
+        yield evaluator.process('aBc')
+
+        self.assertEquals(l, ['cba', 'CBA'])
+
+    @defer.inlineCallbacks
+    def test_graph_with_loop(self):
+        passthrough = util_processors.Passthrough()
+        incrementer = util_processors.LambdaProcessor(input_path='n', **{'lambda': 'n: n+1'})
+        decider = util_processors.LambdaConditional(**{'lambda':"baton: -1 if baton['n'] > 9 else 0"})
+        l = []
+        sink = ListAppendingProcessor(l)
+
+        # passthrough -> incrementer -> decider -> sink
+        #                    ^------------/
+        pg = processing.ProcessorGraph()
+        builder = pg.get_builder()
+        # The passthrough is necessary because "incrementer" will be
+        # removed from the "sources"-list in the processor-graph,
+        # because it has parents.
+        builder = builder.add_processor(passthrough).add_processor(incrementer).add_processor(decider)
+        builder.add_processor(incrementer)
+        builder.add_processor(sink)
+
+        runtime_environment = processing.RuntimeEnvironment()
+        runtime_environment.configure()
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg)
+        evaluator.configure_processors(runtime_environment)
+
+        baton = dict(n=0)
+        yield evaluator.process(baton)
+        self.assertEquals(baton, dict(n=10))
+
+    @defer.inlineCallbacks
+    def test_profiling(self):
+        """ The evaluator should track the time spent processing, as
+        well as the time individual processors spend.
+        """
+        pg = processing.ProcessorGraph()
+        builder = pg.get_builder()
+        delay = 0.001
+
+        waiter = util_processors.Waiter(delay)
+        waiter2 = util_processors.Waiter(2 * delay)
+        builder.add_processor(waiter).add_processor(waiter2)
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg)
+        yield evaluator.process(dict())
+
+        # wait for delay -> wait for two times delay
+        self.assertTrue(delay <= waiter.time_spent)
+        self.assertTrue(2*delay <= waiter2.time_spent)
+        self.assertEquals(evaluator.time_spent, waiter.time_spent + waiter2.time_spent)
+
+    test_profiling.timeout=1

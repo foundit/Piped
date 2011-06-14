@@ -1,0 +1,36 @@
+includes:
+    - rpc-server.yaml
+    - rpc-client.yaml
+
+plugins:
+    bundles:
+        my_bundle:
+            - rpc_tutorial
+
+web:
+    site:
+        port: 8088
+
+system-events:
+    startup:
+        system-test: system-testing.start
+
+pipelines:
+    system-testing:
+        start:
+            chained_consumers:
+                - create-statustest-reporter
+                - run-pipeline:
+                    pipeline: .run
+                - wait-for-statustest-reporter:
+                    done: True
+                - shutdown
+
+            chained_error_consumers:
+                - print-failure-traceback
+                - shutdown
+
+        # add any test-processors to this test-pipeline
+        run:
+            - test-client
+            - test-rpc

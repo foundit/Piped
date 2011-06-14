@@ -1,0 +1,23 @@
+zmq:
+    queues:
+        # queues used by a square worker
+        worker_square_in:
+            type: PULL
+            connects:
+                - tcp://0.0.0.0:6000
+
+        worker_square_out:
+            type: PUB
+            connects:
+                - tcp://0.0.0.0:6001
+
+        # queues used by a sum worker
+        worker_sum_in:
+            type: PULL
+            connects:
+                - tcp://0.0.0.0:5000
+
+        worker_sum_out:
+            type: PUB
+            connects:
+                - tcp://0.0.0.0:5001

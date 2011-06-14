@@ -1,0 +1,19 @@
+includes:
+    - queues.yaml
+
+zmq:
+    queues:
+        worker_square_in:
+            pipeline: zmq.square
+    
+pipelines:
+    zmq:
+        square:
+            - decode-json
+            - eval-lambda:
+                input_path: numbers
+                output_path: square
+                lambda: "numbers: sum(numbers)**2"
+            - encode-json
+            - send-zmq-message:
+                queue_name: worker_square_out

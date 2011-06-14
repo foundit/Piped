@@ -1,0 +1,16 @@
+web:
+    tutorial:
+        routing:
+            pipelines:
+                __config__:
+                    pipeline: web.pipelines
+
+pipelines:
+    web:
+        pipelines:
+            - diagram-pipelines
+            - render-dot:
+                output_path: content
+                type: svg
+            - write-web-response:
+                content_type: image/svg+xml

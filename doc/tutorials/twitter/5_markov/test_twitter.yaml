@@ -1,0 +1,14 @@
+includes:
+    - twitter.yaml
+
+system-events:
+    startup:
+        test: system-testing
+
+pipelines:
+    system-testing:
+        - create-statustest-reporter
+        - test-twitter
+        - wait-for-statustest-reporter:
+            done: true
+        - shutdown

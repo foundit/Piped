@@ -1,0 +1,39 @@
+# add our package as a plugin bundle:
+plugins:
+    bundles:
+        twitter:
+            # the name of the packages that contains plugins:
+            - twitter_tutorial
+
+# define a twitter account
+twitter:
+    my_account:
+        auth:
+            consumer_key: CONSUMER_KEY
+            consumer_secret: CONSUMER_SECRET
+
+            # .. and when you have the access token key and secret:
+            access_token:
+                key: ACCESS_KEY
+                secret: ACCESS_SECRET
+
+system-events:
+    startup:
+        startup: startup
+
+pipelines:
+    startup:
+        - run-pipeline:
+            pipeline: generate-status
+
+        - update-twitter-status:
+            account: my_account
+
+        - shutdown
+
+    generate-status:
+        - eval-lambda:
+            output_path: status
+            namespace:
+                today: datetime.date.today
+            lambda: "_: 'Today is %s' % today()"

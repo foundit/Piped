@@ -1,0 +1,28 @@
+web:
+    site:
+        routing:
+            dependencies:
+                __config__:
+                    pipeline: web.dependencies
+            pipelines:
+                __config__:
+                    pipeline: web.pipelines
+            
+    
+pipelines:
+    web:
+        dependencies:
+            - diagram-dependencies
+            - render-dot:
+                output_path: content
+                type: svg
+            - write-web-response:
+                content_type: image/svg+xml
+
+        pipelines:
+            - diagram-pipelines
+            - render-dot:
+                output_path: content
+                type: svg
+            - write-web-response:
+                content_type: image/svg+xml

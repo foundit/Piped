@@ -1,0 +1,43 @@
+ticks:
+    interval:
+        reaper:
+            # create a baton every second and process it in the reap-pending-batons pipeline:
+            interval: 1
+            pipeline: reap-pending-batons
+
+pipelines:
+    reap-pending-batons:
+        - fetch-context:
+            context: pending
+
+        - exec-code:
+            input_path: pending
+            output_path: reap_batons
+            namespace:
+                time: time.time
+            code: |
+                # give requests two seconds to complete:
+                cutoff = time() - 2
+
+                # create a list of batons that have exceeded the timeout:
+                reap_batons = list()
+
+                for id, pending_baton in input.items():
+                    if pending_baton['added'] < cutoff:
+                        # we found a baton that was too old, so we remove it from the pending dictionary and add it
+                        # to the list of batons we're going to reap
+                        input.pop(id)
+                        reap_batons.append(pending_baton)
+
+                return reap_batons
+
+        # process every baton returned by the above processor in the reap-baton pipeline:
+        - for-each:
+            input_path: reap_batons
+            pipeline: reap-baton
+            fail_on_error: true
+
+    reap-baton:
+        # we reap a baton writing a simple response to the client.
+        - write-web-response:
+            fallback_content: '{"success": false}'

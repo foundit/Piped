@@ -1,0 +1,5 @@
+
+root_level:
+    nested:
+        leaf: 123
+        another_leaf: abc

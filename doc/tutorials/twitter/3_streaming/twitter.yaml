@@ -1,0 +1,56 @@
+# add our package as a plugin bundle:
+plugins:
+    bundles:
+        twitter:
+            # the name of the packages that contains plugins:
+            - twitter_tutorial
+
+# define a twitter account
+twitter:
+    my_account:
+        auth:
+            consumer_key: CONSUMER_KEY
+            consumer_secret: CONSUMER_SECRET
+
+            access_token:
+                key: ACCESS_TOKEN
+                secret: ACCESS_SECRET
+
+      
+        streams:
+            track_happy:
+                method: filter
+                pipeline: print-status
+
+                track:
+                    - happy
+
+system-events:
+    startup:
+        tutorial: startup
+
+pipelines:
+    startup:
+        # find our current rate limitations
+        - eval-lambda:
+            dependencies:
+                # depend on the twitter api instance:
+                api: twitter.my_account
+            output_path: rate_limit_status
+            lambda: "_: self.dependencies.api.rate_limit_status()"
+
+        # print the screen name:
+        - pretty-print:
+            path: rate_limit_status
+            formatter: "status: 'Current rate limit status: %r' % status"
+
+    # print the status updates
+    print-status:
+        - remap:
+            mapping:
+                status.user.screen_name: screen_name
+                status.user.followers_count: followers_count
+                status.text: text
+
+        - pretty-print:
+            formatter: "baton: 'status-update -> %(screen_name)s(%(followers_count)s): %(text)s' % baton"
