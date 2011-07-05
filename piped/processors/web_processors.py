@@ -1,8 +1,10 @@
 # Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
 import datetime
+import json
 
 from twisted.web import http
+from twisted.internet import defer
 from zope import interface
 
 from piped import util, exceptions, processing
@@ -182,3 +184,80 @@ class SetExpireHeader(HttpRequestProcessor):
         request.setHeader('cache-control', 'public,max-age=%i' % seconds)
 
         return baton
+
+
+class ExtractRequestArguments(base.MappingProcessor):
+    """ Extract arguments from a :class:`twisted.web.server.Request`-like object.
+
+    The input paths in the mapping is lookup up in the request arguments and
+    copied to the specified output paths.
+
+    The mapping support the following additional keywords:
+
+        only_first
+            Only returns the first request argument by that name. Defaults to True.
+
+        load_json
+            Causes the value to be loaded as json before being copied into the baton.
+            Defaults to False.
+
+    Consider the following example configuration:
+
+    .. code-block:: yaml
+
+        mapping:
+            - foo
+            - bar:
+                only_first: false
+            - baz:
+                load_json: true
+            - zip:
+                output_path: zap
+
+    Using the above configuration to extract the request arguments of a request to
+    ``http://.../?foo=1&foo=2&bar=3&bar=4&baz={"test":[5,6,7]}&zip=8`` results in the following baton:
+
+    .. code-block:: yaml
+
+        request: <Request object>
+        foo: '1'
+        bar: ['1', '2']
+        baz:
+            test: [5, 6, 7]
+        zap: '8'
+
+    Note that the integers in the request are not parsed. For more advanced input validation, see
+    the :ref:`validate-with-formencode` processor.
+
+    """
+    interface.classProvides(processing.IProcessor)
+    name = 'extract-web-request-arguments'
+
+    def __init__(self, request_path='request', *a, **kw):
+        """
+        :param request_path: Path to the request object in the baton.
+        :param skip_if_nonexistent: Whether to skip mapping entries that are not found in the request.
+        """
+        super(ExtractRequestArguments, self).__init__(*a, **kw)
+
+        self.request_path = request_path
+
+    def get_input(self, baton, input_path, **kwargs):
+        request = util.dict_get_path(baton, self.request_path)
+        return request.args.get(input_path, Ellipsis)
+
+    def process_mapping(self, input, input_path, output_path, baton, only_first=True, load_json=False):
+        # we have to recheck if the input_path is in the request arguments, otherwise we don't know
+        # whether the input is a default provided by our configuration or an actual argument.
+        request = util.dict_get_path(baton, self.request_path)
+        if input_path not in request.args:
+            return input
+
+        if load_json:
+            for i, value in enumerate(input):
+                input[i] = json.loads(value)
+
+        if only_first:
+            return input[0]
+
+        return input

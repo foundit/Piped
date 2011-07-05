@@ -5,9 +5,11 @@ import datetime
 
 from mock import patch
 from twisted.trial import unittest
+from twisted.internet import defer
 
 from piped import exceptions
 from piped.processors import web_processors
+from piped.providers.test import test_web_provider
 
 
 class StubRequest(object):
@@ -179,3 +181,98 @@ class TestIPDeterminer(unittest.TestCase):
 
         exc = self.assertRaises(exceptions.PipedError, processor.process, baton)
         self.assertEquals(exc.msg, 'could not determine IP from proxy-header')
+
+
+class TestExtractRequestArguments(unittest.TestCase):
+
+    def get_processor(self, **kwargs):
+        return web_processors.ExtractRequestArguments(**kwargs)
+
+    @defer.inlineCallbacks
+    def test_simple_extract(self):
+        request = test_web_provider.DummyRequest([])
+        request.addArg('foo', 42)
+        request.args['bar'] = [1, 2] # a multivalued argument
+
+        baton = dict(request=request)
+        processor = self.get_processor(mapping=['foo', 'bar'])
+        yield processor.process(baton)
+
+        # only the first value of 'bar' is used by default:
+        self.assertEquals(baton, dict(request=request, foo=42, bar=1))
+
+    @defer.inlineCallbacks
+    def test_get_all_arguments(self):
+        request = test_web_provider.DummyRequest([])
+        request.addArg('foo', 42)
+        request.args['bar'] = [1, 2] # a multivalued argument
+
+        baton = dict(request=request)
+        processor = self.get_processor(mapping=['foo', dict(bar=dict(only_first=False))])
+        yield processor.process(baton)
+
+        # all values of bar should be returned as a list:
+        self.assertEquals(baton, dict(request=request, foo=42, bar=[1,2]))
+
+    @defer.inlineCallbacks
+    def test_nonexistent(self):
+        request = test_web_provider.DummyRequest([])
+        request.addArg('foo', 42)
+
+        baton = dict(request=request)
+        processor = self.get_processor(mapping=['foo', 'nonexistent'])
+        yield processor.process(baton)
+
+        # the nonexistent value should be skipped
+        self.assertEquals(baton, dict(request=request, foo=42))
+
+    @defer.inlineCallbacks
+    def test_nonexistent_without_skipping(self):
+        request = test_web_provider.DummyRequest([])
+        request.addArg('foo', 42)
+
+        baton = dict(request=request)
+        processor = self.get_processor(mapping=['foo', 'nonexistent'], skip_if_nonexistent=False)
+        yield processor.process(baton)
+
+        # the nonexistent value should be replaced by the default fallback
+        self.assertEquals(baton, dict(request=request, foo=42, nonexistent=None))
+
+    @defer.inlineCallbacks
+    def test_nonexistent_with_fallback(self):
+        request = test_web_provider.DummyRequest([])
+        request.addArg('foo', 42)
+
+        baton = dict(request=request)
+        processor = self.get_processor(mapping=['foo', 'nonexistent'], input_fallback='fallback', skip_if_nonexistent=False)
+        yield processor.process(baton)
+
+        # the nonexistent value should be replaced by the fallback
+        self.assertEquals(baton, dict(request=request, foo=42, nonexistent='fallback'))
+
+    @defer.inlineCallbacks
+    def test_loading_json(self):
+        request = test_web_provider.DummyRequest([])
+        request.addArg('foo', 42)
+        request.args['bar'] = ['{"loaded": 42}', '{"loaded": 93}'] # a multivalued argument containing json
+
+        baton = dict(request=request)
+        processor = self.get_processor(mapping=['foo', dict(bar=dict(load_json=True, only_first=False))])
+        yield processor.process(baton)
+
+        self.assertEquals(baton, dict(request=request, foo=42, bar=[dict(loaded=42), dict(loaded=93)]))
+
+    @defer.inlineCallbacks
+    def test_loading_invalid_json(self):
+        request = test_web_provider.DummyRequest([])
+        request.addArg('foo', '')
+
+        baton = dict(request=request)
+        processor = self.get_processor(mapping=[dict(foo=dict(load_json=True))])
+
+        try:
+            yield processor.process(baton)
+            self.fail('Expected ValueError to be raised.')
+        except Exception as e:
+            self.assertIsInstance(e, ValueError)
+            self.assertEquals(e.args, ('No JSON object could be decoded',))

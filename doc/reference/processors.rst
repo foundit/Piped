@@ -419,6 +419,13 @@ determine-ip
 .. autoclass:: IPDeterminer
 
 
+.. _extract-web-request-arguments:
+
+extract-web-request-arguments
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. autoclass:: ExtractRequestArguments
+
+
 .. _set-http-expires:
 
 set-http-expires
