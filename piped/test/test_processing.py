@@ -7,10 +7,11 @@ import warnings
 
 from twisted.internet import reactor, defer
 from twisted.trial import unittest
+from twisted.python import failure
 from zope import interface
 
 from piped import exceptions, processing
-from piped.processors import base, util_processors
+from piped.processors import base, util_processors, pipeline_processors
 
 
 class StubProcessorGraphFactory(processing.ProcessorGraphFactory):
@@ -1904,3 +1905,334 @@ class TwistedEvaluatorTest(ProcessorGraphTest):
         self.assertEquals(evaluator.time_spent, waiter.time_spent + waiter2.time_spent)
 
     test_profiling.timeout=1
+
+    def assertTraceEquals(self, actual, expected):
+        # set some defaults in order to make the calls to this function easier to read
+        for step in expected:
+            step.setdefault('is_error_consumer', False)
+            step.setdefault('failure', None)
+
+        # we don't want to have to compare the actual traceback messages and timings
+        for step in actual:
+            step.pop('time_spent', None)
+            if step['failure']:
+                del step['failure']['traceback']
+
+        self.assertEquals(actual, expected)
+
+    @defer.inlineCallbacks
+    def test_simple_tracing(self):
+        pg = processing.ProcessorGraph()
+        builder = pg.get_builder()
+        passthrough = util_processors.Passthrough()
+        incrementing = IncrementingProcessor()
+
+        builder.add_processor(passthrough).add_processor(incrementing)
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg, name='test_pipeline')
+        results, trace = yield evaluator.traced_process(dict(n=0))
+
+        self.assertEquals(results, [dict(n=1)])
+        self.assertTraceEquals(trace, [
+            dict(source=self, destination=passthrough, baton=dict(n=0)),
+            dict(source=passthrough, destination=incrementing, baton=dict(n=0)),
+            dict(source=incrementing, destination=None, baton=dict(n=1))
+        ])
+
+    @defer.inlineCallbacks
+    def test_tracing_across_pipelines(self):
+        runtime_environment = processing.RuntimeEnvironment()
+        runtime_environment.configure()
+
+        nested_pg = processing.ProcessorGraph()
+        nested_incrementing = IncrementingProcessor()
+        nested_pg.get_builder().add_processor(nested_incrementing)
+        nested_evaluator = processing.TwistedProcessorGraphEvaluator(nested_pg, name='test_pipeline2')
+        
+        pg = processing.ProcessorGraph()
+        builder = pg.get_builder()
+
+        passthrough = util_processors.Passthrough()
+        incrementing = IncrementingProcessor()
+        run_pipeline = pipeline_processors.PipelineRunner(pipeline='test_pipeline2')
+
+        builder.add_processor(passthrough).add_processor(incrementing).add_processor(run_pipeline)
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg, name='test_pipeline')
+
+        evaluator.configure_processors(runtime_environment)
+        run_pipeline.pipeline_dependency.is_ready = True
+        run_pipeline.pipeline_dependency.on_resource_ready(nested_evaluator)
+        
+        results, trace = yield evaluator.traced_process(dict(n=0))
+
+        self.assertEquals(results, [dict(n=2)])
+        self.assertTraceEquals(trace, [
+            dict(source=self, destination=passthrough, baton=dict(n=0)),
+            dict(source=passthrough, destination=incrementing, baton=dict(n=0)),
+            dict(source=incrementing, destination=run_pipeline, baton=dict(n=1)),
+            # run_pipeline -> to the nested pipeline
+            dict(source=run_pipeline, destination=nested_incrementing, baton=dict(n=1)),
+            dict(source=nested_incrementing, destination=None, baton=dict(n=2)),
+            dict(source=run_pipeline, destination=None, baton=dict(n=2)),
+        ])
+
+    @defer.inlineCallbacks
+    def test_tracing_across_pipelines_via_proxy_object(self):
+        """ If any non-pipeline proxy object invokes a pipeline, it should show up
+        in the trace results.
+        """
+        runtime_environment = processing.RuntimeEnvironment()
+        runtime_environment.configure()
+
+        nested_pg = processing.ProcessorGraph()
+        nested_incrementing = IncrementingProcessor()
+        nested_pg.get_builder().add_processor(nested_incrementing)
+        nested_evaluator = processing.TwistedProcessorGraphEvaluator(nested_pg, name='test_pipeline2')
+
+        class EvaluatorProxy(object):
+            def __init__(self, evaluator):
+                self.evaluator = evaluator
+
+            def process(self, baton):
+                return self.evaluator.process(baton)
+
+        nested_evaluator_proxy = EvaluatorProxy(nested_evaluator)
+
+        pg = processing.ProcessorGraph()
+        builder = pg.get_builder()
+
+        passthrough = util_processors.Passthrough()
+        incrementing = IncrementingProcessor()
+        run_pipeline = pipeline_processors.PipelineRunner(pipeline='test_pipeline2')
+
+        builder.add_processor(passthrough).add_processor(incrementing).add_processor(run_pipeline)
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg, name='test_pipeline')
+
+        evaluator.configure_processors(runtime_environment)
+        run_pipeline.pipeline_dependency.is_ready = True
+        run_pipeline.pipeline_dependency.on_resource_ready(nested_evaluator_proxy)
+
+        results, trace = yield evaluator.traced_process(dict(n=0))
+
+        self.assertEquals(results, [dict(n=2)])
+        self.assertTraceEquals(trace, [
+            dict(source=self, destination=passthrough, baton=dict(n=0)),
+            dict(source=passthrough, destination=incrementing, baton=dict(n=0)),
+            dict(source=incrementing, destination=run_pipeline, baton=dict(n=1)),
+            dict(source=nested_evaluator_proxy, destination=nested_incrementing, baton=dict(n=1)),
+            dict(source=nested_incrementing, destination=None, baton=dict(n=2)),
+            dict(source=run_pipeline, destination=None, baton=dict(n=2)),
+        ])
+
+    @defer.inlineCallbacks
+    def test_tracing_is_unaffected_by_simultaneous_processing(self):
+        """ If something else causes a baton to be processed in a pipeline, the tracing should
+        not be affected by it. """
+        pg = processing.ProcessorGraph()
+        builder = pg.get_builder()
+
+        passthrough = util_processors.Passthrough()
+        waiter = util_processors.Waiter(delay=0.1)
+        incrementing = IncrementingProcessor()
+
+        builder.add_processor(passthrough).add_processor(waiter).add_processor(incrementing)
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg, name='test_pipeline')
+
+        traced_process_deferred = evaluator.traced_process(dict(n=0))
+        # this will cause _process to be called with another stack
+        yield evaluator.process(dict(n=0))
+
+        results, trace = yield traced_process_deferred
+
+        self.assertEquals(results, [dict(n=1)])
+        self.assertTraceEquals(trace, [
+            dict(source=self, destination=passthrough, baton=dict(n=0)),
+            dict(source=passthrough, destination=waiter, baton=dict(n=0)),
+            dict(source=waiter, destination=incrementing, baton=dict(n=0)),
+            dict(source=incrementing, destination=None, baton=dict(n=1))
+        ])
+
+    @defer.inlineCallbacks
+    def test_tracing_across_asynchronous_pipelines(self):
+        """ Pipelines that process batons asynchronously should still be possible to trace. """
+        runtime_environment = processing.RuntimeEnvironment()
+        runtime_environment.configure()
+
+        def create_async_pipeline(pipeline_name, last=False):
+            pg = processing.ProcessorGraph()
+            waiter = util_processors.Waiter(0)
+            incrementer = IncrementingProcessor()
+            builder = pg.get_builder().add_processor(waiter).add_processor(incrementer)
+            if not last:
+                run_pipeline = pipeline_processors.PipelineRunner('test_pipeline')
+                builder.add_processor(run_pipeline)
+
+            evaluator = processing.TwistedProcessorGraphEvaluator(pg, name=pipeline_name)
+            evaluator.configure_processors(runtime_environment)
+
+            return evaluator
+
+        async_pipeline = create_async_pipeline('test_pipeline')
+        async_pipeline2 = create_async_pipeline('test_pipeline2')
+        async_pipeline3 = create_async_pipeline('test_pipeline3', last=True)
+
+        # hook up the run-pipeline processors (the last processor in the pipelines) to
+        # the next pipeline:
+        async_pipeline[-1].pipeline_dependency.is_ready = True
+        async_pipeline[-1].pipeline_dependency.on_resource_ready(async_pipeline2)
+
+        async_pipeline2[-1].pipeline_dependency.is_ready = True
+        async_pipeline2[-1].pipeline_dependency.on_resource_ready(async_pipeline3)
+
+
+        results, trace = yield async_pipeline.traced_process(dict(n=0))
+
+        self.assertEquals(results, [dict(n=3)])
+        self.assertTraceEquals(trace, [
+            # source -> pipeline 1
+            dict(source=self, destination=async_pipeline[0], baton=dict(n=0)),
+
+            # pipeline 1
+            dict(source=async_pipeline[0], destination=async_pipeline[1], baton=dict(n=0)),
+            dict(source=async_pipeline[1], destination=async_pipeline[2], baton=dict(n=1)),
+
+            # pipeline 1 -> pipeline 2
+            dict(source=async_pipeline[2], destination=async_pipeline2[0], baton=dict(n=1)),
+
+            # pipeline 2
+            dict(source=async_pipeline2[0], destination=async_pipeline2[1], baton=dict(n=1)),
+            dict(source=async_pipeline2[1], destination=async_pipeline2[2], baton=dict(n=2)),
+
+            # pipeline 2 -> pipeline 3
+            dict(source=async_pipeline2[2], destination=async_pipeline3[0], baton=dict(n=2)),
+
+            # pipeline 3
+            dict(source=async_pipeline3[0], destination=async_pipeline3[1], baton=dict(n=2)),
+
+            # pipeline 3 finishes
+            dict(source=async_pipeline3[1], destination=None, baton=dict(n=3)),
+            # which cascades to the pipeline runners finishing
+            dict(source=async_pipeline2[-1], destination=None, baton=dict(n=3)),
+            dict(source=async_pipeline[-1], destination=None, baton=dict(n=3))
+
+        ])
+
+    @defer.inlineCallbacks
+    def test_tracing_unhandled_exception(self):
+        """ Unhandled exceptions during tracing should end up in the trace results. """
+        runtime_environment = processing.RuntimeEnvironment()
+        runtime_environment.configure()
+
+        nested_pg = processing.ProcessorGraph()
+        nested_raiser = ExceptionRaisingProcessor()
+        nested_incrementing = util_processors.Passthrough()
+        nested_pg.get_builder().add_processor(nested_raiser).add_processor(nested_incrementing)
+        nested_evaluator = processing.TwistedProcessorGraphEvaluator(nested_pg, name='test_pipeline2')
+
+        pg = processing.ProcessorGraph()
+        builder = pg.get_builder()
+
+        run_pipeline = pipeline_processors.PipelineRunner(pipeline='test_pipeline2')
+
+        builder.add_processor(run_pipeline)
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg, name='test_pipeline')
+
+        evaluator.configure_processors(runtime_environment)
+        run_pipeline.pipeline_dependency.is_ready = True
+        run_pipeline.pipeline_dependency.on_resource_ready(nested_evaluator)
+
+        results, trace = yield evaluator.traced_process(dict(n=0))
+
+        self.assertIsInstance(results, failure.Failure)
+        self.assertEquals(results.type, StubException)
+        
+        self.assertTraceEquals(trace, [
+            dict(source=self, destination=run_pipeline, baton=dict(n=0)),
+            dict(source=run_pipeline, destination=nested_raiser, baton=dict(n=0)),
+            dict(source=nested_raiser, destination=run_pipeline, baton=dict(n=0), failure=dict(type=StubException, args=())),
+            dict(source=run_pipeline, destination=self, baton=dict(n=0), failure=dict(type=StubException, args=())),
+        ])
+
+    @defer.inlineCallbacks
+    def test_tracing_handled_exception(self):
+        """ Handled exceptions should not continuously show up in the trace results. """
+        runtime_environment = processing.RuntimeEnvironment()
+        runtime_environment.configure()
+
+        nested_pg = processing.ProcessorGraph()
+        nested_raiser = ExceptionRaisingProcessor()
+        nested_handler = util_processors.Passthrough()
+        nested_incrementing = IncrementingProcessor()
+        nested_pg.get_builder().add_processor(nested_raiser).add_processor(nested_handler, is_error_consumer=True).add_processor(nested_incrementing)
+        nested_evaluator = processing.TwistedProcessorGraphEvaluator(nested_pg, name='test_pipeline2')
+
+        pg = processing.ProcessorGraph()
+        builder = pg.get_builder()
+
+        run_pipeline = pipeline_processors.PipelineRunner(pipeline='test_pipeline2')
+
+        builder.add_processor(run_pipeline)
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg, name='test_pipeline')
+
+        evaluator.configure_processors(runtime_environment)
+        run_pipeline.pipeline_dependency.is_ready = True
+        run_pipeline.pipeline_dependency.on_resource_ready(nested_evaluator)
+
+        results, trace = yield evaluator.traced_process(dict(n=0))
+
+        self.assertEquals(results, [dict(n=1)])
+
+        self.assertTraceEquals(trace, [
+            dict(source=self, destination=run_pipeline, baton=dict(n=0)),
+            dict(source=run_pipeline, destination=nested_raiser, baton=dict(n=0)),
+            dict(source=nested_raiser, destination=nested_handler, baton=dict(n=0), failure=dict(type=StubException, args=()), is_error_consumer=True),
+            dict(source=nested_handler, destination=nested_incrementing, baton=dict(n=0)),
+            dict(source=nested_incrementing, destination=None, baton=dict(n=1)),
+            dict(source=run_pipeline, destination=None, baton=dict(n=1)),
+        ])
+
+    @defer.inlineCallbacks
+    def test_trace_consumer_raises(self):
+        pg = processing.ProcessorGraph()
+        builder = pg.get_builder()
+        passthrough = util_processors.Passthrough()
+        raiser = ExceptionRaisingProcessor()
+
+        builder.add_processor(passthrough).add_processor(raiser)
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg, name='test_pipeline')
+        results, trace = yield evaluator.traced_process(dict(n=0))
+
+        self.assertIsInstance(results, failure.Failure)
+        self.assertEquals(results.type, StubException)
+        self.assertTraceEquals(trace, [
+            dict(source=self, destination=passthrough, baton=dict(n=0)),
+            dict(source=passthrough, destination=raiser, baton=dict(n=0)),
+            dict(source=raiser, destination=passthrough, baton=dict(n=0), failure=dict(type=StubException, args=())),
+            dict(source=passthrough, destination=self, baton=dict(n=0), failure=dict(type=StubException, args=()))
+        ])
+
+    @defer.inlineCallbacks
+    def test_trace_error_consumer_raises(self):
+        pg = processing.ProcessorGraph()
+        builder = pg.get_builder()
+        passthrough = util_processors.Passthrough()
+        raiser = ExceptionRaisingProcessor()
+        error_raiser = ExceptionRaisingProcessor()
+
+        builder.add_processor(passthrough).add_processor(raiser).add_processor(error_raiser, is_error_consumer=True)
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg, name='test_pipeline')
+        results, trace = yield evaluator.traced_process(dict(n=0))
+
+        self.assertIsInstance(results, failure.Failure)
+        self.assertEquals(results.type, StubException)
+        self.assertTraceEquals(trace, [
+            dict(source=self, destination=passthrough, baton=dict(n=0)),
+            dict(source=passthrough, destination=raiser, baton=dict(n=0)),
+            dict(source=raiser, destination=error_raiser, baton=dict(n=0), failure=dict(type=StubException, args=()), is_error_consumer=True),
+            dict(source=error_raiser, destination=raiser, baton=dict(n=0), failure=dict(type=StubException, args=())),
+            dict(source=raiser, destination=passthrough, baton=dict(n=0), failure=dict(type=StubException, args=())),
+            dict(source=passthrough, destination=self, baton=dict(n=0), failure=dict(type=StubException, args=()))
+        ])

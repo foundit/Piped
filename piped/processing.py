@@ -10,13 +10,18 @@ import inspect
 import pprint
 import time
 import warnings
+import sys
+import uuid
+import json
 from copy import deepcopy
 
-from piped import exceptions, graph, log, util, conf, contrib, plugin, resource, dependencies, processors as piped_processors
 from twisted.application import service
 from twisted.internet import defer
 from twisted.plugin import IPlugin
+from twisted.python import failure
 from zope import interface
+
+from piped import exceptions, graph, log, util, conf, contrib, plugin, resource, dependencies, processors as piped_processors
 
 
 class IProcessor(IPlugin):
@@ -275,12 +280,103 @@ class ProcessorGraph(object):
         return '#%02XFF00' % int(255 * min(1.0, t / mean_time))
 
 
+class _ProcessTracer(object):
+    """ Traces batons as they move from processor to processor or processor to pipeline.
+
+    The :meth:`TwistedProcessorGraphEvaluator.traced_process` uses this class in order to create
+    a list of dicts that shows each of the steps a baton has actually taken through a processor graph.
+
+    All active tracers are invoked by :meth:`TwistedProcessorGraphEvaluator.process` and
+    :meth:`TwistedProcessorGraphEvaluator._process` whenever an entry may be added to the current
+    trace.
+
+    Before a trace entry is added to the list of traced batons, the process tracer searches through the
+    stack of frames in order to find its own trace token. The existence of the trace token in the
+    stack indicates that it is not part of any unrelated concurrent processing, and should be traced.
+
+    .. note:: Tracing a pipeline that also traces is currently not supported.
+    
+    """
+
+    def __init__(self, token_value):
+        self.traced = list()
+        self.token_value = token_value
+        self.token_name = 'trace_token'
+
+        self.sentinel = object()
+        self.encoder = util.BatonJSONEncoder()
+
+    def find_trace_token(self, frame):
+        """ Returns the value of the trace token if it is in the current stack of frames. """
+        if self._is_the_trace_token_in_the_current_stack(frame):
+            return self.token_value
+
+    def add_trace_entry(self, frame, kind, **state):
+        """ Add an entry to the trace if the correct trace token is in the current stack of frames. """
+        if not self._is_the_trace_token_in_the_current_stack(frame):
+            return
+
+        if state['source'] is None:
+            state['source'] = self._find_nearest_possible_source(frame)
+
+        # encode + load is used to get a copy of the current baton that is not affected by further processing
+        state['baton'] = json.loads(self.encoder.encode(state['baton']))
+
+        if kind in ('process_source', '_process_consumer'):
+            # these calls already have all information they need
+            pass
+        elif kind in ('process_source_raised', '_process_consumer_raised', '_process_error_consumer', '_process_error_consumer_raised'):
+            state['failure'] = self._get_trace_failure()
+
+            if kind == 'process_source_raised':
+                state['destination'] = self._find_nearest_possible_source(frame)
+
+        self._append_to_trace(**state)
+
+    def _find_nearest_possible_source(self, frame):
+        """ Returns the first 'self' variable in a stack of frames that is not part of piped.processing """
+        while frame:
+            possible_source = frame.f_locals.get('self', None)
+            if possible_source and not isinstance(possible_source, (TwistedProcessorGraphEvaluator, failure.Failure)):
+                return possible_source
+
+            frame = frame.f_back
+
+    def _get_trace_failure(self):
+        """ Returns a dict that semi-neatly describes a failure without using much memory. """
+        reason = failure.Failure()
+        return dict(
+            type = reason.type,
+            args = reason.value.args,
+            traceback = reason.getTraceback(elideFrameworkCode=True, detail='brief')
+        )
+
+    def _is_the_trace_token_in_the_current_stack(self, frame):
+        """ Looks for the trace token in a stack of frames. """
+        # Look for the sentinel in the stack.
+        while frame:
+            # It may be in the locals of the current frame
+            if frame.f_locals.get(self.token_name, self.sentinel) == self.token_value:
+                return True
+
+            frame = frame.f_back
+
+        return False
+
+    def _append_to_trace(self, **kw):
+        kw.setdefault('is_error_consumer', False)
+        kw.setdefault('failure', None)
+        self.traced.append(kw)
+
+
 class TwistedProcessorGraphEvaluator(object):
     """ A `ProcessorGraph` evaluator that does its processing in the Twisted thread.
 
     * In this processor graph, processors may use deferreds.
     * Processors used in the graph are assumed to be "Twisted-safe" (non-blocking).
     """
+
+    tracers = list()
 
     def __init__(self, processor_graph, name=None):
         self.processor_graph = processor_graph
@@ -290,8 +386,28 @@ class TwistedProcessorGraphEvaluator(object):
         for processor in self.processor_graph.consumers:
             self._connect_producer_to_consumers(processor)
 
+    @classmethod
+    def _add_trace_entry(cls, *a, **kw):
+        for tracer in cls.tracers:
+            frame = sys._getframe(1)
+            tracer.add_trace_entry(frame, *a, **kw)
+
+    @classmethod
+    def _find_trace_token(cls):
+        for tracer in cls.tracers:
+            frame = sys._getframe(1)
+            token = tracer.find_trace_token(frame)
+            if token:
+                return token
+
     @defer.inlineCallbacks
     def _process(self, processor, baton, results):
+        # Get a copy of the trace token so that it is easier to find by the tracer.
+        # This fixes a corner case where a processor performs some deep magic that would
+        # change the stack, making it hard (or even impossible) to locate the original
+        # trace token location.
+        trace_token = self._find_trace_token()
+
         try:
             # Profile the time each processor spends.
             s = time.time()
@@ -304,20 +420,31 @@ class TwistedProcessorGraphEvaluator(object):
 
             consumers = processor.get_consumers(processed_baton)
             for consumer in consumers:
-                yield self._process(consumer, processed_baton, results)
+                try:
+                    self._add_trace_entry('_process_consumer', source=processor, destination=consumer, baton=baton, time_spent=d)
+                    yield self._process(consumer, processed_baton, results)
+                except Exception:
+                    self._add_trace_entry('_process_consumer_raised', source=consumer, destination=processor, baton=baton)
+                    raise
 
             if not consumers:
                 # this means it is a sink, so we store the result we got from it.
                 # we cannot rely on the processor being in ``self.processor_graph.sinks``
                 # because the processor might have provided its own implementation
                 # of :func:`.base.Processor.get_consumers`.
+                self._add_trace_entry('_process_result', source=processor, destination=None, baton=processed_baton, time_spent=d)
                 results.append(processed_baton)
 
         except Exception:
             error_consumers = processor.get_error_consumers(baton)
             if error_consumers:
                 for error_consumer in error_consumers:
-                    yield self._process(error_consumer, baton, results)
+                    self._add_trace_entry('_process_error_consumer', source=processor, destination=error_consumer, baton=baton, is_error_consumer=True)
+                    try:
+                        yield self._process(error_consumer, baton, results)
+                    except Exception:
+                        self._add_trace_entry('_process_error_consumer_raised', source=error_consumer, destination=processor, baton=baton)
+                        raise
             else:
                 raise
 
@@ -325,6 +452,8 @@ class TwistedProcessorGraphEvaluator(object):
     def process(self, baton):
         """ Processes a baton asynchronously through the processor graph.
 
+        :param consume_errors: Whether to consume unhandled errors. Consumed
+            exceptions are appended to the list of results.
         :returns: A list of batons, one for each sink that was encountered
             during the processing of the baton.
         """
@@ -332,9 +461,32 @@ class TwistedProcessorGraphEvaluator(object):
         results = list()
 
         for source_processor in self.processor_graph.sources:
-            yield self._process(source_processor, baton, results)
+            try:
+                self._add_trace_entry('process_source', source=None, destination=source_processor, baton=baton)
+                yield self._process(source_processor, baton, results)
+            except Exception as e:
+                self._add_trace_entry('process_source_raised', source=source_processor, destination=None, baton=baton)
+                raise
 
         defer.returnValue(results)
+
+    @defer.inlineCallbacks
+    def traced_process(self, *a, **kw):
+        """ Traces and processes a baton asynchronously through a processor graph.
+
+        .. seealso:: :class:`_ProcessTracer` and :meth:`process`.
+        """
+        trace_token = uuid.uuid4().get_hex()
+        tracer = _ProcessTracer(token_value=trace_token)
+        try:
+            self.tracers.append(tracer)
+            results = yield self.process(*a, **kw)
+        except Exception:
+            results = failure.Failure()
+        finally:
+            self.tracers.remove(tracer)
+        defer.returnValue((results, tracer.traced))
+
 
     def configure_processors(self, runtime_environment):
         # give the processor a reference to its evaluator
@@ -367,13 +519,11 @@ class ProcessorGraphFactory(object):
 
     default_graph_evaluator = TwistedProcessorGraphEvaluator
 
+    def __init__(self, inline_pipeline_config=Ellipsis):
+        self.inline_pipeline_config = inline_pipeline_config
+
     def configure(self, runtime_environment):
-        # We're going to modify the configuration a bit, so deep-copy it as not to alter
-        # the original.
-
-        nested_config = deepcopy(runtime_environment.get_configuration_value('pipelines', dict()))
-
-        self.pipelines_configuration = self._flatten_pipelines_configuration(nested_config)
+        self.pipelines_configuration = self._get_pipeline_configuration(runtime_environment)
 
         if not self.pipelines_configuration:
             log.warn('Could not find any pipeline definitions in the configuration.')
@@ -384,6 +534,16 @@ class ProcessorGraphFactory(object):
         self._nest_chained_consumers()
         self._flatten_nested_pipelines()
         self._resolve_inheritance()
+
+    def _get_pipeline_configuration(self, runtime_environment):
+        if self.inline_pipeline_config is Ellipsis:
+            nested_config = runtime_environment.get_configuration_value('pipelines', dict())
+        else:
+            nested_config = self.inline_pipeline_config
+
+        # We're going to modify the configuration a bit, so deep-copy it as not to alter
+        # the original.
+        return self._flatten_pipelines_configuration(deepcopy(nested_config))
 
     def _is_processor_definition(self, maybe_configuration):
         # attempt to convert the configuration to a base format before checking if it is a valid configuration.
