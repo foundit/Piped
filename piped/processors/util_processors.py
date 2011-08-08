@@ -947,3 +947,42 @@ class RateReporter(base.Processor):
         if(rate != 0 or self.report_zero):
             log.info(log_string)
         return baton
+
+
+class Logger(base.Processor):
+    """ Logs a message with the configured log-level.
+
+    The message is either configured at *message*, or looked up in the
+    baton at *message_path*.
+
+    The message is logged with the configured *level*.
+
+    .. seealso:: :mod:`piped.log`
+    """
+    interface.classProvides(processing.IProcessor)
+    name = 'log'
+
+    def __init__(self, message=None, message_path=None, level='info', **kw):
+        super(Logger, self).__init__(**kw)
+
+        if (message is None) + (message_path is None) != 1:
+            raise exceptions.ConfigurationError('specify either message or message_path')
+
+        level = level.lower()
+        if level not in ('critical', 'debug', 'error', 'failure', 'info', 'warn'):
+            raise ValueError('Invalid log-level: "%s"' % level)
+        self.logger = getattr(log, level)
+
+        self.message = message
+        self.message_path = message_path
+
+    def process(self, baton):
+        if self.message_path:
+            message = util.dict_get_path(baton, self.message_path)
+        else:
+            message = self.message
+
+        if message:
+            self.logger(message)
+
+        return baton

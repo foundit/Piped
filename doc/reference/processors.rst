@@ -112,6 +112,13 @@ lambda-decider
 .. autoclass:: LambdaConditional
 
 
+.. _log:
+
+log
+^^^
+.. autoclass:: Logger
+
+
 .. _merge-with-dict:
 
 merge-with-dict

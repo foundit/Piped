@@ -1011,4 +1011,44 @@ class TestCounterIncrementer(unittest.TestCase):
         self.assertEquals(baton, dict(counter=-1))
 
 
+class TestLogger(unittest.TestCase):
+
+    def test_complaining_about_invalid_log_level(self):
+        self.assertRaises(ValueError, util_processors.Logger, message='log message', level='invalid')
+
+    def test_complaining_about_both_message_and_path(self):
+        self.assertRaises(exceptions.ConfigurationError, util_processors.Logger, message='', message_path='path')
+
+    def test_complaining_about_neither_message_nor_path(self):
+        self.assertRaises(exceptions.ConfigurationError, util_processors.Logger)
+
+    def test_logging_with_default_level(self):
+        with mock.patch('piped.processors.util_processors.log') as mocked_log:
+            logger = util_processors.Logger(message='log message')
+            logger.process(dict())
+
+        mocked_log.info.assert_called_once_with('log message')
+
+    def test_logging_with_custom_level(self):
+        with mock.patch('piped.processors.util_processors.log') as mocked_log:
+            logger = util_processors.Logger(message='error message', level='error')
+            logger.process(dict())
+
+        mocked_log.error.assert_called_once_with('error message')
+
+    def test_logging_with_path(self):
+        with mock.patch('piped.processors.util_processors.log') as mocked_log:
+            logger = util_processors.Logger(message_path='log.message')
+            logger.process(dict(log=dict(message='log message')))
+
+        mocked_log.info.assert_called_once_with('log message')
+
+    def test_not_logging_when_no_message(self):
+        with mock.patch('piped.processors.util_processors.log') as mocked_log:
+            logger = util_processors.Logger(message_path='log.message')
+            logger.process(dict())
+
+        self.assertEquals(mocked_log.method_calls, [])
+
+
 __doctests__ = [util_processors]
