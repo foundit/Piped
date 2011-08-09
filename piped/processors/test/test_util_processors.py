@@ -511,6 +511,30 @@ class TestStringFormatter(unittest.TestCase):
         self.assertRaises(exceptions.ConfigurationError, util_processors.StringFormatter, format='', format_path='')
 
 
+class TestStringPrefixer(unittest.TestCase):
+
+    def test_prefixing(self):
+        formatter = util_processors.StringPrefixer(prefix='foo: ', input_path='value')
+        baton = dict(value='bar')
+        formatter.process(baton)
+
+        self.assertEquals(baton, dict(value='foo: bar'))
+
+    def test_prefixing_when_value_is_not_string(self):
+        formatter = util_processors.StringPrefixer(prefix='foo: ', input_path='value')
+        baton = dict(value=42)
+        formatter.process(baton)
+
+        self.assertEquals(baton, dict(value='foo: 42'))
+
+    def test_prefixing_when_neither_value_nor_prefix_is_string(self):
+        formatter = util_processors.StringPrefixer(prefix=42, input_path='value')
+        baton = dict(value=42)
+        formatter.process(baton)
+
+        self.assertEquals(baton, dict(value='4242'))
+
+
 class StubException(exceptions.PipedError):
     pass
 

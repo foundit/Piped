@@ -721,6 +721,16 @@ class StringFormatter(base.InputOutputProcessor):
         return formatted
 
 
+class StringPrefixer(StringFormatter):
+    """ Prefixes the string at *input_path* with the *prefix*. """
+    interface.classProvides(processing.IProcessor)
+    name = 'prefix-string'
+
+    def __init__(self, prefix, **kw):
+        kw['format'] = unicode(prefix) + '{0}'
+        super(StringPrefixer, self).__init__(**kw)
+
+
 class PDBTraceSetter(base.Processor):
     """ Calls pdb.trace() whenever a baton is processed. """
     name = 'set-pdb-trace'

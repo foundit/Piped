@@ -133,6 +133,13 @@ passthrough
 .. autoclass:: Passthrough
 
 
+.. _prefix-string:
+
+prefix-string
+^^^^^^^^^^^^^
+.. autoclass:: StringPrefixer
+
+
 .. _pretty-print:
 
 pretty-print
