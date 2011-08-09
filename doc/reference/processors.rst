@@ -406,6 +406,29 @@ stop-tick-interval
 
 
 
+Trace processors
+----------------
+
+.. currentmodule:: piped.processors.trace_processors
+
+.. automodule:: piped.processors.trace_processors
+
+
+.. _diagram-trace:
+
+diagram-trace
+^^^^^^^^^^^^^
+.. autoclass:: DiagramTrace
+
+
+.. _render-trace:
+
+render-trace
+^^^^^^^^^^^^
+.. autoclass:: RenderTrace
+
+
+
 Web processors
 --------------
 

@@ -1,0 +1,386 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+        "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+    <head>
+        <title>Piped Tracing</title>
+
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+
+        <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.6.2/jquery.min.js"></script>
+        <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.8.14/jquery-ui.min.js"></script>
+
+        <link rel="stylesheet" href="http://ajax.googleapis.com/ajax/libs/jqueryui/1.8.14/themes/ui-lightness/jquery-ui.css" type="text/css" />
+
+        <style type="text/css">
+            .ui-widget{ font-size:0.8em; }
+            label {
+                vertical-align: top;
+                width: 100px;
+                display: block;
+                float: left;
+            }
+
+            .json-view li > span, .json-view ul > span {
+                -moz-border-radius: 5px;
+                -webkit-border-radius: 5px;
+                padding-right: 5px;
+                padding-left: 5px;
+            }
+
+            .json-view li {
+                margin-top: 1px;
+                padding-left: 20px;
+            }
+            .json-view ul {
+                list-style-type: none;
+                padding-left: 0;
+            }
+            .json-view ul.closed  > * {
+                display: none;
+            }
+            .json-view ul.closed > *:first-child {
+                display: block;
+            }
+            .typeName {
+                color: gray;
+            }
+            .changed {
+                background-color: #fcff7f;
+            }
+            .added {
+                background-color: #8bff7f;
+            }
+            .removed {
+                background-color: #fd7f7f;
+            }
+            .legend {
+                display: inline-block;
+                float: right;
+                padding: 1px;
+            }
+            .legend.expanded {
+                padding: 0;
+                border: 1px solid lightgray;
+            }
+            .legend > .show_hider {
+                float: right;
+                padding: 2px;
+            }
+            .legend ul {
+                clear: both;
+            }
+
+        </style>
+        <script type="text/javascript" charset="utf-8">
+            function startCompare(objA, objB) {
+                var baton = $('#baton');
+                baton.children().remove();
+
+                compareTree(objA, objB, "baton", baton);
+            }
+
+            function compareTree(a, b, name, baton_part) {
+                var typeA = $.type(a);
+                var typeB = $.type(b);
+
+                var typeSpanA = $('<span class="typeName"></span>');
+                typeSpanA.text('('+typeA+')');
+
+                var typeSpanB = $('<span class="typeName"></span>');
+                typeSpanB.text('('+typeB+')');
+
+                var aString = (typeA === "object" || typeA === "array") ? "" : String(a) + " ";
+                var bString = (typeB === "object" || typeB === "array") ? "" : String(b) + " ";
+
+                var leafNode = $('<span class="diffnode" />');
+                var name_part = $('<strong>'+name+': </strong>');
+
+                var a_part = $('<span/>');
+                a_part.text(aString);
+
+                var b_part = $('<span/>');
+                b_part.text(bString);
+
+                if (a === undefined) {
+                    leafNode.addClass("added");
+                    leafNode.append(name_part);
+                    leafNode.append(b_part);
+                    leafNode.append(typeSpanB);
+                }
+                else if (b === undefined) {
+                    leafNode.addClass("removed");
+                    leafNode.append(name_part);
+                    leafNode.append(a_part);
+                    leafNode.append(typeSpanA);
+                }
+                else if (typeA !== typeB || (typeA !== "object" && typeA !== "array" && a !== b)) {
+                    leafNode.addClass("changed");
+
+                    leafNode.append(name_part);
+                    leafNode.append(a_part);
+                    leafNode.append(typeSpanA);
+
+                    leafNode.append(' =&gt; ');
+
+                    leafNode.append(b_part);
+                    leafNode.append(typeSpanB);
+                }
+                else {
+                    leafNode.append(name_part);
+                    leafNode.append(a_part);
+                    leafNode.append(typeSpanA);
+                }
+
+                if (typeA === "object" || typeA === "array" || typeB === "object" || typeB === "array") {
+                    var keys = [];
+                    for (var i in a) {
+                        if (a.hasOwnProperty(i)) {
+                            keys.push(i);
+                        }
+                    }
+                    for (var i in b) {
+                        if (b.hasOwnProperty(i)) {
+                            keys.push(i);
+                        }
+                    }
+                    keys.sort();
+
+                    var listNode = $('<ul></ul>');
+                    listNode.append(leafNode);
+
+                    for (var i = 0; i < keys.length; i++) {
+                        if (keys[i] === keys[i-1]) {
+                            continue;
+                        }
+                        var li = $('<li></li>');
+                        listNode.append(li);
+
+                        compareTree(a && a[keys[i]], b && b[keys[i]], keys[i], li);
+                    }
+                    baton_part.append(listNode);
+                }
+                else {
+                    baton_part.append(leafNode);
+                }
+            }
+        </script>
+
+        <script type="text/javascript">
+            $(document).ready(function() {
+                var steps = %(steps)s;
+                var processors = %(processors)s;
+                var current_step_index = null;
+                var detail = $('#detail-dialog');
+
+                function isScrolledIntoView(elem) {
+                    var docViewTop = $(window).scrollTop();
+                    var docViewBottom = docViewTop + $(window).height();
+
+                    var elemTop = $(elem).offset().top;
+                    var elemBottom = elemTop + $(elem).height();
+
+                    var horizontallyInView = ((elemTop >= docViewTop && elemTop <= docViewBottom) && (elemBottom >= docViewTop && elemBottom <= docViewBottom));
+
+                    var docViewLeft = $(window).scrollLeft();
+                    var docViewRight = docViewLeft + $(window).width();
+
+                    var elemLeft = $(elem).offset().left;
+                    var elemRight = elemLeft + $(elem).width();
+
+                    var verticallyInView = ((elemLeft >= docViewLeft && elemLeft <= docViewRight) && (elemRight >= docViewLeft && elemRight <= docViewRight));
+
+                    return horizontallyInView && verticallyInView;
+                }
+
+                function updateDetailElement(name, element, current, previous) {
+                    previous = previous || undefined;
+                    var was_closed = element.children().size() == 0 || element.children('.closed').size() > 0;
+                    element.children().remove();
+
+                    // if we have nothing to show, hide the element.
+                    if(current == previous && (current == null || current == undefined)) {
+                        return;
+                    }
+                    compareTree(previous, current, name, element);
+                    if(was_closed && name != 'baton') {
+                        element.children().addClass('closed');
+                    }
+                }
+
+                function showStep(index, open_dialog) {
+                    var previous_edge = $('#baton_'+(current_step_index-1)+' text');
+                    var previous_path = $('#baton_'+(current_step_index-1)+' path');
+
+                    index = Math.max(1, index);
+                    index = Math.min(steps.length, index);
+                    current_step_index = index;
+
+                    step = steps[index-1];
+                    var previous_step = steps[Math.max(0, index-2)];
+                    var edge = $('#baton_'+(index-1)+' text');
+                    var path = $('#baton_'+(index-1)+' path');
+
+                    previous_edge.attr('stroke', '');
+                    previous_edge.attr('font-size', 14);
+                    edge.attr('stroke', 'black');
+                    edge.attr('font-size', 20);
+
+                    previous_path.attr('stroke-width', 1);
+                    path.attr('stroke-width', 3);
+
+                    updateDetailElement('source', $('#source'), processors[step.source]);
+                    updateDetailElement('destination', $('#destination'), processors[step.destination]);
+                    updateDetailElement('failure', $('#failure'), step.failure, previous_step.failure);
+                    updateDetailElement('baton', $('#baton'), step.baton, previous_step.baton);
+
+                    $('.diffnode').click(function() {
+                        parent = $(this).parent();
+                        parent.toggleClass('closed');
+                    });
+
+                    $('.diffnode').each(function(index, element) {
+                        var el = $(element);
+                        if(el.siblings().size() > 0) {
+                            el.css('cursor', 'pointer');
+                        }
+                    });
+
+                    detail.dialog('option', 'title', 'Step '+index);
+
+                    var showDialogIfNecessary = function() {
+                        if (open_dialog || detail.dialog('isOpen')) {
+                            if(!isScrolledIntoView(detail.parent())) { detail.dialog('close') }
+                            detail.dialog('open');
+                        }
+                    };
+
+                    if(isScrolledIntoView(edge)) {
+                        showDialogIfNecessary();
+                    } else {
+                        $('body').animate(
+                            {
+                                scrollTop: edge.offset().top - $(window).height()/2,
+                                scrollLeft: edge.offset().left - $(window).width()/2
+                            },
+                            {
+                                //duration: 'fast',
+                                complete: function() {
+                                    showDialogIfNecessary();
+                                }
+                            }
+                        );
+                    }
+                }
+
+                $('.edge').click(function() {
+                    var element = $(this).find('text');
+                    showStep(parseInt(element.text()), true);
+                }).css('cursor', 'pointer');
+
+                var showPrevious = function() {
+                    showStep(current_step_index-1);
+                };
+
+                $(document).keydown(function(e) {
+                    if($(document.activeElement).is('input')) {
+                        /* if the element that currently has focus is an input element, don't interrupt the user. */
+                        return;
+                    }
+                    
+                    if(e.keyCode == 110 || e.keyCode == 78) { // "n"
+                        showNext();
+                    } else if (e.keyCode == 112 || e.keyCode == 80) { // "p"
+                        showPrevious();
+                    } else if (e.keyCode == 27) { // "escape"
+                        detail.dialog('close');
+                    }
+                });
+
+                var showNext = function() {
+                    showStep(current_step_index+1);
+                };
+
+                detail.dialog({
+                    autoOpen: false,
+                    width: 400,
+                    resizable: 'sw, se',
+                    position: ['right', 'top'],
+                    buttons: {
+                        'prev': showPrevious,
+                        'next': showNext
+                    }
+                });
+
+                // start by showing the first step if we have anything to show
+                if(steps.length > 0) {
+                    setTimeout(function() { showStep(1, true) }, 0);
+                }
+
+                $('.show_hider').click(function() {
+                    $(this).siblings().toggle();
+                    $(this).parent().toggleClass('expanded')
+                });
+
+                /* create a smaller button */
+                $('.show_hider').button().find('*').css('padding', 0).css('margin', 0).css('font-size', '0.5em');
+
+                $('input:submit').button();
+            });
+        </script>
+    </head>
+    <body>
+        <form action="">
+            <div>
+                <label for="pipeline_select">Pipeline:</label>
+                <input name="pipeline" id="pipeline_select">
+                <script type="text/javascript">
+                    var select = $('#pipeline_select');
+                    var pipeline_names = %(pipeline_names)s;
+                    select.autocomplete({
+                        minLength: 0,
+                        delay: 0,
+                        source: pipeline_names
+                    }).focus(function() {
+                        // start searching whenever we receive focus :)
+                        select.autocomplete('search', $(this).val());
+                    });
+                </script>
+            </div>
+            <div>
+                <label for="baton_raw">Baton:</label>
+                <textarea name="baton" id="baton_raw" cols="80" rows="4"></textarea>
+            </div>
+            <input type="submit" value="Trace" />
+        </form>
+        <div class="graph">
+            %(dot)s
+        </div>
+        <div id="detail-dialog">
+            <div id="source" class="json-view"></div>
+            <div id="baton" class="json-view"></div>
+            <div id="failure" class="json-view"></div>
+            <div id="destination" class="json-view"></div>
+            <div class="legend">
+                <span class="show_hider">Show/hide legend</span>
+                <div style="display: none">
+                    <ul>
+                        <li><span style="color: gray">Gray</span> and <span style="color: pink">pink</span> <span style="border: 1px dotted black">dotted nodes and edges</span> are processors and paths the baton did not use.</li>
+                        <li><span style="border: 1px dashed pink"><span style="color: pink">Pink</span> dashed lines</span> are exceptions that are bubbling up the stack.</li>
+                        <li><span style="border: 1px dashed red">Dashed <span style="color: red">red</span> lines</span> and <span style="color: red">step numbers</span> indicate exceptions that are raised and handled.</li>
+                        <li>Diamond shaped (&diams;) nodes are return values from pipelines.</li>
+                        <li>A color gradient from <span style="color: green">green</span> -> <span style="color: red">red</span> indicate the relative time used by the previous processor.</li>
+                        <li>Mouse-over the colored lines/step number to see the amount of time used.</li>
+                        <li>Black edges indicate steps that have no associated timing information</li>
+                        <li>Keyboard shortcuts:
+                            <ul>
+                                <li>"n" for next</li>
+                                <li>"p" for previous</li>
+                                <li>"escape" closes the step viewer. Click on a step number to re-open it.</li>
+                            </ul>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </body>
+</html>
