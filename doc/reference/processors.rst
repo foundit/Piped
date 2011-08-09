@@ -129,7 +129,7 @@ merge-with-dict
 .. _passthrough:
 
 passthrough
-^^^^^^^^^^^^^^
+^^^^^^^^^^^
 .. autoclass:: Passthrough
 
 
@@ -143,9 +143,8 @@ prefix-string
 .. _pretty-print:
 
 pretty-print
-^^^^^^^^^^^^^^
+^^^^^^^^^^^^
 .. autoclass:: PrettyPrint
-
 
 .. _print-failure-traceback:
 
@@ -157,7 +156,7 @@ print-failure-traceback
 .. _print-nth:
 
 print-nth
-^^^^^^^^^^^^^^
+^^^^^^^^^
 .. autoclass:: NthPrinter
 
 
@@ -171,21 +170,21 @@ raise-exception
 .. _remap:
 
 remap
-^^^^^^^^^^^^^^^
+^^^^^
 .. autoclass:: RemapProcessor
 
 
 .. _set-value:
 
 set-value
-^^^^^^^^^^^^^^^
+^^^^^^^^^
 .. autoclass:: ValueSetter
 
 
 .. _set-values:
 
 set-values
-^^^^^^^^^^^^^^^
+^^^^^^^^^^
 .. autoclass:: MappingSetter
 
 
@@ -199,14 +198,14 @@ shutdown
 .. _stop:
 
 stop
-^^^^^^^^^^^^^^
+^^^^
 .. autoclass:: Stopper
 
 
 .. _wait:
 
 wait
-^^^^^^^^^^^^^^
+^^^^
 .. autoclass:: Waiter
 
 
@@ -227,14 +226,14 @@ Datetime processors
 .. _format-date:
 
 format-date
-^^^^^^^^^^^^^^
+^^^^^^^^^^^
 .. autoclass:: DateFormatter
 
 
 .. _parse-date:
 
 parse-date
-^^^^^^^^^^^^^^
+^^^^^^^^^^
 .. autoclass:: DateTimeParser
 
 
