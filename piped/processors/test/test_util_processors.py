@@ -511,6 +511,30 @@ class TestStringFormatter(unittest.TestCase):
         self.assertRaises(exceptions.ConfigurationError, util_processors.StringFormatter, format='', format_path='')
 
 
+class TestStringPrefixer(unittest.TestCase):
+
+    def test_prefixing(self):
+        formatter = util_processors.StringPrefixer(prefix='foo: ', input_path='value')
+        baton = dict(value='bar')
+        formatter.process(baton)
+
+        self.assertEquals(baton, dict(value='foo: bar'))
+
+    def test_prefixing_when_value_is_not_string(self):
+        formatter = util_processors.StringPrefixer(prefix='foo: ', input_path='value')
+        baton = dict(value=42)
+        formatter.process(baton)
+
+        self.assertEquals(baton, dict(value='foo: 42'))
+
+    def test_prefixing_when_neither_value_nor_prefix_is_string(self):
+        formatter = util_processors.StringPrefixer(prefix=42, input_path='value')
+        baton = dict(value=42)
+        formatter.process(baton)
+
+        self.assertEquals(baton, dict(value='4242'))
+
+
 class StubException(exceptions.PipedError):
     pass
 
@@ -1009,6 +1033,46 @@ class TestCounterIncrementer(unittest.TestCase):
         self.assertEquals(baton, dict(counter=0))
         processor.process(baton)
         self.assertEquals(baton, dict(counter=-1))
+
+
+class TestLogger(unittest.TestCase):
+
+    def test_complaining_about_invalid_log_level(self):
+        self.assertRaises(ValueError, util_processors.Logger, message='log message', level='invalid')
+
+    def test_complaining_about_both_message_and_path(self):
+        self.assertRaises(exceptions.ConfigurationError, util_processors.Logger, message='', message_path='path')
+
+    def test_complaining_about_neither_message_nor_path(self):
+        self.assertRaises(exceptions.ConfigurationError, util_processors.Logger)
+
+    def test_logging_with_default_level(self):
+        with mock.patch('piped.processors.util_processors.log') as mocked_log:
+            logger = util_processors.Logger(message='log message')
+            logger.process(dict())
+
+        mocked_log.info.assert_called_once_with('log message')
+
+    def test_logging_with_custom_level(self):
+        with mock.patch('piped.processors.util_processors.log') as mocked_log:
+            logger = util_processors.Logger(message='error message', level='error')
+            logger.process(dict())
+
+        mocked_log.error.assert_called_once_with('error message')
+
+    def test_logging_with_path(self):
+        with mock.patch('piped.processors.util_processors.log') as mocked_log:
+            logger = util_processors.Logger(message_path='log.message')
+            logger.process(dict(log=dict(message='log message')))
+
+        mocked_log.info.assert_called_once_with('log message')
+
+    def test_not_logging_when_no_message(self):
+        with mock.patch('piped.processors.util_processors.log') as mocked_log:
+            logger = util_processors.Logger(message_path='log.message')
+            logger.process(dict())
+
+        self.assertEquals(mocked_log.method_calls, [])
 
 
 __doctests__ = [util_processors]
