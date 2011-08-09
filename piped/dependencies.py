@@ -469,6 +469,10 @@ class DependencyManager(object):
                 return False
         return True
 
+    def get_dependencies_of(self, dependency):
+        dependency = self.as_dependency(dependency)
+        return self._dependency_graph.pred[dependency].keys()
+
     def resolve_initial_states(self):
         """ Resolve the initial states of any unresolved nodes in the dependency graph.
 
