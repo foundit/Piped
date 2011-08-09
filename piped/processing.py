@@ -195,6 +195,9 @@ class ProcessorGraph(object):
         """ Iterates over all the processors in the pipeline. """
         return iter(self.consumers)
 
+    def __getitem__(self, item):
+        return self.consumers.nodes()[item]
+
     def get_all_processors_preceding(self, processor):
         # TODO: Refactor f.q.querygraph to be based on a general
         # graph-structure we then reuse here..
@@ -353,6 +356,9 @@ class TwistedProcessorGraphEvaluator(object):
 
     def __iter__(self):
         return iter(self.processor_graph)
+
+    def __getitem__(self, item):
+        return self.processor_graph[item]
 
 
 class ProcessorGraphFactory(object):

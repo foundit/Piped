@@ -1716,6 +1716,22 @@ class TestConditional(ProcessorGraphTest):
 
 
 class TwistedEvaluatorTest(ProcessorGraphTest):
+
+    def test_processor_indices(self):
+        pg = processing.ProcessorGraph()
+        builder = pg.get_builder()
+        passthrough = util_processors.Passthrough()
+        incrementing = IncrementingProcessor()
+        waiter = util_processors.Waiter(0)
+
+        builder.add_processor(passthrough).add_processor(incrementing)
+        builder.add_processor(waiter)
+
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg, name='test_pipeline')
+
+        self.assertEquals([evaluator[i] for i in range(3)], [passthrough, incrementing, waiter])
+        self.assertEquals([evaluator[-i] for i in range(1, 4)], [waiter, incrementing, passthrough])
+
     @defer.inlineCallbacks
     def test_just_one_processor(self):
         l = []
