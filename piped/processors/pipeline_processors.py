@@ -1,13 +1,14 @@
-# -*- test-case-name: piped.processing.test.test_utilprocessors -*-
+# -*- test-case-name: piped.processing.test.test_pipeline_processors -*-
 
 # Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
 
 """ Processors that work with pipelines --- i.e. invoking or diagramming them. """
 from twisted.internet import defer
+from twisted.python import failure
 from zope import interface
 
-from piped import util, processing
+from piped import util, processing, exceptions, log
 from piped.processors import base
 
 
@@ -87,41 +88,123 @@ class ScatterGatherer(base.Processor):
 
 
 class PipelineRunner(base.InputOutputProcessor):
-    """" Processes a baton in another pipeline. """
+    """" Processes a baton in another pipeline.
+
+    If a ``pipeline_path`` is specified, the processor creates a temporary dependency during
+    processing and takes care of removing this dependency afterwards. If this processor is the
+    first consumer of the pipeline, exceptions that would otherwise be raised during startup may
+    be raised during this processors processing.
+
+    Note that the pipeline is only requested as a dependency, and not deconstructed after use. This
+    means that unused resources may remain in process afterwards.
+    """
     interface.classProvides(processing.IProcessor)
     name = 'run-pipeline'
 
-    def __init__(self, pipeline, only_last_result=True, *a, **kw):
+    def __init__(self, pipeline=Ellipsis, pipeline_path=Ellipsis, only_last_result=True, trace_path=None, *a, **kw):
         """
         :param pipeline: The name of the pipeline to process the baton in. A name
             may either be absolute or relative. Relative names start with a ``.``,
             and each dot means that the named pipeline is one level higher up. To
             reference a sibling pipeline, start with a single dot.
+        :param pipeline_path: The path to where the pipeline name in the baton. The pipeline
+            name in the baton is resolved in the same way as the ``pipeline`` argument.
+            Using both a ``pipeline`` and ``pipeline_path`` argument to this processor results
+            in a configuration error.
         :param only_last_result: Whether to use only the last result. Since
             a pipeline may have several sinks, the results from processing will always
             be a `list`, and this option discards any output from any baton except
             the last.
+        :param trace_path: Path to store tracing results to. Cannot be an empty string.
+            Defaults to ``None``, which means no tracing.
         """
         super(PipelineRunner, self).__init__(*a, **kw)
 
         self.pipeline_name = pipeline
+        self.pipeline_path = pipeline_path
         self.only_last_result = only_last_result
 
+        self.trace_path = trace_path
+
+        self._fail_if_trace_path_is_invalid(trace_path)
+        self._fail_if_pipeline_is_invalid()
+
+        if self.pipeline_path is not Ellipsis:
+            self._process_input = self.process_dynamic_input
+        else:
+            self._process_input = self.process_static_input
+
+    def _fail_if_trace_path_is_invalid(self, trace_path):
+        if trace_path == '':
+            e_msg = 'Invalid trace path: %r' % trace_path
+            detail = ('The trace path cannot be the empty string, since replacing the baton with the '
+                      'trace results are not supported at this time.')
+
+            raise exceptions.ConfigurationError(e_msg, detail)
+
+    def _fail_if_pipeline_is_invalid(self):
+        if (self.pipeline_name is Ellipsis) + (self.pipeline_path is Ellipsis) != 1:
+            e_msg = 'Invalid processor configuration.'
+            detail = 'Either "pipeline" or "pipeline_path" must be specified, not both.'
+
+            raise exceptions.ConfigurationError(e_msg, detail)
+
     def configure(self, runtime_environment):
-        dependency_manager = runtime_environment.dependency_manager
+        self.dependency_manager = runtime_environment.dependency_manager
+
+        if self.pipeline_path is not Ellipsis:
+            return
 
         # the pipeline_name may be sibling notation, so resolve it to a fully qualified pipeline name
         pipeline_name = util.resolve_sibling_import(self.pipeline_name, self.evaluator.name)
 
-        self.pipeline_dependency = dependency_manager.as_dependency(dict(provider='pipeline.%s' % pipeline_name))
-        dependency_manager.add_dependency(self, self.pipeline_dependency)
+        self.pipeline_dependency = self.dependency_manager.as_dependency(dict(provider='pipeline.%s' % pipeline_name))
+        self.dependency_manager.add_dependency(self, self.pipeline_dependency)
 
     @defer.inlineCallbacks
     def process_input(self, input, baton):
+        results = yield self._process_input(input, baton)
+        defer.returnValue(results)
+
+    @defer.inlineCallbacks
+    def process_static_input(self, input, baton):
         pipeline = yield self.pipeline_dependency.wait_for_resource()
 
-        results = yield pipeline.process(input)
-        if self.only_last_result:
+        results = yield self.process_input_using_pipeline(input, baton, pipeline)
+
+        defer.returnValue(results)
+
+    @defer.inlineCallbacks
+    def process_dynamic_input(self, input, baton):
+        pipeline_name = util.dict_get_path(baton, self.pipeline_path)
+        # the pipeline_name may be sibling notation, so resolve it to a fully qualified pipeline name
+        pipeline_name = util.resolve_sibling_import(pipeline_name, self.evaluator.name)
+
+        dependency = self.dependency_manager.add_dependency(self, dict(provider='pipeline.%s'%pipeline_name))
+
+        try:
+            self.dependency_manager.resolve_initial_states()
+            pipeline = yield dependency.wait_for_resource()
+
+            results = yield self.process_input_using_pipeline(input, baton, pipeline)
+
+            defer.returnValue(results)
+
+        finally:
+            # while this is sufficient to remove the dependency between ourselves
+            # and the target pipeline, it does not currently deconstruct the pipeline
+            # and its resources even if it is no longer needed.
+            self.dependency_manager.remove_dependency(self, dependency)
+
+    @defer.inlineCallbacks
+    def process_input_using_pipeline(self, input, baton, pipeline):
+        if self.trace_path:
+            results, trace = yield pipeline.traced_process(input)
+            util.dict_set_path(baton, self.trace_path, trace)
+        else:
+            results = yield pipeline.process(input)
+
+        if hasattr(results, '__getitem__') and self.only_last_result:
             results = results[-1]
 
         defer.returnValue(results)
@@ -129,7 +212,7 @@ class PipelineRunner(base.InputOutputProcessor):
     @property
     def node_name(self):
         # Escape the \, as we want Dot to see "\n"
-        return 'run-pipeline:\\n' + self.pipeline_name
+        return 'run-pipeline:\\n%s' % self.pipeline_name
 
 
 class ConditionalPipelineRunner(PipelineRunner):

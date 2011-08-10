@@ -894,7 +894,7 @@ class MappingSetter(base.Processor):
     name = 'set-values'
 
     def __init__(self, mapping, path_prefix='', **kw):
-        super(MappingSetter, self).__init__(self, **kw)
+        super(MappingSetter, self).__init__(**kw)
         self.mapping = mapping
         self.path_prefix = path_prefix
 
@@ -911,7 +911,7 @@ class ValueSetter(base.Processor):
     name = 'set-value'
 
     def __init__(self, path, value, **kw):
-        super(ValueSetter, self).__init__(self, **kw)
+        super(ValueSetter, self).__init__(**kw)
         self.path = path
         self.value = value
 

@@ -28,7 +28,7 @@ class Processor(object):
 
     #: list of strings identifying keywords processes of this class provides for the pipeline.
     provides = list()
-    #: list of string identifying keywords procesess of this class depends on from the pipeline.
+    #: list of string identifying keywords processes of this class depends on from the pipeline.
     depends_on = list()
 
     def __init__(self, node_name=None):
@@ -39,11 +39,16 @@ class Processor(object):
         self._node_name = node_name
 
     @property
+    def instance_depends_on(self):
+        return list()
+
+    @property
+    def instance_provides(self):
+        return list()
+    
+    @property
     def node_name(self):
         return self._node_name or self.name
-
-        self.instance_provides = list()
-        self.instance_depends_on = list()
 
     @abc.abstractmethod
     def process(self, baton):
@@ -332,16 +337,18 @@ class MappingProcessor(Processor):
         for map_entry in self.mapping:
             input_path = map_entry['input_path']
             output_path = map_entry['output_path']
+            additional_kwargs = map_entry['additional_kwargs']
 
-            input = util.dict_get_path(baton, input_path, Ellipsis)
+            input = self.get_input(baton, input_path, **additional_kwargs)
 
             if input is Ellipsis:
                 if self.skip_if_nonexistent:
                     continue
+                # TODO: per-entry fallback
                 input = self.input_fallback
 
             output = yield self.process_mapping(input=input, input_path=input_path, output_path=output_path,
-                                                baton=baton, **map_entry['additional_kwargs'])
+                                                baton=baton, **additional_kwargs)
 
             if output_path == '':
                 baton = output
@@ -350,9 +357,17 @@ class MappingProcessor(Processor):
             if output_path is None:
                 continue # discard the output
 
-            util.dict_set_path(baton, output_path, output)
+            self.set_output(baton, output, output_path, **additional_kwargs)
 
         defer.returnValue(baton)
+
+    def get_input(self, baton, input_path, **kwargs):
+        """ Return the appropriate input for the given input_path and baton. """
+        return util.dict_get_path(baton, input_path, Ellipsis)
+
+    def set_output(self, baton, output, output_path, **kwargs):
+        """ Set the output. """
+        util.dict_set_path(baton, output_path, output)
 
     @abc.abstractmethod
     def process_mapping(self, input, input_path, output_path, baton, **additional_kwargs):

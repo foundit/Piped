@@ -400,4 +400,16 @@ class TestPullFromQueueAndProcessInPipeline(unittest.TestCase):
         puller.stopService()
 
 
+class TestBatonJSONEncoder(unittest.TestCase):
+
+    def test_encoding_unserializable(self):
+        encoder = util.BatonJSONEncoder()
+        obj = object()
+        data = dict(object=obj, foo=[1,2,3])
+
+        encoded = encoder.encode(data)
+        # the object isn't json-serializable and should be repr'ed.
+        self.assertEquals(encoded, '{"foo": [1, 2, 3], "object": "%r"}' % obj)
+
+
 __doctests__ = [util]

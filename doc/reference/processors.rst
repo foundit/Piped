@@ -216,6 +216,27 @@ wrap-coroutine
 .. autoclass:: CoroutineWrapper
 
 
+Context processors
+------------------
+
+.. currentmodule:: piped.processors.context_processors
+
+.. seealso:: :ref:`provider-contexts`
+
+.. _fetch-context:
+
+fetch-context
+^^^^^^^^^^^^^
+.. autoclass:: ContextFetcher
+
+
+.. _fetch-persisted-context:
+
+fetch-persisted-context
+^^^^^^^^^^^^^^^^^^^^^^^
+.. autoclass:: PersistedContextFetcher
+
+
 
 Datetime processors
 -------------------
@@ -406,6 +427,29 @@ stop-tick-interval
 
 
 
+Trace processors
+----------------
+
+.. currentmodule:: piped.processors.trace_processors
+
+.. automodule:: piped.processors.trace_processors
+
+
+.. _diagram-trace:
+
+diagram-trace
+^^^^^^^^^^^^^
+.. autoclass:: DiagramTrace
+
+
+.. _render-trace:
+
+render-trace
+^^^^^^^^^^^^
+.. autoclass:: RenderTrace
+
+
+
 Web processors
 --------------
 
@@ -417,6 +461,13 @@ Web processors
 determine-ip
 ^^^^^^^^^^^^^^
 .. autoclass:: IPDeterminer
+
+
+.. _extract-web-request-arguments:
+
+extract-web-request-arguments
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. autoclass:: ExtractRequestArguments
 
 
 .. _set-http-expires:

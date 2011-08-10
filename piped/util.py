@@ -503,6 +503,16 @@ class PipedJSONEncoder(json.JSONEncoder):
         return super(PipedJSONEncoder, self).default(obj)
 
 
+class BatonJSONEncoder(PipedJSONEncoder):
+    """ A custom JSON encoder that falls back to repr() if an exception is raised
+    during JSON encoding. """
+    def default(self, obj):
+        try:
+            return super(BatonJSONEncoder, self).default(obj)
+        except TypeError as te:
+            return repr(obj)
+
+
 class PullFromQueueAndProcessInPipeline(service.Service):
     _waiting_on_queue = None
     _waiting_on_pipeline = None
