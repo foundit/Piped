@@ -207,7 +207,7 @@ class RenderTrace(base.InputOutputProcessor):
         trace = input or list()
         pipeline_provider = yield self.pipeline_provider_dependency.wait_for_resource()
 
-        dot = util.dict_get_path(baton, self.svg_path)
+        dot = util.dict_get_path(baton, self.svg_path, '')
 
         steps = list()
         processors = dict()
