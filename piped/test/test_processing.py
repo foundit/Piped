@@ -1710,10 +1710,10 @@ class TestConditional(ProcessorGraphTest):
         evaluator = processing.TwistedProcessorGraphEvaluator(pg)
         evaluator.configure_processors(processing.RuntimeEnvironment())
         yield evaluator.process('uPpEr')
-        self.assertEquals(l, ['REPPU'])
+        self.assertEquals(l, ['REPPU', 'rEpPu'])
         del l[:]
         yield evaluator.process('lOwEr')
-        self.assertEquals(l, ['rewol'])
+        self.assertEquals(l, ['rewol', 'rEwOl'])
 
 
 class TwistedEvaluatorTest(ProcessorGraphTest):

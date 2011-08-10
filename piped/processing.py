@@ -163,17 +163,13 @@ class ProcessorGraph(object):
         if not isinstance(consumer, basestring):
             self._ensure_processor_has_id(consumer)
         if producer is self.entry_point:
-            # It's the sentinel we made above, which means that the
-            # consumer will not (necessarily) consume anything --- so
-            # far it'll be a source.
+            # It's the sentinel we made above, so it'll be a source.
             self.consumers.add_node(consumer)
             if not consumer in self.sources:
                 self.sources.append(consumer)
         else:
             if not isinstance(producer, basestring):
                 self._ensure_processor_has_id(producer)
-            if consumer in self.sources:
-                self.sources.remove(consumer)
             self.consumers.add_edge(producer, consumer, dict(is_error_consumer=is_error_consumer))
 
         if producer in self.sinks and not is_error_consumer:
@@ -1040,12 +1036,7 @@ class ProcessorGraphFactory(object):
         pg.sinks = [sink for sink in pg.sinks if not isinstance(sink, basestring)]
 
         # Since previously "disconnected" processors can have been
-        # connected, check that the sources and sinks *still* are
-        # sources and sinks.
-        for i, node in enumerate(pg.sources):
-            # a source should not have any predecessors
-            if pg.consumers.predecessors(node):
-                del pg.sources[i]
+        # connected, check that the sinks *still* are sinks.
         for i, node in enumerate(pg.sinks):
             # ... and a sink should not have any consumers
             if pg.consumers.successors(node):
