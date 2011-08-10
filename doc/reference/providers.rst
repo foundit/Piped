@@ -5,12 +5,18 @@ Available providers
 Providers are classes that add functionality to a Piped process.
 
 
+.. _provider-contexts:
+
 contexts
 --------
 
 .. module:: piped.providers.context_provider
 
 .. autoclass:: ContextProvider
+    :members:
+
+
+.. autoclass:: PersistedContextProvider
     :members:
 
 

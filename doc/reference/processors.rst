@@ -216,6 +216,27 @@ wrap-coroutine
 .. autoclass:: CoroutineWrapper
 
 
+Context processors
+------------------
+
+.. currentmodule:: piped.processors.context_processors
+
+.. seealso:: :ref:`provider-contexts`
+
+.. _fetch-context:
+
+fetch-context
+^^^^^^^^^^^^^
+.. autoclass:: ContextFetcher
+
+
+.. _fetch-persisted-context:
+
+fetch-persisted-context
+^^^^^^^^^^^^^^^^^^^^^^^
+.. autoclass:: PersistedContextFetcher
+
+
 
 Datetime processors
 -------------------
