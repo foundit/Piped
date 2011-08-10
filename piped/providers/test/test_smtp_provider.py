@@ -35,7 +35,7 @@ class FakePipeline(object):
 
 
 class SMTPServerTestBase(unittest.TestCase):
-    timeout = 2
+    timeout = 20
 
     def setUp(self):
         self.runtime_environment = processing.RuntimeEnvironment()
