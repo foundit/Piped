@@ -1,0 +1,37 @@
+pipelines:
+    test:
+        - set-values:
+            mapping:
+                foo: this is foo
+                test: initial value
+                bar: hello from bar
+
+        - pretty-print
+
+        - run-pipeline:
+            pipeline: test_error
+
+        - pretty-print
+
+    test_error:
+        chained_consumers:
+            - set-value:
+                path: test
+                value: hi there
+
+            - raise-exception
+
+            - pretty-print
+
+            - raise-exception:
+                error_consumers:
+                    - passthrough
+            - passthrough
+
+        chained_error_consumers:
+            - passthrough
+
+            - exec-code:
+                code: |
+                    del baton['foo']
+                    return baton
