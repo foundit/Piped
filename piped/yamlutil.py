@@ -124,3 +124,19 @@ class YAMLAlias(object):
 
 yaml.add_representer(Alias, YAMLAlias.to_yaml)
 yaml.add_multi_constructor(YAMLAlias.yaml_tag, YAMLAlias.from_yaml)
+
+
+class BatonPath(str):
+    yaml_tag = u'!path'
+
+    @classmethod
+    def from_yaml(cls, loader, suffix, node):
+        scalar = loader.construct_scalar(node)
+        return cls(scalar)
+
+    @classmethod
+    def to_yaml(cls, dumper, data):
+        return dumper.represent_scalar(cls.yaml_tag, data)
+
+yaml.add_representer(BatonPath, BatonPath.to_yaml)
+yaml.add_multi_constructor(BatonPath.yaml_tag, BatonPath.from_yaml)
