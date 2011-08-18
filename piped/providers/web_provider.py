@@ -293,6 +293,7 @@ class WebDebugger(resource.Resource):
     """ A JSON endpoint for debugging. """
 
     def __init__(self, failure):
+        resource.Resource.__init__(self)
         self.failure = failure
         self.debugger = debugger.Debugger(failure)
 
