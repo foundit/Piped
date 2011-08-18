@@ -9,7 +9,6 @@ from zope import interface
 from piped import util, processing
 from piped.processors import base
 
-
 try:
     import simplejson as json
 except ImportError:
@@ -21,6 +20,9 @@ class JsonDecoder(base.InputOutputProcessor):
     interface.classProvides(processing.IProcessor)
 
     def process_input(self, input, baton):
+        if hasattr(input, 'read'):
+            return json.load(input)
+
         return json.loads(input)
 
 
