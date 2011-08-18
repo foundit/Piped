@@ -268,11 +268,12 @@ class StaticFile(static.File):
         return f
 
 
-class ConcatenatedFile(StaticFile):
+class ConcatenatedFile(resource.Resource):
     """ Resource that renders the concatenation of the configured
     *file_path*s, with the specified *content_type*. """
 
     def __init__(self, content_type, file_paths):
+        resource.Resource.__init__(self)
         self.content_type = content_type
         self.file_paths = file_paths
 
