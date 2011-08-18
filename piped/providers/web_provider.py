@@ -419,7 +419,15 @@ class WebResource(resource.Resource):
 
         The pipeline is expected to call .finish() on the request when the processing is complete. If the
         processing raises an Exception, the request will be closed automatically and debugging will
-        become available if debugging is enabled and the client is allowed to debug. 
+        become available if debugging is enabled and the client is allowed to debug.
+
+    no_resource_pipeline
+        Works similar to the ``pipeline`` configuration key, but is used when another resource was not found for
+        request for either this path or any children. If this pipeline is used to handle child paths without
+        any explicit resources, the request instance will contain a non-empty ``postpath`` instance variable, which
+        is a list of child path elements, relative to its location in the routing.
+
+        This can be used to create a sparse web site routing.
 
     static
         Makes static resources such as files and directories available under this resource. This option
@@ -456,8 +464,9 @@ class WebResource(resource.Resource):
     """
     no_resource = resource.NoResource()
     static_resource = None
-    has_pipeline = False
     debug_handler = None
+    pipeline_dependency = None
+    no_resource_pipeline_dependency = None
 
     def __init__(self, site, routing):
         resource.Resource.__init__(self)
@@ -482,23 +491,32 @@ class WebResource(resource.Resource):
 
             self.putChild(child_path, child)
 
-    def _configure_resource(self, runtime_environment, pipeline=None, debug=None, static=None, concatenated=None):
+    def _configure_resource(self, runtime_environment, pipeline=None, no_resource_pipeline=None, debug=None, static=None, concatenated=None):
         dependency_manager = runtime_environment.dependency_manager
 
         debug_configuration = dict(self.site.debug_configuration)
         debug_overrides = debug or dict()
         debug_configuration.update(debug_overrides)
 
-        if pipeline:
-            self.has_pipeline = True
-            self.putChild('', self)
+        # add ourselves to the dependency-graph if we have any dependent pipelines:
+        if pipeline or no_resource_pipeline:
             if debug_configuration:
                 self.debug_handler = WebDebugHandler(self.site, **debug_configuration)
                 self.debug_handler.setServiceParent(self.site)
                 self.putChild('__debug__', self.debug_handler)
 
-            self.pipeline_dependency = dependency_manager.add_dependency(self, dict(provider='pipeline.%s' % pipeline))
             dependency_manager.add_dependency(self, self.site)
+
+        if pipeline:
+            self.putChild('', self)
+            self.pipeline_dependency = dependency_manager.add_dependency(self, dict(provider='pipeline.%s' % pipeline))
+
+        if no_resource_pipeline:
+            # if the same pipeline handles both the regular rendering and the "no resource" rendering, we reuse the dependency:
+            if no_resource_pipeline == pipeline:
+                self.no_resource_pipeline_dependency = self.pipeline_dependency
+            else:
+                self.no_resource_pipeline_dependency = dependency_manager.add_dependency(self, dict(provider='pipeline.%s' % no_resource_pipeline))
 
         if static is not None:
             if not isinstance(static, dict):
@@ -520,8 +538,8 @@ class WebResource(resource.Resource):
         if 'static' in config and 'concatenated' in config:
             raise exceptions.ConfigurationError('Both static and concatenated specified')
 
-    def _process_baton_in_pipeline(self, baton):
-        return self.pipeline_dependency.get_resource().process(baton)
+    def _process_baton_in_pipeline(self, baton, pipeline_dependency):
+        return pipeline_dependency.get_resource().process(baton)
 
     def getChild(self, path, request):
         # this function is only called after the static routing is finished
@@ -530,16 +548,61 @@ class WebResource(resource.Resource):
             return self.static_resource.getChild(path, request)
         return resource.NoResource('No such resource.')
 
+    def getChildWithDefault(self, path, request):
+        # try to find a child resource
+        child_resource = resource.Resource.getChildWithDefault(self, path, request)
+
+        # if we do not have any "no resource" pipeline, we cannot handle request
+        if not self.no_resource_pipeline_dependency:
+            return child_resource
+
+        # we set the relative postpath on the request instance since our caller
+        # (usually resource.getChildForRequest) only considers itself done once
+        # request.postpath is empty. we restore this in our render() method.
+        relative_postpath = [path] + list(request.postpath)
+
+        # if a "no resource" is found, none of our direct children is willing to handle
+        # this request. if this request is looking for a leaf resource (request.postpath
+        # being empty), we can serve this request.
+        if isinstance(child_resource, resource.NoResource):
+            request.relative_postpath = relative_postpath
+            request.postpath = list()
+            return self
+
+        # if there are more segments left to resolve in the request path, we try to find
+        # the deepest possible resource in the configuration that is able to handle
+        # the request.
+
+        child_resource = resource.getChildForRequest(child_resource, request)
+
+        # if the resource found is a non-404 resource, we use it:
+        if not isinstance(child_resource, resource.NoResource):
+            if not isinstance(child_resource, WebResource):
+                return child_resource
+
+            # if the child resource has any pipelines at all, it can render the request:
+            if child_resource.pipeline_dependency or child_resource.no_resource_pipeline_dependency:
+                return child_resource
+
+        # otherwise, we have exhausted all options of finding a resource for this request, and
+        # since we are able to render these missing resources, return ourselves.
+        request.relative_postpath = relative_postpath
+        return self
+
     def render(self, request):
         """ Runs the request through the provided pipeline or returns 404
         if this resource has no configured pipeline.
         """
+        # restore the relative postpath of the request if we have any:
+        request.postpath = getattr(request, 'relative_postpath', request.postpath)
+
         # We send a proxy of the request into the pipelines in order to be able to
         # see if the request proxy gets garbage collected before the request is
         # finished.
         request_proxy = get_request_proxy(request)
+        pipeline_dependency = self._get_pipeline_dependency_for_request(request)
         
-        if not self.has_pipeline:
+        if not pipeline_dependency:
             # If we don't have a pipeline to render, see if we have a static_resource to render
             if self.static_resource:
                 return self.static_resource.render(request)
@@ -547,7 +610,7 @@ class WebResource(resource.Resource):
             return self.no_resource.render(request)
 
         baton = dict(request=request_proxy)
-        d = defer.maybeDeferred(self._process_baton_in_pipeline, baton)
+        d = defer.maybeDeferred(self._process_baton_in_pipeline, baton, pipeline_dependency)
         d.addErrback(self._delayed_errback, request=request_proxy)
         d.addErrback(log.error)
 
@@ -602,3 +665,16 @@ class WebResource(resource.Resource):
         # Attempt to cancel further processing on the deferred, if possible
         if not deferred.called:
             deferred.cancel()
+
+    def _get_pipeline_dependency_for_request(self, request):
+        # if there are elements left in request.postpath, we're handling the request on behalf of
+        # a resource that is missing.
+        if '/'.join(request.postpath):
+            return self.no_resource_pipeline_dependency
+
+        # if we do not have a pipeline dependency, we consider ourselves to be a "no resource" and
+        # render ourselves with the no_resource pipeline.
+        if not self.pipeline_dependency:
+            return self.no_resource_pipeline_dependency
+
+        return self.pipeline_dependency
