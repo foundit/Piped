@@ -5,7 +5,7 @@ import types
 
 from twisted.internet import defer
 
-from piped import util, exceptions
+from piped import util, exceptions, yamlutil
 
 
 class Processor(object):
@@ -37,6 +37,11 @@ class Processor(object):
         self.error_consumers = list()
         self.time_spent = 0
         self._node_name = node_name
+
+    def get_input(self, baton, value, fallback=Ellipsis):
+        if isinstance(value, yamlutil.BatonPath):
+            return util.dict_get_path(baton, value, fallback)
+        return value
 
     @property
     def instance_depends_on(self):
