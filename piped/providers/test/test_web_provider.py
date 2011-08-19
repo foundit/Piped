@@ -12,12 +12,6 @@ from piped import exceptions, util, processing, dependencies
 from piped.providers import web_provider
 
 
-try:
-    from cStringIO import StringIO
-except ImportError:
-    from StringIO import StringIO
-
-
 class StubPipeline(object):
 
     def __init__(self, processor):
@@ -219,7 +213,7 @@ class WebProviderTest(unittest.TestCase):
         resource = web_site.factory.getResourceFor(request)
         resource.render(request)
 
-        self.assertEquals(request.outgoingHeaders['foo'], 'bar')
+        self.assertEquals(request.responseHeaders.getRawHeaders('foo'), ['bar'])
 
     def test_pipeline_routing_with_nested_resources(self):
         config = dict(
@@ -447,4 +441,4 @@ class TestConcatenatedFile(unittest.TestCase):
         request = web_provider.DummyRequest([''])
         cf.render_GET(request)
 
-        self.assertEquals(request.outgoingHeaders['content-type'], 'text/plain')
+        self.assertEquals(request.responseHeaders.getRawHeaders('content-type'), ['text/plain'])
