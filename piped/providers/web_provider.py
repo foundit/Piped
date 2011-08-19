@@ -613,6 +613,11 @@ class WebResource(resource.Resource):
         d = defer.maybeDeferred(self._process_baton_in_pipeline, baton, pipeline_dependency)
         d.addErrback(self._delayed_errback, request=request_proxy)
         d.addErrback(log.error)
+        # The end result of this deferred cannot contain a reference to the request_proxy in any
+        # way, since that will affect the garbage collection of the request_proxy. Because of this,
+        # we always replace its final callback/errback result with None, after any error handling and
+        # logging has finished.
+        d.addBoth(lambda _: None)
 
         # we want to ensure that the client gets an response, so we add an callback that will
         # be called when the request we provided in the baton are garbage collected. when it
