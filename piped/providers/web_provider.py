@@ -7,6 +7,7 @@ import weakref
 from zope import interface
 from twisted.internet import defer, task
 from twisted.web import server, resource, static, util as web_util, http
+from twisted.web.test import test_web
 from twisted.application import service, internet
 
 from piped import exceptions, log, util, debugger
@@ -148,6 +149,15 @@ def get_request_proxy(request):
     cls = _get_proxy_class(request)
     instance = cls(request)
     return instance
+
+
+class DummyRequest(test_web.DummyRequest, server.Request):
+    channel = Ellipsis
+
+    @property
+    def contents(self):
+        # emulate server.Request.contents, which is a file-like object
+        return StringIO(''.join(self.written))
 
 
 class WebResourceProvider(object, service.MultiService):

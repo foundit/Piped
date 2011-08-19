@@ -9,7 +9,7 @@ from twisted.internet import defer
 
 from piped import exceptions
 from piped.processors import web_processors
-from piped.providers.test import test_web_provider
+from piped.providers import web_provider
 
 
 class StubRequest(object):
@@ -190,7 +190,7 @@ class TestExtractRequestArguments(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_simple_extract(self):
-        request = test_web_provider.DummyRequest([])
+        request = web_provider.DummyRequest([])
         request.addArg('foo', 42)
         request.args['bar'] = [1, 2] # a multivalued argument
 
@@ -203,7 +203,7 @@ class TestExtractRequestArguments(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_get_all_arguments(self):
-        request = test_web_provider.DummyRequest([])
+        request = web_provider.DummyRequest([])
         request.addArg('foo', 42)
         request.args['bar'] = [1, 2] # a multivalued argument
 
@@ -216,7 +216,7 @@ class TestExtractRequestArguments(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_nonexistent(self):
-        request = test_web_provider.DummyRequest([])
+        request = web_provider.DummyRequest([])
         request.addArg('foo', 42)
 
         baton = dict(request=request)
@@ -228,7 +228,7 @@ class TestExtractRequestArguments(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_nonexistent_without_skipping(self):
-        request = test_web_provider.DummyRequest([])
+        request = web_provider.DummyRequest([])
         request.addArg('foo', 42)
 
         baton = dict(request=request)
@@ -240,7 +240,7 @@ class TestExtractRequestArguments(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_nonexistent_with_fallback(self):
-        request = test_web_provider.DummyRequest([])
+        request = web_provider.DummyRequest([])
         request.addArg('foo', 42)
 
         baton = dict(request=request)
@@ -252,7 +252,7 @@ class TestExtractRequestArguments(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_loading_json(self):
-        request = test_web_provider.DummyRequest([])
+        request = web_provider.DummyRequest([])
         request.addArg('foo', 42)
         request.args['bar'] = ['{"loaded": 42}', '{"loaded": 93}'] # a multivalued argument containing json
 
@@ -264,7 +264,7 @@ class TestExtractRequestArguments(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_loading_invalid_json(self):
-        request = test_web_provider.DummyRequest([])
+        request = web_provider.DummyRequest([])
         request.addArg('foo', '')
 
         baton = dict(request=request)
