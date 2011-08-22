@@ -11,7 +11,7 @@ from piped import yamlutil
 
 class TestLoadDumpConfiguration(unittest.TestCase):
 
-    def _only_lines(self, string):
+    def _get_nonblank_lines(self, string):
         return [line for line in string.split('\n') if line]
 
     def test_filepath_loading_and_saving(self):
@@ -41,7 +41,7 @@ class TestLoadDumpConfiguration(unittest.TestCase):
 
         saved_config = yaml.dump(config, default_flow_style=False)
 
-        self.assertEquals(sorted(self._only_lines(saved_config)), expected_saved_config)
+        self.assertEquals(sorted(self._get_nonblank_lines(saved_config)), expected_saved_config)
 
     def test_baton_path_loading_and_dumping(self):
         saved_config = """
@@ -67,7 +67,7 @@ class TestLoadDumpConfiguration(unittest.TestCase):
             "foo: !path 'foo_path'",
         ]
 
-        self.assertEquals(sorted(self._only_lines(saved_config)), expected_saved_config)
+        self.assertEquals(sorted(self._get_nonblank_lines(saved_config)), expected_saved_config)
 
     def test_invalid_baton_path(self):
         saved_config = """
