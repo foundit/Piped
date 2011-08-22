@@ -425,6 +425,9 @@ class WebResource(resource.Resource):
                         debug:
                             allow: [] # disables debugging of this pipeline, overriding the site-wide configuration
                         pipeline: a_nested_pipeline_name
+                sparse:
+                    __config__:
+                        no_resource_pipeline: sparse_pipeline
                 js:
                     __config__:
                         static: ~/js
@@ -492,6 +495,8 @@ class WebResource(resource.Resource):
 
     - http://hostname:port/ will put a baton into the pipeline ``pipeline_name``.
     - http://hostname:port/nested/ will put a baton into the pipeline ``a_nested_pipeline_name``.
+    - http://hostname:port/sparse/ will put a baton into the pipeline ``sparse_pipeline``.
+    - http://hostname:port/sparse/some/path will put a baton into the pipeline ``sparse_pipeline``.
     - http://hostname:port/js/ will show a directory listing of ``~/js``
     - http://hostname:port/js/foo will put a baton into the pipeline ``foo_pipeline``
 
@@ -706,7 +711,7 @@ class WebResource(resource.Resource):
             deferred.cancel()
 
     def _get_pipeline_dependency_for_request(self, request):
-        # if there are elements left in request.postpath, we're handling the request on behalf of
+        # if there are non-empty elements left in request.postpath, we're handling the request on behalf of
         # a resource that is missing.
         if '/'.join(request.postpath):
             return self.no_resource_pipeline_dependency
