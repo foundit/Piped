@@ -74,6 +74,7 @@ Example usage:
 
     zip: !alias:foo.bar
         number: 10
+        zap: 93
 
 In the above case, ``zip`` would end up with the following value:
 

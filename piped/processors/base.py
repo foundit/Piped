@@ -47,7 +47,7 @@ class Processor(object):
                 foo = self.get_input(baton, self.foo)
                 bar = self.get_input(baton, self.bar)
 
-                return self.set_output(baton, self.foobar, dict(foobar=foo*bar))
+                return self.get_resulting_baton(baton, self.output_path, dict(foobar=foo*bar))
 
         :param baton: The baton that might contain the actual input value.
         :param value: An instance of :class:`~piped.yamlutil.BatonPath`, meaning the
