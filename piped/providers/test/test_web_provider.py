@@ -95,7 +95,7 @@ class WebProviderTest(unittest.TestCase):
     def test_no_resource_pipeline_routing(self):
         config = dict(
             routing = dict(
-                __config__ = dict(pipeline='a_pipeline', no_resource_pipeline='another_pipeline'),
+                __config__ = dict(pipeline='root_pipeline', no_resource_pipeline='root_no_resource_pipeline'),
                 foo = dict(
                     __config__ = dict(pipeline = 'foo_pipeline')
                 ),
@@ -110,7 +110,7 @@ class WebProviderTest(unittest.TestCase):
         web_site = self.getConfiguredWebSite(config)
 
         root_resource = self.getResourceForFakeRequest(web_site, [''])
-        self.assertConfiguredWithPipeline(root_resource, pipeline='pipeline.a_pipeline', no_resource_pipeline='pipeline.another_pipeline')
+        self.assertConfiguredWithPipeline(root_resource, pipeline='pipeline.root_pipeline', no_resource_pipeline='pipeline.root_no_resource_pipeline')
 
         # nonexistent resources should be rendered by the closest matching no-resource-pipeline
         self.assertEquals(self.getResourceForFakeRequest(web_site, ['nonexistent']), root_resource)
@@ -138,7 +138,7 @@ class WebProviderTest(unittest.TestCase):
         """
         config = dict(
             routing = dict(
-                __config__ = dict(pipeline='a_pipeline', no_resource_pipeline='another_pipeline'),
+                __config__ = dict(pipeline='root_pipeline', no_resource_pipeline='root_no_resource_pipeline'),
                 foo = dict(
                     __config__ = dict(pipeline = 'foo_pipeline')
                 ),
@@ -172,23 +172,30 @@ class WebProviderTest(unittest.TestCase):
             request = batons.pop()['request']
             self.assertEquals(request.postpath, post_path)
 
-        assertRequestRenderedWithPostPath(web_site, batons, web_provider.DummyRequest(['']), [])
-        assertRequestRenderedWithPostPath(web_site, batons, web_provider.DummyRequest(['nonexistent']), ['nonexistent'])
-        assertRequestRenderedWithPostPath(web_site, batons, web_provider.DummyRequest(['nonexistent', 'nested']), ['nonexistent', 'nested'])
+        for request_path, expected_postpath in (
+            # paths under the root resource, which has both a regular pipeline and a no resource pipeline
+            ([''], []),
+            (['nonexistent'], ['nonexistent']),
+            (['nonexistent', 'nested'], ['nonexistent', 'nested']),
 
-        assertRequestRenderedWithPostPath(web_site, batons, web_provider.DummyRequest(['foo', 'bar']), ['foo', 'bar'])
-        assertRequestRenderedWithPostPath(web_site, batons, web_provider.DummyRequest(['foo', 'bar', '']), ['foo', 'bar', ''])
-        assertRequestRenderedWithPostPath(web_site, batons, web_provider.DummyRequest(['foo', 'bar', 'nested']), ['foo', 'bar', 'nested'])
+            # paths under the foo/bar resource, which only has a regular pipeline
+            (['foo', 'bar'], ['foo', 'bar']),
+            (['foo', 'bar', ''], ['foo', 'bar', '']),
+            (['foo', 'bar', 'nested'], ['foo', 'bar', 'nested']),
 
-        assertRequestRenderedWithPostPath(web_site, batons, web_provider.DummyRequest(['bar']), ['bar'])
-        assertRequestRenderedWithPostPath(web_site, batons, web_provider.DummyRequest(['bar', '']), ['bar', ''])
-        assertRequestRenderedWithPostPath(web_site, batons, web_provider.DummyRequest(['bar', 'nested']), ['bar', 'nested'])
+            # paths under the bar resource, which has a nested resource, but no pipelines at all
+            (['bar'], ['bar']),
+            (['bar', ''], ['bar', '']),
+            (['bar', 'nested'], ['bar', 'nested']),
 
-        assertRequestRenderedWithPostPath(web_site, batons, web_provider.DummyRequest(['bar', 'baz']), [])
-        assertRequestRenderedWithPostPath(web_site, batons, web_provider.DummyRequest(['bar', 'baz', '']), [''])
-        assertRequestRenderedWithPostPath(web_site, batons, web_provider.DummyRequest(['bar', 'baz', 'nested']), ['nested'])
-        assertRequestRenderedWithPostPath(web_site, batons, web_provider.DummyRequest(['bar', 'baz', 'nested', '']), ['nested', ''])
-        assertRequestRenderedWithPostPath(web_site, batons, web_provider.DummyRequest(['bar', 'baz', 'nested', 'deeply']), ['nested', 'deeply'])
+            # paths under the bar/baz resource, which only has a no resource pipeline
+            (['bar', 'baz'], []),
+            (['bar', 'baz', ''], ['']),
+            (['bar', 'baz', 'nested'], ['nested']),
+            (['bar', 'baz', 'nested', ''], ['nested', '']),
+            (['bar', 'baz', 'nested', 'deeply'], ['nested', 'deeply'])):
+
+            assertRequestRenderedWithPostPath(web_site, batons, web_provider.DummyRequest(request_path), expected_postpath)
 
     def test_static_preprocessors(self):
         current_file = filepath.FilePath(__file__)
