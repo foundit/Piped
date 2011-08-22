@@ -176,6 +176,9 @@ class DummyRequest(test_web.DummyRequest, server.Request):
         else:
             self.content = content
 
+    def setResponseCode(self, code, message=None):
+        server.Request.setResponseCode(self, code, message)
+
     @property
     def written_as_string(self):
         return ''.join(self.written)

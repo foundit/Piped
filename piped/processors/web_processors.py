@@ -452,7 +452,7 @@ class RequestChainer(base.Processor):
 
         # copy the response code -- from responseMessage if it is a DummyRequest, or from code_message if it is a http.Request.
         response_message = getattr(from_request, 'responseMessage', getattr(from_request, 'code_message', None))
-        to_request.setResponseCode(from_request.responseCode, response_message)
+        to_request.setResponseCode(from_request.code, from_request.code_message)
 
         # copy the written data if they're available
         if hasattr(from_request, 'written'):

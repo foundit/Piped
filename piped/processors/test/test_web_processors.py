@@ -403,8 +403,8 @@ class TestProxyForward(unittest.TestCase):
             proxied_request = baton['proxied_request']
             self.assertEquals(proxied_request.responseHeaders.getRawHeaders('my-header'), ['this is a header'])
             self.assertEquals(proxied_request.written, ['some result'+'\r\n'])
-            self.assertEquals(proxied_request.responseCode, 200)
-            self.assertEquals(proxied_request.responseMessage, 'OK')
+            self.assertEquals(proxied_request.code, 200)
+            self.assertEquals(proxied_request.code_message, 'OK')
 
             self.assertEquals(mocked_connect.call_count, 1)
 
@@ -454,6 +454,10 @@ class TestProxyForward(unittest.TestCase):
             baton = yield processor.process(dict(request=request))
             self.assertEquals(baton, Ellipsis)
             self.assertEquals(request.responseHeaders.getRawHeaders('location'), ['http://proxy:80/foo/'])
+
+            # the original request should have received the redirect
+            self.assertEquals(request.code, 302)
+            self.assertEquals(request.code_message, 'Moved Temporarily')
 
             # after a redirect, the processor should try to stop further processing on the baton
             self.assertEquals(processor.get_consumers(baton), list())
@@ -510,8 +514,8 @@ class TestRequestChainer(unittest.TestCase):
         processor = self._create_processor()
         processor.process(dict(request=to_request, proxied_request=from_request))
 
-        self.assertEquals(to_request.responseCode, 123)
-        self.assertEquals(to_request.responseMessage, 'response message')
+        self.assertEquals(to_request.code, 123)
+        self.assertEquals(to_request.code_message, 'response message')
         self.assertEquals(to_request.responseHeaders.getRawHeaders('foo-header'), ['foo-header-value'])
         self.assertEquals(to_request.written, ['this is some data'])
         self.assertTrue(to_request.finished)

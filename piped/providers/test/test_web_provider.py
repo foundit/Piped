@@ -280,7 +280,7 @@ class WebProviderTest(unittest.TestCase):
         web_resource.render(request)
 
         self.assertIn('Processing Failed', ''.join(request.written))
-        self.assertEquals(request.responseCode, 500)
+        self.assertEquals(request.code, 500)
 
     def test_web_resource_processing_raises_with_debugging(self):
         routing = dict(__config__=dict(pipeline='a_pipeline'))
@@ -300,7 +300,7 @@ class WebProviderTest(unittest.TestCase):
         web_resource.render(request)
 
         self.assertIn('web.Server Traceback (most recent call last)', ''.join(request.written))
-        self.assertEquals(request.responseCode, 500)
+        self.assertEquals(request.code, 500)
 
     @defer.inlineCallbacks
     def test_debug_handler_reaping(self):
