@@ -1,8 +1,54 @@
 from twisted.internet import defer
 from twisted.trial import unittest
 
-from piped import exceptions
+from piped import exceptions, yamlutil
 from piped.processors import base
+
+
+class StubProcessor(base.Processor):
+    name = 'test'
+
+    def process(self, baton):
+        return baton
+
+
+class ProcessorTest(unittest.TestCase):
+
+    def test_get_input_from_config(self):
+        processor = StubProcessor()
+        baton = dict(foo='foo_value')
+
+        # since we're not using a yamlutil.BatonPath to get the input, we should
+        # get the value echoed back to us:
+        input = processor.get_input(baton, 'foo')
+        self.assertEquals(input, 'foo')
+
+    def test_get_input_from_baton(self):
+        processor = StubProcessor()
+        baton = dict(foo='foo_value')
+
+        # since we're using a yamlutil.BatonPath to get the input, the input should come from the baton.
+        input = processor.get_input(baton, yamlutil.BatonPath('foo'))
+        self.assertEquals(input, 'foo_value')
+
+        # if the path does not exist, we expect to get the fallback
+        input = processor.get_input(dict(), yamlutil.BatonPath('foo'))
+        self.assertEquals(input, Ellipsis)
+
+    def test_get_resulting_baton(self):
+        processor = StubProcessor()
+
+        # if the path is a string, set the output on that path.
+        baton = processor.get_resulting_baton(dict(foo='foo_value'), path='bar.baz', value='baz_value')
+        self.assertEquals(baton, dict(foo='foo_value', bar=dict(baz='baz_value')))
+
+        # if the path is None, ignore the output
+        baton = processor.get_resulting_baton(dict(foo='foo_value'), path=None, value='ignored_value')
+        self.assertEquals(baton, dict(foo='foo_value'))
+
+        # if the path is the empty string, it should replace the baton
+        baton = processor.get_resulting_baton(dict(), path='', value='the new baton')
+        self.assertEquals(baton, 'the new baton')
 
 
 class StubInputOutputProcessor(base.InputOutputProcessor):

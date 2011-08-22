@@ -5,7 +5,7 @@ import types
 
 from twisted.internet import defer
 
-from piped import util, exceptions
+from piped import util, exceptions, yamlutil
 
 
 class Processor(object):
@@ -37,6 +37,54 @@ class Processor(object):
         self.error_consumers = list()
         self.time_spent = 0
         self._node_name = node_name
+
+    def get_input(self, baton, value, fallback=Ellipsis):
+        """ Gets the actual input value.
+
+        Example usage::
+
+            def process(self, baton):
+                foo = self.get_input(baton, self.foo)
+                bar = self.get_input(baton, self.bar)
+
+                return self.get_resulting_baton(baton, self.output_path, dict(foobar=foo*bar))
+
+        :param baton: The baton that might contain the actual input value.
+        :param value: An instance of :class:`~piped.yamlutil.BatonPath`, meaning the
+            input value is found at the specified path in the baton, *or* any other
+            value to be used as-is.
+        :param fallback: The value to use if the input does not exist.
+        """
+        if isinstance(value, yamlutil.BatonPath):
+            return util.dict_get_path(baton, value, fallback)
+        return value
+
+    def get_resulting_baton(self, baton, path, value):
+        """ Returns the new baton after optionally setting an output value.
+
+        Example usage::
+
+            def process(self, baton):
+                value = self._calculate(baton)
+                return self.get_resulting_baton(baton, self.output_path, value)
+
+        :param baton: The baton in which the output value may be set.
+        :param path: The path in the baton to set the value. Some paths have special meanings:
+
+            None:
+                The value should be discarded and the baton returned unchanged.
+            An empty string:
+                The value should completely replace the baton.
+        
+        :return: The new baton.
+        """
+        if path is None:
+            return baton
+        elif path == '':
+            return value
+
+        util.dict_set_path(baton, path, value)
+        return baton
 
     @property
     def instance_depends_on(self):
