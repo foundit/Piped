@@ -284,7 +284,6 @@ class TestExtractRequestArguments(unittest.TestCase):
 class TestProxyForward(unittest.TestCase):
 
     def _create_processor(self, **config):
-        #config.setdefault('reactor', self)
         processor = web_processors.ProxyForward(**config)
         return processor
 
@@ -299,6 +298,9 @@ class TestProxyForward(unittest.TestCase):
                 try:
                     self.assertEquals(host, 'proxied')
                     self.assertEquals(port, 81)
+                    # we do not want the processor to automatically forward the data received from the
+                    # remote server because we might want to post-process the response before responding
+                    # to our incoming request:
                     self.assertNotEquals(factory.father, request)
                     self.assertEquals(factory.rest, '/')
                     self.assertEquals(factory.headers, dict(foo='foo-header', host='proxied:81'))
@@ -471,7 +473,8 @@ class TestProxyForward(unittest.TestCase):
         request.uri = '/foo/bar/baz'
         request.requestHeaders.setRawHeaders('host', ['proxy:80'])
 
-        processor = self._create_processor(url='http://proxied:81/foo')
+        processor = self._create_processor(url='http://proxied:81/foo', stop_after_rewrite=False)
+        processor.consumers.append('foo')
 
         with mock.patch('twisted.internet.reactor.connectTCP') as mocked_connect:
             def verify(host, port, factory):
@@ -490,8 +493,52 @@ class TestProxyForward(unittest.TestCase):
             mocked_connect.side_effect = verify
 
             baton = yield processor.process(dict(request=request))
-            self.assertEquals(baton, Ellipsis)
+
             self.assertEquals(request.responseHeaders.getRawHeaders('location'), ['http://proxied:81/another'])
+
+            # since we created the processor with stop_after_rewrite=False, the processor should not attempt to
+            # stop further processing after the rewriting:
+            self.assertEquals(processor.get_consumers(baton), ['foo'])
+
+            self.assertEquals(mocked_connect.call_count, 1)
+
+    @defer.inlineCallbacks
+    def test_disabled_redirect_rewriting(self):
+        request = web_provider.DummyRequest(['bar', 'baz'])
+        request.uri = '/foo/bar/baz'
+        request.requestHeaders.setRawHeaders('host', ['proxy:80'])
+
+        processor = self._create_processor(url='http://proxied:81/foo', rewrite_redirects=False)
+        processor.consumers.append('foo')
+
+        with mock.patch('twisted.internet.reactor.connectTCP') as mocked_connect:
+            def verify(host, port, factory):
+                proto = factory.buildProtocol(None)
+                self.assertEquals(factory.rest, '/foo/bar/baz')
+                lines = [
+                    'HTTP/1.1 302 Moved Temporarily',
+                    'Location: http://proxied:81/foo/',
+                    '',
+                ]
+                for line in lines:
+                    proto.dataReceived(line+'\r\n')
+
+                factory.father.finish()
+
+            mocked_connect.side_effect = verify
+
+            baton = yield processor.process(dict(request=request))
+
+            # since we turned off redirect rewriting, the baton should be unchanged
+            self.assertNotEquals(baton, Ellipsis)
+
+            # the proxied request should contain the redirect information
+            self.assertEquals(baton['proxied_request'].code, 302)
+            self.assertEquals(baton['proxied_request'].responseHeaders.getRawHeaders('location'), ['http://proxied:81/foo/'])
+
+            # while the original request should be unchanged
+            self.assertEquals(request.code, 200)
+            self.assertEquals(request.code_message, 'OK')
 
             self.assertEquals(mocked_connect.call_count, 1)
 

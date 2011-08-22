@@ -3,6 +3,7 @@
 import datetime
 import json
 import urlparse
+import urllib
 import urllib2
 
 from twisted.web import http
@@ -285,7 +286,11 @@ class ProxyForward(HttpRequestProcessor):
 
     If the url used to access this processor is ``http://proxy`` and the destination server responds with a
     redirect response code and the location header set to: "http://proxied:81/bar/", this proxy will send the
-    same response code with the location header set to ``http://proxy/bar/`` instead.
+    same response code with the location header set to ``http://proxy/bar/`` instead. If this processor gets
+    a redirect from the remote server, it will forward this redirect to the incoming request and try to stop
+    further processing of the request by not using any consumer processors.
+
+    .. note:: The proxied url cannot currently be a HTTPS url.
 
     .. warning:: This processor buffers the entire response from the proxied server.
     """
@@ -294,17 +299,21 @@ class ProxyForward(HttpRequestProcessor):
     name = 'proxy-forward'
     proxy_client_factory = proxy.ProxyClientFactory
 
-    def __init__(self, url, noisy=False, proxied_request_path='proxied_request', *a, **kw):
+    def __init__(self, url, noisy=False, proxied_request_path='proxied_request', rewrite_redirects=True, stop_after_rewrite=True, *a, **kw):
         """
         :param url: The destination url to forward the request to
         :param noisy: Whether the proxy protocol should be noisy or not. Defaults to false.
         :param proxied_request_path: Path to where the proxied request object should stored.
+        :param rewrite_redirects: Whether to rewrite redirects.
+        :param stop_after_rewrite: Attempt to stop processing on this baton after rewriting.
         """
         super(ProxyForward, self).__init__(*a, **kw)
 
         self.url = url
         self.noisy = noisy
         self.proxied_request_path = proxied_request_path
+        self.rewrite_redirects = rewrite_redirects
+        self.stop_after_rewrite = stop_after_rewrite
 
     @defer.inlineCallbacks
     def process_request(self, request, baton):
@@ -335,21 +344,24 @@ class ProxyForward(HttpRequestProcessor):
         clientFactory = self.proxy_client_factory(request.method, rest, request.clientproto, headers, data, proxied_request)
         clientFactory.noisy = self.noisy
 
-        reactor.connectTCP(*self._get_proxied_host_and_port(proxied_url_parsed), factory=clientFactory)
+        reactor.connectTCP(proxied_url_parsed.hostname, proxied_url_parsed.port or 80, factory=clientFactory)
 
         # wait until the proxied request is finished:
         if not proxied_request.finished:
             yield proxied_request.notifyFinish()
 
-        # rewrite redirects in order to
-        if proxied_request.responseCode in (301, 302, 303, 307):
-            request.setResponseCode(proxied_request.responseCode, proxied_request.responseMessage)
+        # We attempt to rewrite redirects coming from the proxied server in order to try to get the redirected request
+        # to use this proxy too.
+        if self.rewrite_redirects and proxied_request.code in (301, 302, 303, 307):
+            request.setResponseCode(proxied_request.code, proxied_request.code_message)
             for key, values in proxied_request.responseHeaders.getAllRawHeaders():
                 request.responseHeaders.setRawHeaders(key, values)
 
             location = proxied_request.responseHeaders.getRawHeaders('location')[-1]
             request.responseHeaders.setRawHeaders('location', [location.replace(self.url, base_url_here)])
-            defer.returnValue(Ellipsis)
+
+            if self.stop_after_rewrite:
+                defer.returnValue(Ellipsis)
 
         defer.returnValue(baton)
 
@@ -360,20 +372,8 @@ class ProxyForward(HttpRequestProcessor):
         return super(ProxyForward, self).get_consumers(baton)
 
     def _create_query_string(self, request):
-        # TODO: fragment support
         if request.args:
-            items = list()
-            for item in request.args:
-                values = list()
-                for value in request.args[item]:
-                    values.append(item+'='+urllib2.quote(value))
-
-                items.append('&'.join(values))
-
-            qs = '&'.join(items)
-
-            return '?' + qs
-
+            return '?'+urllib.urlencode(request.args, doseq=True)
         return ''
 
     def _construct_base_url_here(self, request, proxy_url, remaining_path):
@@ -395,14 +395,6 @@ class ProxyForward(HttpRequestProcessor):
         # we don't care about params, the query string or fragments in the base url
         base_url = urlparse.urlunparse((scheme, current_host, current_path, '', '', ''))
         return base_url
-
-    def _get_proxied_host_and_port(self, proxied_url_parsed):
-        host = proxied_url_parsed.netloc.split(':', 1)[0]
-        port = 80
-        if ':' in proxied_url_parsed.netloc:
-            port = int(proxied_url_parsed.netloc.rsplit(':', 1)[-1])
-
-        return host, port
 
     def _create_proxied_request_path(self, proxied_url_parsed, remaining_path):
         path = proxied_url_parsed.path
