@@ -467,13 +467,13 @@ class TestProxyForward(unittest.TestCase):
             self.assertEquals(mocked_connect.call_count, 1)
 
     @defer.inlineCallbacks
-    def test_redirect_outside_proxy(self):
+    def test_redirect_outside_proxy_without_stopping(self):
         """ Redirects to outside of this proxy should not be rewritten. """
         request = web_provider.DummyRequest(['bar', 'baz'])
         request.uri = '/foo/bar/baz'
         request.requestHeaders.setRawHeaders('host', ['proxy:80'])
 
-        processor = self._create_processor(url='http://proxied:81/foo', stop_after_rewrite=False)
+        processor = self._create_processor(url='http://proxied:81/foo', stop_if_redirected=False)
         processor.consumers.append('foo')
 
         with mock.patch('twisted.internet.reactor.connectTCP') as mocked_connect:
@@ -494,9 +494,10 @@ class TestProxyForward(unittest.TestCase):
 
             baton = yield processor.process(dict(request=request))
 
-            self.assertEquals(request.responseHeaders.getRawHeaders('location'), ['http://proxied:81/another'])
+            # since the proxied server responded with a redirect outside the processors scope, it should not have been rewritten:
+            self.assertEquals(baton['proxied_request'].responseHeaders.getRawHeaders('location'), ['http://proxied:81/another'])
 
-            # since we created the processor with stop_after_rewrite=False, the processor should not attempt to
+            # since we created the processor with stop_if_redirected=False, the processor should not attempt to
             # stop further processing after the rewriting:
             self.assertEquals(processor.get_consumers(baton), ['foo'])
 
@@ -529,16 +530,10 @@ class TestProxyForward(unittest.TestCase):
 
             baton = yield processor.process(dict(request=request))
 
-            # since we turned off redirect rewriting, the baton should be unchanged
-            self.assertNotEquals(baton, Ellipsis)
-
-            # the proxied request should contain the redirect information
-            self.assertEquals(baton['proxied_request'].code, 302)
-            self.assertEquals(baton['proxied_request'].responseHeaders.getRawHeaders('location'), ['http://proxied:81/foo/'])
-
-            # while the original request should be unchanged
-            self.assertEquals(request.code, 200)
-            self.assertEquals(request.code_message, 'OK')
+            # the original request should have gotten the redirect the server sent
+            self.assertEquals(request.code, 302)
+            self.assertEquals(request.code_message, 'Moved Temporarily')
+            self.assertEquals(request.responseHeaders.getRawHeaders('location'), ['http://proxied:81/foo/'])
 
             self.assertEquals(mocked_connect.call_count, 1)
 

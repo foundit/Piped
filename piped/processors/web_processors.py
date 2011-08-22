@@ -299,13 +299,13 @@ class ProxyForward(HttpRequestProcessor):
     name = 'proxy-forward'
     proxy_client_factory = proxy.ProxyClientFactory
 
-    def __init__(self, url, noisy=False, proxied_request_path='proxied_request', rewrite_redirects=True, stop_after_rewrite=True, *a, **kw):
+    def __init__(self, url, noisy=False, proxied_request_path='proxied_request', rewrite_redirects=True, stop_if_redirected=True, *a, **kw):
         """
         :param url: The destination url to forward the request to
         :param noisy: Whether the proxy protocol should be noisy or not. Defaults to false.
         :param proxied_request_path: Path to where the proxied request object should stored.
         :param rewrite_redirects: Whether to rewrite redirects.
-        :param stop_after_rewrite: Attempt to stop processing on this baton after rewriting.
+        :param stop_if_redirected: Attempt to stop processing on this baton if the proxied request was redirected.
         """
         super(ProxyForward, self).__init__(*a, **kw)
 
@@ -313,7 +313,7 @@ class ProxyForward(HttpRequestProcessor):
         self.noisy = noisy
         self.proxied_request_path = proxied_request_path
         self.rewrite_redirects = rewrite_redirects
-        self.stop_after_rewrite = stop_after_rewrite
+        self.stop_if_redirected = stop_if_redirected
 
     @defer.inlineCallbacks
     def process_request(self, request, baton):
@@ -352,15 +352,16 @@ class ProxyForward(HttpRequestProcessor):
 
         # We attempt to rewrite redirects coming from the proxied server in order to try to get the redirected request
         # to use this proxy too.
-        if self.rewrite_redirects and proxied_request.code in (301, 302, 303, 307):
-            request.setResponseCode(proxied_request.code, proxied_request.code_message)
-            for key, values in proxied_request.responseHeaders.getAllRawHeaders():
-                request.responseHeaders.setRawHeaders(key, values)
+        if proxied_request.code in (301, 302, 303, 307):
+            if self.rewrite_redirects:
+                location = proxied_request.responseHeaders.getRawHeaders('location')[-1]
+                proxied_request.responseHeaders.setRawHeaders('location', [location.replace(self.url, base_url_here)])
 
-            location = proxied_request.responseHeaders.getRawHeaders('location')[-1]
-            request.responseHeaders.setRawHeaders('location', [location.replace(self.url, base_url_here)])
+            if self.stop_if_redirected:
+                for key, values in proxied_request.responseHeaders.getAllRawHeaders():
+                    request.responseHeaders.setRawHeaders(key, values)
 
-            if self.stop_after_rewrite:
+                request.setResponseCode(proxied_request.code, proxied_request.code_message)
                 defer.returnValue(Ellipsis)
 
         defer.returnValue(baton)
@@ -442,8 +443,7 @@ class RequestChainer(base.Processor):
         for key, values in from_request.responseHeaders.getAllRawHeaders():
             to_request.responseHeaders.setRawHeaders(key, values)
 
-        # copy the response code -- from responseMessage if it is a DummyRequest, or from code_message if it is a http.Request.
-        response_message = getattr(from_request, 'responseMessage', getattr(from_request, 'code_message', None))
+        # copy the response code
         to_request.setResponseCode(from_request.code, from_request.code_message)
 
         # copy the written data if they're available
