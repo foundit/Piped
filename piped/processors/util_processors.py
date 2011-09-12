@@ -767,30 +767,6 @@ class ForEach(base.InputOutputProcessor):
     """ ForEach is an In/Out-processor that invokes a pipeline for
     every item in its input.
 
-    The input is assumed to be an iterable. The result of the pipeline
-    is sent through a *result_processor*, and collected in a list
-    outputted to *output_path*. *result_processor* is a
-    lambda-definition, with a supplementing *namespace*-option, akin
-    to that of `LambdaProcessor`.
-
-    If *chunk_size* is specified, the input-iterable is chunked. E.g
-    if `chunk_size=2`, and the input iterable is '[1, 2, 3, 4, 5]`,
-    then the pipeline is invoked with three times, with the batons
-    being `[1, 2]`, `[3, 4]` and `[5]`.
-
-    If *parallel* is true, then the iterable is exhausted, and the
-    pipeline is invoked with all items in parallel. Then we wait until
-    all of them have completed.
-
-    If *done_on_first* is true, then the result of the pipeline that
-    completes first is returned. The results/failures of the other
-    pipelines are dropped, unless they all fail. In that case, an
-    `exceptions.AllPipelinesFailedError` is raised.
-
-    If *fail_on_error* is true, then any failure in the processing
-    will cause the result to be that failure. If it is false, which is
-    the default, then the errors are represented as failure-instances
-    in the output.
     """
     interface.classProvides(processing.IProcessor)
     name = 'for-each'
@@ -799,6 +775,31 @@ class ForEach(base.InputOutputProcessor):
                  namespace=None, result_processor='results: results[-1]',
                  parallel=False, done_on_first=False, fail_on_error=False,
                  **kw):
+        """
+        :param pipeline: The pipeline to process the items in.
+        :param chunk_size: If specified, the input-iterable is chunked. E.g
+            if `chunk_size=2`, and the input iterable is '[1, 2, 3, 4, 5]`,
+            then the pipeline is invoked with three times, with the batons
+            being `[1, 2]`, `[3, 4]` and `[5]`.
+        :param result_processor: A lambda-definition. The lambda is invoked once for
+            each item in the input with the results from the target pipeline.
+        :param namespace: A dict specifiying a namespace for the result_processor.
+        :param input_path: Path to the input in the baton. The input is assumed
+            to be an iterable. If the input is a dict, the processor will iterate
+            over the values and the output will also be a dict of where the values
+            are the results from the processing.
+        :param parallel: If true, then the iterable is exhausted, and the
+            pipeline is invoked with all items in parallel. Then we wait until
+            all of them have completed.
+        :param done_on_first: If true, then the result of the pipeline that
+            completes first is returned. The results/failures of the other
+            pipelines are dropped, unless they all fail. In that case, an
+            `exceptions.AllPipelinesFailedError` is raised.
+        :param fail_on_error: If true, then any failure in the processing
+            will cause the result to be that failure. If it is false, which is
+            the default, then the errors are represented as failure-instances
+            in the output.
+        """
         super(ForEach, self).__init__(**kw)
         self.pipeline_name = pipeline
         self.chunk_size = chunk_size
@@ -817,11 +818,20 @@ class ForEach(base.InputOutputProcessor):
         self.pipeline_dependency = runtime_environment.dependency_manager.add_dependency(self, dict(provider='pipeline.%s' % self.pipeline_name))
         self.result_processor = util.create_lambda_function(self.result_processor_definition, self=self, **self.namespace)
 
+    @defer.inlineCallbacks
     def process_input(self, input, baton):
         if self.chunk_size:
             input = util.chunked(input, self.chunk_size)
 
-        return self._process_iterable(input)
+        if isinstance(input, dict):
+            keys = input.keys()
+            values = input.values()
+            new_values = yield self._process_iterable(values)
+            result = dict(zip(keys, new_values))
+        else:
+            result = yield self._process_iterable(input)
+
+        defer.returnValue(result)
 
     @defer.inlineCallbacks
     def _process_serially(self, input):

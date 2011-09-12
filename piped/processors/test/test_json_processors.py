@@ -18,7 +18,7 @@ class JsonDecoderTest(unittest.TestCase):
         self.assertEquals(baton, dict(foo=42))
 
 
-class StubEncoder(object):
+class StubEncoder(json.JSONEncoder):
 
     def encode(self, whatever):
         return 'custom encoder'
