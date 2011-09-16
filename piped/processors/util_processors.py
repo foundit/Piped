@@ -278,6 +278,39 @@ class PrintTraceback(base.Processor):
         f.printTraceback()
         return baton
 
+class TrapFailure(base.Processor):
+    """ Traps failures of the specified types.
+
+    If the encountered exception is not one of the expected exception types, this
+    processor will raise the original exception, preserving the traceback.
+    """
+    name = 'trap-failure'
+    interface.classProvides(processing.IProcessor)
+
+    def __init__(self, error_types, output_path=None, *a, **kw):
+        """
+        :param error_types: A single or a list of fully qualified exception class
+            names that should be trapped.
+        :param output_path: If one of the expected error types are trapped, this
+            value will be set to the matching error type.
+        """
+        super(TrapFailure, self).__init__(*a, **kw)
+
+        if not isinstance(error_types, (list, tuple)):
+            error_types = [error_types]
+
+        for i, error_type in enumerate(error_types):
+            error_types[i] = reflect.namedAny(error_type)
+
+        self.error_types = error_types
+        self.output_path = output_path
+
+    def process(self, baton):
+        f = failure.Failure()
+        trapped = f.trap(*self.error_types)
+        baton = self.get_resulting_baton(baton, self.output_path, trapped)
+        return baton
+
 
 class FlattenDictionaryList(base.InputOutputProcessor):
     """ Reduce a list of dictionaries to a list of values, given a key
