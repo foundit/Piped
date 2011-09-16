@@ -599,29 +599,23 @@ class ProcessorGraphFactory(object):
         for consumers_key in 'consumers', 'error_consumers', 'chained_consumers', 'chained_error_consumers':
             self._ensure_is_list_of_processors(pipeline.get(consumers_key, list()))
 
-        chained_consumers = pipeline.pop('chained_consumers', [])
-        had_chained_consumers = len(chained_consumers) > 0
 
-        chained_error_consumers = pipeline.pop('chained_error_consumers', [])
-        had_chained_error_consumers = len(chained_error_consumers) > 0
+        for chained_consumers_type in ('chained_consumers', 'chained_error_consumers'):
+            base_name = chained_consumers_type.split('_',1)[-1]
+            chained_consumers = pipeline.pop(chained_consumers_type, list())
 
-        if len(chained_consumers) == 1:
-            # Trivial case
-            pipeline.setdefault('consumers', []).append(chained_consumers[0])
-        elif len(chained_consumers) > 1:
-            # Several consumers that should be chained to each other.
-            consumer = self._coalesce_chained_consumers(chained_consumers)
-            # Finally make the source of the chain a consumer of the pipeline.
-            pipeline.setdefault('consumers', []).append(consumer)
+            if len(chained_consumers) == 1:
+                # Trivial case
+                pipeline.setdefault(base_name, []).insert(0, chained_consumers[0])
+            elif len(chained_consumers) > 1:
+                # Several consumers that should be chained to each other.
+                consumer = self._coalesce_chained_consumers(chained_consumers)
+                # Finally make the source of the chain a consumer of the pipeline.
+                pipeline.setdefault(base_name, []).insert(0, consumer)
 
-        # ... and recurse to all other processors.
-        for processor in pipeline.get('consumers', []):
-            self._nest_chained_consumers_in_pipeline(processor)
-
-        # Add any chained_error_consumers to the first processor in the chain
-        if had_chained_consumers and had_chained_error_consumers:
-            error_consumer = self._coalesce_chained_consumers(chained_error_consumers)
-            pipeline.setdefault('error_consumers', []).append(error_consumer)
+            # ... and recurse to all other processors.
+            for processor in pipeline.get(base_name, []):
+                self._nest_chained_consumers_in_pipeline(processor)
 
     def _attach_root_error_consumers_to_root_consumers(self, pipeline):
         """ Attach all the error_consumers defined on the root level to all the source consumers. """

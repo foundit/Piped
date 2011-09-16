@@ -274,20 +274,20 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
     @defer.inlineCallbacks
     def test_simple_chain_with_chained_error_consumers_and_error_consumers(self):
         # source -> raise-exception -> uppercase -> sink
-        #                           e> reverse -> sink
         #                           e> reverse -> uppercase -> sink
+        #                           e> reverse -> sink
         pipeline_configuration = {
             'only-pipeline': {
                 'chained_consumers': [
                     {'processor': 'raise-exception'},
                     {'processor': 'uppercase'},
                 ],
-                'error_consumers': [
-                    {'processor': 'reverse'},
-                ],
                 'chained_error_consumers':[
                     {'processor': 'reverse'},
                     {'processor': 'uppercase'},
+                ],
+                'error_consumers': [
+                    {'processor': 'reverse'},
                 ],
             }
         }
@@ -305,7 +305,7 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
 
         evaluator = processing.TwistedProcessorGraphEvaluator(pg)
         yield evaluator.process('abc')
-        self.assertEquals(l, ['cba', 'CBA'])
+        self.assertEquals(l, ['CBA', 'cba'])
 
     @defer.inlineCallbacks
     def test_simple_chain_with_error_handler_but_no_exception_raised(self):
@@ -1011,7 +1011,6 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         expected_pipeline_configuration = {
             'some-pipeline': {
                 'consumers': [
-                    {'processor': 'C'},
                     {'processor': 'A',
                      'consumers': [
                             {'processor': 'D'},
@@ -1022,13 +1021,57 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
                                     ]
                             },
                         ]
-                     }
+                     },
+                    {'processor': 'C'},
                 ]
             }
         }
 
         self.assertConfigurationProperlyTransformed(pipeline_configuration,
                                                     expected_pipeline_configuration)
+
+    def test_chained_consumers_before_consumers(self):
+        pipeline_configuration = {
+            'a-pipeline': {
+                'chained_consumers': [
+                    {'processor': 'reverse'},
+                ],
+                'consumers': [
+                    {'processor': 'uppercase'},
+                ],
+                'chained_error_consumers': [
+                    {'processor': 'reverse'},
+                ],
+                'error_consumers': [
+                    {'processor': 'uppercase'},
+                ]
+            }
+        }
+
+        # chained*_consumers should always become the first consumer if both chained*_consumers and consumers
+        # are defined
+        expected_pipeline_configuration = {
+            'a-pipeline': {
+                'consumers': [
+                    {
+                        'processor': 'reverse',
+                        'error_consumers': [
+                            {'processor': 'reverse'},
+                            {'processor': 'uppercase'},
+                        ]
+                    },
+                    {
+                        'processor': 'uppercase',
+                        'error_consumers': [
+                            {'processor': 'reverse'},
+                            {'processor': 'uppercase'},
+                        ]
+                    },
+                ],
+            }
+        }
+
+        self.assertConfigurationProperlyTransformed(pipeline_configuration, expected_pipeline_configuration)
 
     def test_pipeline_alias(self):
         pipeline_configuration = {
@@ -1241,9 +1284,9 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
             'other-pipeline': {
                 'inherits': 'some-pipeline',
                 'overrides': [
-                    {'processor': 'C', 'some_option': 'this processor should not have consumers'},
                     {'processor': 'C', 'other_option': 'this processor should have E as a consumer'},
                     {'processor': 'F', 'foo': 'bar'},
+                    {'processor': 'C', 'some_option': 'this processor should not have consumers'},
                 ]
             }
         }
@@ -1251,25 +1294,26 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         expected_pipeline_configuration = {
             'other-pipeline': {
                 'consumers': [
-                    {'processor': 'C', 'some_option': 'this processor should not have consumers'},
                     {'consumers': [{'processor': 'D'},
                                    {'consumers': [{'consumers': [{'foo': 'bar', 'processor': 'F'}],
                                                    'processor': 'E'}],
                                     'other_option': 'this processor should have E as a consumer',
                                     'processor': 'C'}],
-                     'processor': 'A'}],
+                     'processor': 'A'},
+                    {'processor': 'C', 'some_option': 'this processor should not have consumers'},
+                ],
                 'inherits': 'some-pipeline'
             },
             'some-pipeline': {
                 'consumers': [
-                    {'processor': 'C'},
                     {'consumers': [
                             {'processor': 'D'},
                             {'consumers': [
                                     {'consumers': [{'processor': 'F'}],
                                      'processor': 'E'}],
                              'processor': 'C'}],
-                     'processor': 'A'}
+                     'processor': 'A'},
+                    {'processor': 'C'},
                 ]
             }
         }
