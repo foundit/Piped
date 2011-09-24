@@ -132,7 +132,7 @@ consider the following pipeline definition:
         - e
 
 Since the pipeline uses the shorthand syntax for ``chained_consumers`` (see :ref:`topic-pipelines-list`), all processors
-in the list is added to the precdeding processors list of consumers. Applying this once transforms the pipeline definition to this:
+in the list are added to the preceding processors list of consumers. Applying this once transforms the pipeline definition to this:
 
 .. code-block:: yaml
 
@@ -147,7 +147,7 @@ in the list is added to the precdeding processors list of consumers. Applying th
                         consumers:
                             - e
 
-This process is done recursively for all the processors, and ``chained_consumers`` take precedence over ``consumers`` when it
+This process is done recursively for all the processors, and ``chained_consumers`` takes precedence over ``consumers`` when it
 comes to the ordering of the consumers, which results in the following final pipeline, noting that ``b`` is the first consumer
 of ``a``:
 
