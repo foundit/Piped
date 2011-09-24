@@ -1049,7 +1049,7 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         }
 
         # chained*_consumers should always become the first consumer if both chained*_consumers and consumers
-        # are defined
+        # are defined:
         expected_pipeline_configuration = {
             'a-pipeline': {
                 'consumers': [

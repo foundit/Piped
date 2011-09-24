@@ -604,6 +604,9 @@ class ProcessorGraphFactory(object):
             base_name = chained_consumers_type.split('_',1)[-1]
             chained_consumers = pipeline.pop(chained_consumers_type, list())
 
+            # Make sure that any chained_consumers or chained_error_consumers becomes the first
+            # consumer of their parent processor by inserting them at the first position instead of
+            # appending them.
             if len(chained_consumers) == 1:
                 # Trivial case
                 pipeline.setdefault(base_name, []).insert(0, chained_consumers[0])
