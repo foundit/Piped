@@ -202,6 +202,13 @@ stop
 .. autoclass:: Stopper
 
 
+.. _trap-failure:
+
+trap-failure
+^^^^^^^^^^^^
+.. autoclass:: TrapFailure
+
+
 .. _wait:
 
 wait

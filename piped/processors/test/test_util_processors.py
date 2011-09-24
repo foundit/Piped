@@ -13,6 +13,10 @@ from piped import decorators, dependencies, util, processing, exceptions
 from piped.processors import util_processors
 
 
+class FakeError(exceptions.PipedError):
+    pass
+
+
 class TestMergeWithDict(unittest.TestCase):
 
     def test_merge_with_dict(self):
@@ -215,6 +219,51 @@ class TestBatonCleaner(unittest.TestCase):
             self.fail("Expected BatonCleaner to err.")
         except AssertionError:
             pass
+
+
+class TestTrapFailure(unittest.TestCase):
+
+    def _create_processor(self, **kwargs):
+        return util_processors.TrapFailure(**kwargs)
+
+    def test_simple_trapping(self):
+        processor = self._create_processor(error_types=reflect.fullyQualifiedName(FakeError), output_path='trapped')
+
+        try:
+            raise FakeError('test')
+        except FakeError as fe:
+            baton = processor.process(dict())
+            self.assertEquals(baton['trapped'], FakeError)
+
+    def test_not_trapping_unexpected_exceptions(self):
+        processor = self._create_processor(error_types=reflect.fullyQualifiedName(FakeError))
+
+        try:
+            raise exceptions.PipedError('test')
+        except exceptions.PipedError as pe:
+            try:
+                processor.process(None)
+            except failure.Failure as reason:
+                self.assertEquals(reason.type, exceptions.PipedError)
+                self.assertEquals(reason.value, pe)
+            else:
+                self.fail('Expected a failure to be raised.')
+
+    def test_no_current_failure(self):
+        processor = self._create_processor(error_types=reflect.fullyQualifiedName(FakeError))
+
+        self.assertRaises(failure.NoCurrentExceptionError, processor.process, None)
+
+    def test_trapping_multiple_types(self):
+        error_types = [reflect.fullyQualifiedName(FakeError), reflect.fullyQualifiedName(exceptions.ConfigurationError)]
+        processor = self._create_processor(error_types=error_types, output_path='trapped')
+
+        for error_type in (FakeError, exceptions.ConfigurationError):
+            try:
+                raise error_type('test')
+            except error_type as fe:
+                baton = processor.process(dict())
+                self.assertEquals(baton['trapped'], error_type)
 
 
 class TestFlattenDictionaryList(unittest.TestCase):
@@ -584,10 +633,6 @@ class FakeSlowPipeline(FakePipeline):
         yield util.wait(0)
         FakePipeline.process(self, baton)
         defer.returnValue([baton])
-
-
-class FakeError(exceptions.PipedError):
-    pass
 
 
 class FakeFailingPipeline(FakePipeline):

@@ -29,6 +29,9 @@ Pipeline definitions
 Pipelines can be defined in multiple ways:
 
 
+
+.. _topic-pipelines-list:
+
 Using a :class:`list`
 """""""""""""""""""""
 
@@ -76,8 +79,8 @@ Each processor in the list will get the baton from the previous processor.
 .. _topic-pipelines-chained_consumers-rewriting:
 
 When using the list of processors or ``chained_consumers``, the pipeline definition is rewritten
-before the processors are instantiated. Every processor in a ``chained_consumers`` is appended to its
-preceding processors list of consumers.
+before the processors are instantiated. Every processor in a ``chained_consumers`` list is added to its
+preceeding processors list of consumers.
 
 This means the following two pipeline definitions are equivalent::
 
@@ -112,6 +115,55 @@ Which will be turned into the this processing graph:
     b -> d
     a -> e
     e -> f
+
+
+If both ``chained_consumers`` and ``consumers`` are defined, either explicitly (both keys being used in the configuration)
+or implicitly (processors inside a list of ``chained_consumers`` that define their own ``chained_consumers``). For example,
+consider the following pipeline definition:
+
+.. code-block:: yaml
+
+    my_pipeline:
+        - a
+            chained_consumers:
+                - b
+                - c
+        - d
+        - e
+
+Since the pipeline uses the shorthand syntax for ``chained_consumers`` (see :ref:`topic-pipelines-list`), all processors
+in the list are added to the preceding processors list of consumers. Applying this once transforms the pipeline definition to this:
+
+.. code-block:: yaml
+
+    my_pipeline:
+        consumers:
+            - a:
+                chained_consumers:
+                    - b
+                    - c
+                consumers:
+                    - d:
+                        consumers:
+                            - e
+
+This process is done recursively for all the processors, and ``chained_consumers`` takes precedence over ``consumers`` when it
+comes to the ordering of the consumers, which results in the following final pipeline, noting that ``b`` is the first consumer
+of ``a``:
+
+.. code-block:: yaml
+
+    my_pipeline:
+        consumers:
+            - a:
+                consumers:
+                    - b:
+                        consumers:
+                            - c
+                    - d:
+                        consumers:
+                            - e
+
 
 Inlining a pipeline
 """""""""""""""""""
