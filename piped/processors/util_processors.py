@@ -876,3 +876,59 @@ class Logger(base.Processor):
             self.logger(message)
 
         return baton
+
+
+#DEPENDENCY_CALLER_NO_ARGUMENTS = object()
+
+class DependencyCaller(base.Processor):
+    """ Calls a method on a dependency.
+
+    This processor may be useful if you want to call a method on a provided dependency.
+    """
+    interface.classProvides(processing.IProcessor)
+    name = 'call-dependency'
+    NO_ARGUMENTS = object()
+
+    def __init__(self, dependency, method='__call__', arguments=NO_ARGUMENTS,
+                 unpack_arguments=False, output_path=None, *a, **kw):
+        """
+        :param dependency: The dependency to use.
+        :param method: The name of the method to call.
+        :param arguments: The arguments to call the method with.
+        :param unpack_arguments: Whether to unpack arguments
+        :param output_path: Where to store the output in the baton.
+        """
+        super(DependencyCaller, self).__init__(*a, **kw)
+
+        if isinstance(dependency, basestring):
+            dependency = dict(provider=dependency)
+        self.dependency_config = dependency
+
+        self.method_name = method
+        self.arguments = arguments
+        self.unpack_arguments = unpack_arguments
+
+        self.output_path = output_path
+
+    def configure(self, runtime_environment):
+        dm = runtime_environment.dependency_manager
+        self.dependency = dm.add_dependency(self, self.dependency_config)
+
+    @defer.inlineCallbacks
+    def process(self, baton):
+        dependency = yield self.dependency.wait_for_resource()
+        method_name = self.get_input(baton, self.method_name)
+        method = getattr(dependency, method_name)
+
+        arguments = self.get_input(baton, self.arguments)
+
+        if self.arguments == self.NO_ARGUMENTS:
+            result = yield method()
+        else:
+            if self.unpack_arguments:
+                result = yield method(**arguments)
+            else:
+                result = yield method(arguments)
+
+        baton = self.get_resulting_baton(baton, self.output_path, result)
+        defer.returnValue(baton)

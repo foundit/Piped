@@ -9,7 +9,7 @@ from twisted.internet import defer
 from twisted.trial import unittest
 from twisted.python import failure, reflect
 
-from piped import decorators, dependencies, util, processing, exceptions
+from piped import decorators, dependencies, util, processing, exceptions, yamlutil
 from piped.processors import util_processors
 
 
@@ -653,6 +653,71 @@ class TestLogger(unittest.TestCase):
             logger.process(dict())
 
         self.assertEquals(mocked_log.method_calls, [])
+
+class DependencyCallerTest(unittest.TestCase):
+    class TestResource(object):
+        def __call__(self):
+            return 'test __call__'
+
+        def echo(self, *a, **kw):
+            return [a, kw]
+
+    def setUp(self):
+        self.runtime_environment = processing.RuntimeEnvironment()
+        self.runtime_environment.configure()
+        self.runtime_environment.resource_manager.register('test', provider=self)
+
+    def add_consumer(self, resource_dependency):
+        resource_dependency.on_resource_ready(self.TestResource())
+
+    def _create_processor(self, **config):
+        return util_processors.DependencyCaller(**config)
+
+    @defer.inlineCallbacks
+    def test_simple_calling(self):
+        processor = self._create_processor(dependency='test', output_path='result')
+        processor.configure(self.runtime_environment)
+        self.runtime_environment.dependency_manager.resolve_initial_states()
+
+        baton = yield processor.process(dict())
+        self.assertEquals(baton['result'], 'test __call__')
+
+    @defer.inlineCallbacks
+    def test_simple_argument(self):
+        processor = self._create_processor(dependency='test', method='echo', arguments=dict(foo='bar'), output_path='result')
+        processor.configure(self.runtime_environment)
+        self.runtime_environment.dependency_manager.resolve_initial_states()
+
+        baton = yield processor.process(dict())
+        self.assertEquals(baton['result'], [(dict(foo='bar'), ), dict()])
+
+    @defer.inlineCallbacks
+    def test_argument_unpacking(self):
+        processor = self._create_processor(dependency='test', method='echo', arguments=dict(foo='bar'), unpack_arguments=True, output_path='result')
+        processor.configure(self.runtime_environment)
+        self.runtime_environment.dependency_manager.resolve_initial_states()
+
+        baton = yield processor.process(dict())
+        self.assertEquals(baton['result'], [tuple(), dict(foo='bar')])
+
+    @defer.inlineCallbacks
+    def test_baton_argument(self):
+        processor = self._create_processor(dependency='test', method='echo', arguments=yamlutil.BatonPath(), output_path='result')
+        processor.configure(self.runtime_environment)
+        self.runtime_environment.dependency_manager.resolve_initial_states()
+
+        baton = yield processor.process(dict(foo='bar'))
+        # the result will contain a reference to itself because the output is set in the same dict instance as the first argument.
+        self.assertEquals(baton['result'], [(dict(foo='bar', result=baton['result']), ), dict()])
+
+    @defer.inlineCallbacks
+    def test_baton_argument_unpacking(self):
+        processor = self._create_processor(dependency='test', method='echo', arguments=yamlutil.BatonPath(), unpack_arguments=True, output_path='result')
+        processor.configure(self.runtime_environment)
+        self.runtime_environment.dependency_manager.resolve_initial_states()
+
+        baton = yield processor.process(dict(foo='bar'))
+        self.assertEquals(baton['result'], [tuple(), dict(foo='bar')])
 
 
 __doctests__ = [util_processors]
