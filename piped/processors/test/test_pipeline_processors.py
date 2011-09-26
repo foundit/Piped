@@ -652,3 +652,21 @@ class TestForEach(unittest.TestCase):
         yield processor.process(baton)
 
         self.assertEqual(baton, dict(iterable=list(), results=list()))
+
+    @defer.inlineCallbacks
+    def test_dict_input(self):
+        class CustomFakePipeline(FakePipeline):
+            def process(self, input):
+                return [dict(bar=42, baz=93).get(input)]
+
+        pipeline_resource = dependencies.InstanceDependency(CustomFakePipeline())
+        pipeline_resource.is_ready = True
+
+        processor = self.make_and_configure_processor(parallel=True)
+        processor.pipeline_dependency = pipeline_resource
+
+        baton = dict(iterable=dict(foo='bar', bar='baz'))
+        yield processor.process(baton)
+
+        # the pipeline should only be invoked with the values, but the output should still be a dict
+        self.assertEqual(baton, dict(iterable=dict(foo='bar', bar='baz'), results=dict(foo=42, bar=93)))
