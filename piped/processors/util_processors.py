@@ -894,7 +894,8 @@ class DependencyCaller(base.Processor):
         """
         :param dependency: The dependency to use.
         :param method: The name of the method to call.
-        :param arguments: The arguments to call the method with.
+        :param arguments: The arguments to call the method with. Defaults to no
+            arguments.
         :param unpack_arguments: Whether to unpack arguments
         :param output_path: Where to store the output in the baton.
         """
