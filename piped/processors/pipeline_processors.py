@@ -301,6 +301,9 @@ class ForEach(base.InputOutputProcessor):
     """ ForEach is an In/Out-processor that invokes a pipeline for
     every item in its input.
 
+    If the input is a dict, the processor will iterate over the values and
+    the output will also be a dict where the values are the results from the
+    processing.
     """
     interface.classProvides(processing.IProcessor)
     name = 'for-each'
@@ -319,9 +322,7 @@ class ForEach(base.InputOutputProcessor):
             each item in the input with the results from the target pipeline.
         :param namespace: A dict specifiying a namespace for the result_processor.
         :param input_path: Path to the input in the baton. The input is assumed
-            to be an iterable. If the input is a dict, the processor will iterate
-            over the values and the output will also be a dict of where the values
-            are the results from the processing.
+            to be an iterable.
         :param parallel: If true, then the iterable is exhausted, and the
             pipeline is invoked with all items in parallel. Then we wait until
             all of them have completed.
