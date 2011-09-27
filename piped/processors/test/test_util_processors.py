@@ -719,5 +719,14 @@ class DependencyCallerTest(unittest.TestCase):
         baton = yield processor.process(dict(foo='bar'))
         self.assertEquals(baton['result'], [tuple(), dict(foo='bar')])
 
+    @defer.inlineCallbacks
+    def test_baton_argument_unpacking_with_list_arguments(self):
+        processor = self._create_processor(dependency='test', method='echo', arguments=['foo', 'bar'], unpack_arguments=True, output_path='result')
+        processor.configure(self.runtime_environment)
+        self.runtime_environment.dependency_manager.resolve_initial_states()
+
+        baton = yield processor.process(baton=dict())
+        self.assertEquals(baton['result'], [('foo', 'bar'), dict()])
+
 
 __doctests__ = [util_processors]

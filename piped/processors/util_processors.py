@@ -927,7 +927,10 @@ class DependencyCaller(base.Processor):
             result = yield method()
         else:
             if self.unpack_arguments:
-                result = yield method(**arguments)
+                if isinstance(arguments, dict):
+                    result = yield method(**arguments)
+                else:
+                    result = yield method(*arguments)
             else:
                 result = yield method(arguments)
 
