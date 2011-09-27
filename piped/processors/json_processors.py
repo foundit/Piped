@@ -1,18 +1,14 @@
 # coding: utf8
 # Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
-
 """ Encoding and decoding JSON. """
+import json
+
 from twisted.python import reflect
 from zope import interface
 
 from piped import util, processing, yamlutil
 from piped.processors import base
-
-try:
-    import simplejson as json
-except ImportError:
-    import json
 
 
 class JsonDecoder(base.InputOutputProcessor):
