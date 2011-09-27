@@ -9,17 +9,13 @@ import os
 import sys
 import xmlrpclib
 import copy
+import json
 
 from twisted.internet import defer, reactor
 from twisted.application import service
 from twisted.python import failure, filepath, reflect
 
 from piped import log
-
-try:
-    import simplejson as json
-except ImportError:
-    import json
 
 try:
     from collections import OrderedDict

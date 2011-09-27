@@ -12,6 +12,13 @@ Utility processors
 .. currentmodule:: piped.processors.util_processors
 
 
+.. _call-dependency:
+
+call-dependency
+^^^^^^^^^^^^^^^
+.. autoclass:: DependencyCaller
+
+
 .. _callback-deferred:
 
 callback-deferred
@@ -82,13 +89,6 @@ flatten-list-of-dictionaries
 flatten-nested-lists
 ^^^^^^^^^^^^^^^^^^^^
 .. autoclass:: NestedListFlattener
-
-
-.. _for-each:
-
-for-each
-^^^^^^^^
-.. autoclass:: ForEach
 
 
 .. _group-by-value:
@@ -342,6 +342,13 @@ diagram-dependencies
 diagram-pipelines
 ^^^^^^^^^^^^^^^^^
 .. autoclass:: PipelineDiagrammer
+
+
+.. _for-each:
+
+for-each
+^^^^^^^^
+.. autoclass:: ForEach
 
 
 .. _run-pipeline:

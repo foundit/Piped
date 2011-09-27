@@ -295,3 +295,134 @@ class DependencyDiagrammer(base.Processor):
         dot = self.dependency_manager.get_dot()
         util.dict_set_path(baton, self.output_path, dot)
         return baton
+
+
+class ForEach(base.InputOutputProcessor):
+    """ ForEach is an In/Out-processor that invokes a pipeline for
+    every item in its input.
+
+    If the input is a dict, the processor will iterate over the values and
+    the output will also be a dict where the values are the results from the
+    processing.
+    """
+    interface.classProvides(processing.IProcessor)
+    name = 'for-each'
+
+    def __init__(self, pipeline, chunk_size=None,
+                 namespace=None, result_processor='results: results[-1]',
+                 parallel=False, done_on_first=False, fail_on_error=False,
+                 **kw):
+        """
+        :param pipeline: The pipeline to process the items in.
+        :param chunk_size: If specified, the input-iterable is chunked. E.g
+            if `chunk_size=2`, and the input iterable is '[1, 2, 3, 4, 5]`,
+            then the pipeline is invoked with three times, with the batons
+            being `[1, 2]`, `[3, 4]` and `[5]`.
+        :param result_processor: A lambda-definition. The lambda is invoked once for
+            each item in the input with the results from the target pipeline.
+        :param namespace: A dict specifiying a namespace for the result_processor.
+        :param input_path: Path to the input in the baton. The input is assumed
+            to be an iterable.
+        :param parallel: If true, then the iterable is exhausted, and the
+            pipeline is invoked with all items in parallel. Then we wait until
+            all of them have completed.
+        :param done_on_first: If true, then the result of the pipeline that
+            completes first is returned. The results/failures of the other
+            pipelines are dropped, unless they all fail. In that case, an
+            `exceptions.AllPipelinesFailedError` is raised.
+        :param fail_on_error: If true, then any failure in the processing
+            will cause the result to be that failure. If it is false, which is
+            the default, then the errors are represented as failure-instances
+            in the output.
+        """
+        super(ForEach, self).__init__(**kw)
+        self.pipeline_name = pipeline
+        self.chunk_size = chunk_size
+        self.namespace = namespace or dict()
+        self.result_processor_definition = result_processor
+        self.fail_on_error = fail_on_error
+        self.done_on_first = done_on_first
+
+        self.parallel = parallel
+        if parallel:
+            self._process_iterable = self._process_in_parallel
+        else:
+            self._process_iterable = self._process_serially
+
+    def configure(self, runtime_environment):
+        self.pipeline_dependency = runtime_environment.dependency_manager.add_dependency(self, dict(provider='pipeline.%s' % self.pipeline_name))
+        self.result_processor = util.create_lambda_function(self.result_processor_definition, self=self, **self.namespace)
+
+    @defer.inlineCallbacks
+    def process_input(self, input, baton):
+        if self.chunk_size:
+            input = util.chunked(input, self.chunk_size)
+
+        if isinstance(input, dict):
+            keys = input.keys()
+            values = input.values()
+            new_values = yield self._process_iterable(values)
+            result = dict(zip(keys, new_values))
+        else:
+            result = yield self._process_iterable(input)
+
+        defer.returnValue(result)
+
+    @defer.inlineCallbacks
+    def _process_serially(self, input):
+        results = list()
+        pipeline = yield self.pipeline_dependency.wait_for_resource()
+
+        for sub_baton in input:
+
+            try:
+                result = yield pipeline.process(sub_baton)
+                results.append(self.result_processor(result))
+            except Exception:
+                if self.fail_on_error:
+                    raise
+                else:
+                    results.append(failure.Failure())
+
+            else:
+                if self.done_on_first:
+                    # This actually raises an exception, so it must be outside the above try.
+                    defer.returnValue(results[-1])
+
+        if self.done_on_first:
+            # If anything would have succeeded, we would have broken
+            # out above. Thus, we can assume it's all failures.
+            raise exceptions.AllPipelinesFailedError('All pipelines failed', failures=results)
+
+        defer.returnValue(results)
+
+    @defer.inlineCallbacks
+    def _process_in_parallel(self, input):
+        pipeline = yield self.pipeline_dependency.wait_for_resource()
+        ds = list()
+
+        # Prepare running all pipelines in parallel.
+        for sub_baton in input:
+            d = defer.maybeDeferred(pipeline.process, sub_baton)
+            # ... the result must be processed as usual.
+            d.addCallback(lambda result: self.result_processor(result))
+            ds.append(d)
+
+        # Then wait.
+        try:
+            result = yield defer.DeferredList(ds, fireOnOneCallback=self.done_on_first,
+                                              fireOnOneErrback=self.fail_on_error, consumeErrors=True)
+        except defer.FirstError, e:
+            e.subFailure.raiseException()
+
+        # Unpack the results.
+        if isinstance(result, list):
+            result = [value for _, value in result]
+
+            if result and all(isinstance(maybe_failure, failure.Failure) for maybe_failure in result):
+                raise exceptions.AllPipelinesFailedError(e_msg='All pipelines failed', failures=result)
+
+        elif self.done_on_first:
+            result = result[0]
+
+        defer.returnValue(result)
