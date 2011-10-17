@@ -77,5 +77,5 @@ setup(
     ),
 
     install_requires = version_specific_requirements +
-                     ['Twisted>=10.2', 'argparse', 'pyOpenSSL', 'PyYAML', 'networkx>=1.4', 'setuptools', 'mock']
+                     ['Twisted>=11', 'argparse', 'pyOpenSSL', 'PyYAML', 'networkx>=1.4', 'setuptools', 'mock']
 )

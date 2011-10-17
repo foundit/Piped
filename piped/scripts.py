@@ -79,6 +79,7 @@ class VersionAction(argparse.Action):
         versions = dict()
 
         contrib_module = modules.getModule('piped.contrib')
+        contrib_module.load()
 
         for module in contrib_module.iterModules():
             versions[module.name] = getattr(module.load(), 'version', 'unknown version')
