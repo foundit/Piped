@@ -1,15 +1,11 @@
 # Copyright (c) 2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
+import json
+
 from twisted.internet import defer, reactor, threads
 from zope import interface
 
 from piped import exceptions, log, resource, util
-
-
-try:
-    import simplejson as json
-except ImportError:
-    import json
 
 try:
     import cPickle as pickle

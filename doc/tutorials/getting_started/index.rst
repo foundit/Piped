@@ -205,7 +205,7 @@ different options, just to name some:
 * HTTP - Stateless protocol that can be used for sending simple requests, or can be extended with simple
     remote procedure calls using XMLRPC etc.
 
-* Perspective Boker - As the `twisted documentation <http://twistedmatrix.com/documents/current/core/howto/pb-intro.html>`_ puts it:
+* Perspective Broker - As the `twisted documentation <http://twistedmatrix.com/documents/current/core/howto/pb-intro.html>`_ puts it:
 
     *Suppose you find yourself in control of both ends of the wire:
     you have two programs that need to talk to each other, and you get to use any protocol you want. If you can think of your

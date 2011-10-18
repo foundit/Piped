@@ -41,7 +41,19 @@ def run_trial():
 def run_piped():
     """ Wrapper around twistd to run piped. """
     parser = _make_parser()
-    args = parser.parse_args()
+
+    # we parse only the known arguments in case we're running a script
+    args, remaining = parser.parse_known_args()
+
+    if args.script:
+        # if we are running a script, the configuration file is the script:
+        args.conf = args.script
+        # replace sys.argv with the arguments that the script might be interested in
+        sys.argv = [sys.argv[0]] + remaining
+    else:
+        # otherwise, we have to re-parse the arguments to disallow unknown
+        # arguments.
+        args = parser.parse_args()
 
     # pass the configuration file as an environment variable that is read in the service.tac
     if args.conf:
@@ -67,6 +79,7 @@ class VersionAction(argparse.Action):
         versions = dict()
 
         contrib_module = modules.getModule('piped.contrib')
+        contrib_module.load()
 
         for module in contrib_module.iterModules():
             versions[module.name] = getattr(module.load(), 'version', 'unknown version')
@@ -105,7 +118,12 @@ def _make_parser():
                         help=('Configuration overrides that will be set after the configuration has been loaded. '
                               'This option may be used multiple times in order to set multiple overrides. '
                               'Example: --override=web.admin.port:8080'))
-    parser.add_argument('-c', '--conf', help='Configuration file to use. [PIPED_CONFIGURATION_FILE]', metavar='config_file.yaml', required=True)
+
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('-c', '--conf', help='Configuration file to use. [PIPED_CONFIGURATION_FILE]', metavar='config_file.yaml')
+    group.add_argument('-s', '--script',
+                       help=('Script file to use. If this argument is used, any unknown arguments passed to piped '
+                             'will remain on sys.argv and can be consumed by the script.'), metavar='config_file.yaml')
 
     return parser
 

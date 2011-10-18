@@ -14,4 +14,4 @@ __path__ = pkgutil.extend_path(__path__, __name__)
 
 # See http://www.python.org/dev/peps/pep-0386/ for version numbering, especially NormalizedVersion
 from distutils import version
-version = version.LooseVersion('0.1.0')
+version = version.LooseVersion('0.2.0')

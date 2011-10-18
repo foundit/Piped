@@ -9,17 +9,13 @@ import os
 import sys
 import xmlrpclib
 import copy
+import json
 
 from twisted.internet import defer, reactor
 from twisted.application import service
 from twisted.python import failure, filepath, reflect
 
 from piped import log
-
-try:
-    import simplejson as json
-except ImportError:
-    import json
 
 try:
     from collections import OrderedDict
@@ -501,6 +497,16 @@ class PipedJSONEncoder(json.JSONEncoder):
                 return obj.origpath
             return obj.path
         return super(PipedJSONEncoder, self).default(obj)
+
+
+class BatonJSONEncoder(PipedJSONEncoder):
+    """ A custom JSON encoder that falls back to repr() if an exception is raised
+    during JSON encoding. """
+    def default(self, obj):
+        try:
+            return super(BatonJSONEncoder, self).default(obj)
+        except TypeError as te:
+            return repr(obj)
 
 
 class PullFromQueueAndProcessInPipeline(service.Service):

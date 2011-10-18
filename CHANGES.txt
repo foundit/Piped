@@ -1,0 +1,77 @@
+========================== Release 0.2.0 2011-10-17 ==========================
+
+Features:
+    - Tracing: Processing in pipelines can now be traced. See the tracing
+        tutorial.
+
+    - web_provider: The web resources now support an additional setting in
+        the routing configuration: "no_resource_pipeline", which acts like
+        catch-all pipelines that is used to render requests for potentially
+        nested child resources that does not have any resource (and would
+        otherwise have resulted in a 404).
+
+    - Support for acting like a Proxy. (see the proxy-forward processor).
+
+    - Added a new YAML constructor: !path, which is used to refer to input
+        that should be retrieved from the specified path inside the baton.
+
+        It is intended to be used by processors to avoid having to have two
+        separate keywords for input that either come from the configuration
+        or from the current baton.
+
+        See processors.base.Processor.get_input(...).
+
+    - YAML-configurations can now be executed by piped like scripts using
+        the shebang: #!/usr/bin/env piped -ns
+
+    - chained_consumers and chained_error_consumers may now occur at any
+        level of nesting within the pipeline configuration. Previously,
+        chained_error_consumers were limited to the root level.
+
+    - Made the ordering of consumers vs chained_consumers explicit:
+        chained_consumers now always take precedence over consumers. See
+        the pipelines topic page for more details.
+
+Bug fixes:
+    - Allow loops in the processor graphs to include the source processors.
+    - fixed a bug that resulted in processors not having
+        instance_depends_on/instance_provides.
+    - web_provider: Fixed a bug that caused the automatic closing of http
+        requests to stop working if a sink in the pipeline returned the
+        request.
+
+Changed processors:
+    - decode-json: Added support for decoding from file-like objects.
+    - for-each: Now iterates over values when processing a dictionary, returning
+        a new dictionary with the original keys mapping to their respective processed
+        values.
+    - run-pipeline: Can now get the name of the pipeline to invoke from the
+        baton.
+
+New processors:
+    - call-dependency: Calls a method on a dependency.
+    - chain-web-requests: Chains two web requests together. See proxy-forward.
+    - extract-web-request-arguments: Extract query string arguments from a
+        twisted.web.server.Request-like object.
+    - log: Logs a message with the configured log-level.
+    - prefix-string: Prefixes the string at *input_path* with the
+        *prefix*.
+    - proxy-forward: Forwards requests to another server.
+    - trap-failure: Traps failures of the specified types.
+
+Internal changes:
+    - The dependencies of an object can now be retrieved from the
+        DependencyManager.
+    - util.BatonJSONEncoder can be used to encode virtually any object
+        to JSON by falling back to using the result of repr(obj) if it
+        cannot otherwise be encoded.
+    - __getitem__ has been added to evaluators and processor graphs allowing
+        direct access to their processors.
+    - ConcatenatedFile is no longer a subclass of StaticFile, but rather a
+        twisted.web.resource.Resource subclass.
+    - DummyRequest moved from test_web_provider to web_provider, as it might
+        prove useful outside of the test suite
+
+========================== Release 0.1.0 2011-10-17 ==========================
+
+This was the first official release.

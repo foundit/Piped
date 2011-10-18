@@ -1,12 +1,29 @@
 # Copyright (c) 2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
 import json
+import StringIO
 
 from twisted.internet import defer
 from twisted.python import reflect
 from twisted.trial import unittest
 
 from piped.processors import json_processors
+
+
+class StubDecoder(json.JSONDecoder):
+    """ A custom decoder that doubles any decoded values. """
+    def __init__(self, **kwargs):
+        kwargs['object_hook'] = self.dict_to_object
+        super(StubDecoder, self).__init__(**kwargs)
+
+    def dict_to_object(self, dict_like):
+        return dict([(key, value*2) for key, value in dict_like.items()])
+
+
+class StubEncoder(json.JSONEncoder):
+
+    def encode(self, o):
+        return 'custom encoder'
 
 
 class JsonDecoderTest(unittest.TestCase):
@@ -17,11 +34,17 @@ class JsonDecoderTest(unittest.TestCase):
         baton = yield processor.process(json.dumps(dict(foo=42)))
         self.assertEquals(baton, dict(foo=42))
 
+    @defer.inlineCallbacks
+    def test_decoding_buffer(self):
+        processor = json_processors.JsonDecoder()
+        baton = yield processor.process(StringIO.StringIO(json.dumps(dict(foo=42))))
+        self.assertEquals(baton, dict(foo=42))
 
-class StubEncoder(object):
-
-    def encode(self, whatever):
-        return 'custom encoder'
+    @defer.inlineCallbacks
+    def test_custom_decoder(self):
+        processor = json_processors.JsonDecoder(decoder=reflect.fullyQualifiedName(StubDecoder))
+        baton = yield processor.process(json.dumps(dict(foo=42)))
+        self.assertEquals(baton, dict(foo=84))
 
 
 class JsonEncoderTest(unittest.TestCase):

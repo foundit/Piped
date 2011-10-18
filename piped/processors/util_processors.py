@@ -16,7 +16,7 @@ from twisted.internet import defer, reactor
 from twisted.python import failure, reflect
 from zope import interface
 
-from piped import exceptions, util, log, processing
+from piped import exceptions, util, log, processing, yamlutil
 from piped.processors import base
 
 
@@ -276,6 +276,39 @@ class PrintTraceback(base.Processor):
     def process(self, baton):
         f = failure.Failure()
         f.printTraceback()
+        return baton
+
+class TrapFailure(base.Processor):
+    """ Traps failures of the specified types.
+
+    If the encountered exception is not one of the expected exception types, this
+    processor will raise the original exception, preserving the traceback.
+    """
+    name = 'trap-failure'
+    interface.classProvides(processing.IProcessor)
+
+    def __init__(self, error_types, output_path=None, *a, **kw):
+        """
+        :param error_types: A single or a list of fully qualified exception class
+            names that should be trapped.
+        :param output_path: If one of the expected error types are trapped, this
+            value will be set to the matching error type.
+        """
+        super(TrapFailure, self).__init__(*a, **kw)
+
+        if not isinstance(error_types, (list, tuple)):
+            error_types = [error_types]
+
+        for i, error_type in enumerate(error_types):
+            error_types[i] = reflect.namedAny(error_type)
+
+        self.error_types = error_types
+        self.output_path = output_path
+
+    def process(self, baton):
+        f = failure.Failure()
+        trapped = f.trap(*self.error_types)
+        baton = self.get_resulting_baton(baton, self.output_path, trapped)
         return baton
 
 
@@ -721,6 +754,16 @@ class StringFormatter(base.InputOutputProcessor):
         return formatted
 
 
+class StringPrefixer(StringFormatter):
+    """ Prefixes the string at *input_path* with the *prefix*. """
+    interface.classProvides(processing.IProcessor)
+    name = 'prefix-string'
+
+    def __init__(self, prefix, **kw):
+        kw['format'] = unicode(prefix) + '{0}'
+        super(StringPrefixer, self).__init__(**kw)
+
+
 class PDBTraceSetter(base.Processor):
     """ Calls pdb.trace() whenever a baton is processed. """
     name = 'set-pdb-trace'
@@ -753,126 +796,6 @@ class RaiseException(base.Processor):
         raise self.type(*self.args, **self.kwargs)
 
 
-class ForEach(base.InputOutputProcessor):
-    """ ForEach is an In/Out-processor that invokes a pipeline for
-    every item in its input.
-
-    The input is assumed to be an iterable. The result of the pipeline
-    is sent through a *result_processor*, and collected in a list
-    outputted to *output_path*. *result_processor* is a
-    lambda-definition, with a supplementing *namespace*-option, akin
-    to that of `LambdaProcessor`.
-
-    If *chunk_size* is specified, the input-iterable is chunked. E.g
-    if `chunk_size=2`, and the input iterable is '[1, 2, 3, 4, 5]`,
-    then the pipeline is invoked with three times, with the batons
-    being `[1, 2]`, `[3, 4]` and `[5]`.
-
-    If *parallel* is true, then the iterable is exhausted, and the
-    pipeline is invoked with all items in parallel. Then we wait until
-    all of them have completed.
-
-    If *done_on_first* is true, then the result of the pipeline that
-    completes first is returned. The results/failures of the other
-    pipelines are dropped, unless they all fail. In that case, an
-    `exceptions.AllPipelinesFailedError` is raised.
-
-    If *fail_on_error* is true, then any failure in the processing
-    will cause the result to be that failure. If it is false, which is
-    the default, then the errors are represented as failure-instances
-    in the output.
-    """
-    interface.classProvides(processing.IProcessor)
-    name = 'for-each'
-
-    def __init__(self, pipeline, chunk_size=None,
-                 namespace=None, result_processor='results: results[-1]',
-                 parallel=False, done_on_first=False, fail_on_error=False,
-                 **kw):
-        super(ForEach, self).__init__(**kw)
-        self.pipeline_name = pipeline
-        self.chunk_size = chunk_size
-        self.namespace = namespace or dict()
-        self.result_processor_definition = result_processor
-        self.fail_on_error = fail_on_error
-        self.done_on_first = done_on_first
-
-        self.parallel = parallel
-        if parallel:
-            self._process_iterable = self._process_in_parallel
-        else:
-            self._process_iterable = self._process_serially
-
-    def configure(self, runtime_environment):
-        self.pipeline_dependency = runtime_environment.dependency_manager.add_dependency(self, dict(provider='pipeline.%s' % self.pipeline_name))
-        self.result_processor = util.create_lambda_function(self.result_processor_definition, self=self, **self.namespace)
-
-    def process_input(self, input, baton):
-        if self.chunk_size:
-            input = util.chunked(input, self.chunk_size)
-
-        return self._process_iterable(input)
-
-    @defer.inlineCallbacks
-    def _process_serially(self, input):
-        results = list()
-        pipeline = yield self.pipeline_dependency.wait_for_resource()
-
-        for sub_baton in input:
-
-            try:
-                result = yield pipeline.process(sub_baton)
-                results.append(self.result_processor(result))
-            except Exception:
-                if self.fail_on_error:
-                    raise
-                else:
-                    results.append(failure.Failure())
-
-            else:
-                if self.done_on_first:
-                    # This actually raises an exception, so it must be outside the above try.
-                    defer.returnValue(results[-1])
-
-        if self.done_on_first:
-            # If anything would have succeeded, we would have broken
-            # out above. Thus, we can assume it's all failures.
-            raise exceptions.AllPipelinesFailedError('All pipelines failed', failures=results)
-
-        defer.returnValue(results)
-
-    @defer.inlineCallbacks
-    def _process_in_parallel(self, input):
-        pipeline = yield self.pipeline_dependency.wait_for_resource()
-        ds = list()
-
-        # Prepare running all pipelines in parallel.
-        for sub_baton in input:
-            d = defer.maybeDeferred(pipeline.process, sub_baton)
-            # ... the result must be processed as usual.
-            d.addCallback(lambda result: self.result_processor(result))
-            ds.append(d)
-
-        # Then wait.
-        try:
-            result = yield defer.DeferredList(ds, fireOnOneCallback=self.done_on_first,
-                                              fireOnOneErrback=self.fail_on_error, consumeErrors=True)
-        except defer.FirstError, e:
-            e.subFailure.raiseException()
-
-        # Unpack the results.
-        if isinstance(result, list):
-            result = [value for _, value in result]
-
-            if result and all(isinstance(maybe_failure, failure.Failure) for maybe_failure in result):
-                raise exceptions.AllPipelinesFailedError(e_msg='All pipelines failed', failures=result)
-
-        elif self.done_on_first:
-            result = result[0]
-
-        defer.returnValue(result)
-
-
 class MappingSetter(base.Processor):
     """ Takes a path-to-value-mapping and sets values at the specified
     paths.
@@ -884,7 +807,7 @@ class MappingSetter(base.Processor):
     name = 'set-values'
 
     def __init__(self, mapping, path_prefix='', **kw):
-        super(MappingSetter, self).__init__(self, **kw)
+        super(MappingSetter, self).__init__(**kw)
         self.mapping = mapping
         self.path_prefix = path_prefix
 
@@ -901,7 +824,7 @@ class ValueSetter(base.Processor):
     name = 'set-value'
 
     def __init__(self, path, value, **kw):
-        super(ValueSetter, self).__init__(self, **kw)
+        super(ValueSetter, self).__init__(**kw)
         self.path = path
         self.value = value
 
@@ -947,3 +870,102 @@ class RateReporter(base.Processor):
         if(rate != 0 or self.report_zero):
             log.info(log_string)
         return baton
+
+
+class Logger(base.Processor):
+    """ Logs a message with the configured log-level.
+
+    The message is either configured at *message*, or looked up in the
+    baton at *message_path*.
+
+    The message is logged with the configured *level*.
+
+    .. seealso:: :mod:`piped.log`
+    """
+    interface.classProvides(processing.IProcessor)
+    name = 'log'
+
+    def __init__(self, message=None, message_path=None, level='info', **kw):
+        super(Logger, self).__init__(**kw)
+
+        if (message is None) + (message_path is None) != 1:
+            raise exceptions.ConfigurationError('specify either message or message_path')
+
+        level = level.lower()
+        if level not in ('critical', 'debug', 'error', 'failure', 'info', 'warn'):
+            raise ValueError('Invalid log-level: "%s"' % level)
+        self.logger = getattr(log, level)
+
+        self.message = message
+        self.message_path = message_path
+
+    def process(self, baton):
+        if self.message_path:
+            message = util.dict_get_path(baton, self.message_path)
+        else:
+            message = self.message
+
+        if message:
+            self.logger(message)
+
+        return baton
+
+
+#DEPENDENCY_CALLER_NO_ARGUMENTS = object()
+
+class DependencyCaller(base.Processor):
+    """ Calls a method on a dependency.
+
+    This processor may be useful if you want to call a method on a provided dependency.
+    """
+    interface.classProvides(processing.IProcessor)
+    name = 'call-dependency'
+    NO_ARGUMENTS = object()
+
+    def __init__(self, dependency, method='__call__', arguments=NO_ARGUMENTS,
+                 unpack_arguments=False, output_path=None, *a, **kw):
+        """
+        :param dependency: The dependency to use.
+        :param method: The name of the method to call.
+        :param arguments: The arguments to call the method with. Defaults to no
+            arguments.
+        :param unpack_arguments: Whether to unpack arguments
+        :param output_path: Where to store the output in the baton.
+        """
+        super(DependencyCaller, self).__init__(*a, **kw)
+
+        if isinstance(dependency, basestring):
+            dependency = dict(provider=dependency)
+        self.dependency_config = dependency
+
+        self.method_name = method
+        self.arguments = arguments
+        self.unpack_arguments = unpack_arguments
+
+        self.output_path = output_path
+
+    def configure(self, runtime_environment):
+        dm = runtime_environment.dependency_manager
+        self.dependency = dm.add_dependency(self, self.dependency_config)
+
+    @defer.inlineCallbacks
+    def process(self, baton):
+        dependency = yield self.dependency.wait_for_resource()
+        method_name = self.get_input(baton, self.method_name)
+        method = getattr(dependency, method_name)
+
+        arguments = self.get_input(baton, self.arguments)
+
+        if self.arguments == self.NO_ARGUMENTS:
+            result = yield method()
+        else:
+            if self.unpack_arguments:
+                if isinstance(arguments, dict):
+                    result = yield method(**arguments)
+                else:
+                    result = yield method(*arguments)
+            else:
+                result = yield method(arguments)
+
+        baton = self.get_resulting_baton(baton, self.output_path, result)
+        defer.returnValue(baton)

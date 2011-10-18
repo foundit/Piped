@@ -9,8 +9,12 @@ from twisted.internet import defer
 from twisted.trial import unittest
 from twisted.python import failure, reflect
 
-from piped import decorators, dependencies, util, processing, exceptions
+from piped import decorators, dependencies, util, processing, exceptions, yamlutil
 from piped.processors import util_processors
+
+
+class FakeError(exceptions.PipedError):
+    pass
 
 
 class TestMergeWithDict(unittest.TestCase):
@@ -215,6 +219,51 @@ class TestBatonCleaner(unittest.TestCase):
             self.fail("Expected BatonCleaner to err.")
         except AssertionError:
             pass
+
+
+class TestTrapFailure(unittest.TestCase):
+
+    def _create_processor(self, **kwargs):
+        return util_processors.TrapFailure(**kwargs)
+
+    def test_simple_trapping(self):
+        processor = self._create_processor(error_types=reflect.fullyQualifiedName(FakeError), output_path='trapped')
+
+        try:
+            raise FakeError('test')
+        except FakeError as fe:
+            baton = processor.process(dict())
+            self.assertEquals(baton['trapped'], FakeError)
+
+    def test_not_trapping_unexpected_exceptions(self):
+        processor = self._create_processor(error_types=reflect.fullyQualifiedName(FakeError))
+
+        try:
+            raise exceptions.PipedError('test')
+        except exceptions.PipedError as pe:
+            try:
+                processor.process(None)
+            except failure.Failure as reason:
+                self.assertEquals(reason.type, exceptions.PipedError)
+                self.assertEquals(reason.value, pe)
+            else:
+                self.fail('Expected a failure to be raised.')
+
+    def test_no_current_failure(self):
+        processor = self._create_processor(error_types=reflect.fullyQualifiedName(FakeError))
+
+        self.assertRaises(failure.NoCurrentExceptionError, processor.process, None)
+
+    def test_trapping_multiple_types(self):
+        error_types = [reflect.fullyQualifiedName(FakeError), reflect.fullyQualifiedName(exceptions.ConfigurationError)]
+        processor = self._create_processor(error_types=error_types, output_path='trapped')
+
+        for error_type in (FakeError, exceptions.ConfigurationError):
+            try:
+                raise error_type('test')
+            except error_type as fe:
+                baton = processor.process(dict())
+                self.assertEquals(baton['trapped'], error_type)
 
 
 class TestFlattenDictionaryList(unittest.TestCase):
@@ -511,6 +560,30 @@ class TestStringFormatter(unittest.TestCase):
         self.assertRaises(exceptions.ConfigurationError, util_processors.StringFormatter, format='', format_path='')
 
 
+class TestStringPrefixer(unittest.TestCase):
+
+    def test_prefixing(self):
+        formatter = util_processors.StringPrefixer(prefix='foo: ', input_path='value')
+        baton = dict(value='bar')
+        formatter.process(baton)
+
+        self.assertEquals(baton, dict(value='foo: bar'))
+
+    def test_prefixing_when_value_is_not_string(self):
+        formatter = util_processors.StringPrefixer(prefix='foo: ', input_path='value')
+        baton = dict(value=42)
+        formatter.process(baton)
+
+        self.assertEquals(baton, dict(value='foo: 42'))
+
+    def test_prefixing_when_neither_value_nor_prefix_is_string(self):
+        formatter = util_processors.StringPrefixer(prefix=42, input_path='value')
+        baton = dict(value=42)
+        formatter.process(baton)
+
+        self.assertEquals(baton, dict(value='4242'))
+
+
 class StubException(exceptions.PipedError):
     pass
 
@@ -532,426 +605,6 @@ class TestRaiseException(unittest.TestCase):
         except StubException, e:
             for k, v in kwargs.items():
                 self.assertEquals(getattr(e, k), v)
-
-
-class FakePipeline(object):
-
-    def __init__(self):
-        self.batons = list()
-        self.i = 0
-
-    def process(self, baton):
-        self.batons.append(baton)
-        self.i += 1
-        return [self.i]
-
-
-class FakePipelineWithMultipleSinks(FakePipeline):
-
-    def process(self, baton):
-        FakePipeline.process(self, baton)
-        return ['pretended', 'multiple', 'results']
-
-
-class FakeSlowPipeline(FakePipeline):
-
-    @defer.inlineCallbacks
-    def process(self, baton):
-        yield util.wait(0)
-        FakePipeline.process(self, baton)
-        defer.returnValue([baton])
-
-
-class FakeError(exceptions.PipedError):
-    pass
-
-
-class FakeFailingPipeline(FakePipeline):
-
-    def process(self, baton):
-        self.i += 1
-        if not (self.i % 2):
-            raise FakeError('forced failure')
-        return [baton]
-
-
-class TestForEach(unittest.TestCase):
-    # If it takes this long, it has surely failed.
-    timeout = 2
-
-    def setUp(self):
-        self.runtime_environment = processing.RuntimeEnvironment()
-        self.runtime_environment.configure()
-
-    # Provide some sensible defaults for the tests.
-    def make_and_configure_processor(self, pipeline='pipeline_name', input_path='iterable', output_path='results', **kw):
-        processor = util_processors.ForEach(pipeline=pipeline, input_path=input_path, output_path=output_path, **kw)
-        processor.configure(self.runtime_environment)
-        return processor
-
-    def test_depending_on_the_needed_pipeline(self):
-        add_dependency = self.runtime_environment.dependency_manager.add_dependency = mock.Mock()
-
-        processor = self.make_and_configure_processor()
-
-        expected_dependency_spec = dict(provider='pipeline.pipeline_name')
-        add_dependency.assert_called_once_with(processor, expected_dependency_spec)
-
-    def test_for_each_invokes_the_pipeline(self):
-        pipeline = FakePipeline()
-        pipeline_resource = dependencies.InstanceDependency(pipeline)
-        pipeline_resource.is_ready = True
-
-        processor = self.make_and_configure_processor()
-        processor.pipeline_dependency = pipeline_resource
-
-        baton = dict(iterable=['foo', 'bar', 'baz'])
-        processor.process(baton)
-
-        self.assertEqual(pipeline.batons, ['foo', 'bar', 'baz'])
-        self.assertEqual(baton, dict(iterable=['foo', 'bar', 'baz'], results=[1, 2, 3]))
-
-    def test_for_each_chunked(self):
-        pipeline = FakePipeline()
-        pipeline_resource = dependencies.InstanceDependency(pipeline)
-        pipeline_resource.is_ready = True
-
-        processor = self.make_and_configure_processor(chunk_size=3)
-        processor.pipeline_dependency = pipeline_resource
-
-        baton = dict(iterable=range(10))
-        processor.process(baton)
-
-        chunked_range = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9]]
-        self.assertEqual(pipeline.batons, chunked_range)
-        self.assertEqual(baton, dict(iterable=range(10), results=[1, 2, 3, 4]))
-
-    def test_getting_results_of_last_sink_by_default(self):
-        pipeline = FakePipelineWithMultipleSinks()
-        pipeline_resource = dependencies.InstanceDependency(pipeline)
-        pipeline_resource.is_ready = True
-
-        processor = self.make_and_configure_processor(chunk_size=2)
-        processor.pipeline_dependency = pipeline_resource
-
-        baton = dict(iterable=[1, 2, 3])
-        processor.process(baton)
-
-        expected_results = ['results', 'results'] # two chunks times the result of the fake pipeline with multiple sinks.
-        self.assertEqual(baton, dict(iterable=[1, 2, 3], results=expected_results))
-
-    def test_custom_result_processor(self):
-        pipeline = FakePipelineWithMultipleSinks()
-        pipeline_resource = dependencies.InstanceDependency(pipeline)
-        pipeline_resource.is_ready = True
-
-        processor = self.make_and_configure_processor(chunk_size=2, result_processor='input: input')
-        processor.pipeline_dependency = pipeline_resource
-
-        baton = dict(iterable=[1, 2, 3])
-        processor.process(baton)
-
-        expected_results = [['pretended', 'multiple', 'results']] * 2
-        self.assertEqual(baton, dict(iterable=[1, 2, 3], results=expected_results))
-
-    @defer.inlineCallbacks
-    def test_processing_is_serial(self):
-        pipeline = FakeSlowPipeline()
-        pipeline_resource = dependencies.InstanceDependency(pipeline)
-        pipeline_resource.is_ready = True
-
-        processor = self.make_and_configure_processor()
-        processor.pipeline_dependency = pipeline_resource
-
-        baton = dict(iterable=range(3))
-        processor.process(baton)
-
-        # FakeSlowPipeline waits one reactor-iteration before returning. 
-        self.assertEqual(pipeline.batons, [])
-        for i in range(3):
-            # Thus, we expect one additional baton to be processed for
-            # every reactor iteration when the processing is serial.
-            yield util.wait(0)
-            self.assertEqual(pipeline.batons, range(i + 1))
-
-    @defer.inlineCallbacks
-    def test_processing_in_parallel(self):
-        pipeline = FakeSlowPipeline()
-        pipeline_resource = dependencies.InstanceDependency(pipeline)
-        pipeline_resource.is_ready = True
-
-        processor = self.make_and_configure_processor(parallel=True)
-        processor.pipeline_dependency = pipeline_resource
-
-        baton = dict(iterable=range(3))
-        processor.process(baton)
-
-        # As opposed to the serial test, we now expect all batons to have been processed.
-        self.assertEqual(pipeline.batons, [])
-        yield util.wait(0)
-        self.assertEqual(pipeline.batons, range(3))
-
-    @defer.inlineCallbacks
-    def test_failing_serially_but_continuing(self):
-        pipeline = FakeFailingPipeline()
-        pipeline_resource = dependencies.InstanceDependency(pipeline)
-        pipeline_resource.is_ready = True
-
-        processor = self.make_and_configure_processor()
-        processor.pipeline_dependency = pipeline_resource
-
-        baton = dict(iterable=range(3))
-
-        yield processor.process(baton)
-
-        # FakeFailingPipeline fails every second item.
-        self.assertEqual(baton['results'][0], 0)
-
-        # ... so we expect the second to be a failure.
-        failure_ = baton['results'][1]
-        self.assertTrue(isinstance(failure_, failure.Failure))
-        self.assertTrue(failure_.type is FakeError)
-
-        # We expect that processing has continued.
-        self.assertEqual(baton['results'][2], 2)
-
-    @defer.inlineCallbacks
-    def test_failing_serially_and_raising(self):
-        pipeline = FakeFailingPipeline()
-        pipeline_resource = dependencies.InstanceDependency(pipeline)
-        pipeline_resource.is_ready = True
-
-        processor = self.make_and_configure_processor(fail_on_error=True)
-        processor.pipeline_dependency = pipeline_resource
-
-        baton = dict(iterable=range(3))
-
-        try:
-            yield processor.process(baton)
-            self.fail('Expected processing to fail')
-
-        except FakeError:
-            # The baton should be unchanged.
-            self.assertEqual(baton, dict(iterable=range(3)))
-
-    @defer.inlineCallbacks
-    def test_failing_in_parallel_and_stopping(self):
-        pipeline = FakeFailingPipeline()
-        pipeline_resource = dependencies.InstanceDependency(pipeline)
-        pipeline_resource.is_ready = True
-
-        processor = self.make_and_configure_processor(fail_on_error=True, parallel=True)
-        processor.pipeline_dependency = pipeline_resource
-
-        baton = dict(iterable=range(3))
-
-        try:
-            yield processor.process(baton)
-            self.fail('Expected processing to fail')
-
-        except FakeError:
-            # The baton should be unchanged.
-            self.assertEqual(baton, dict(iterable=range(3)))
-
-    @defer.inlineCallbacks
-    def test_failing_in_parallel_but_continuing(self):
-        pipeline = FakeFailingPipeline()
-        pipeline_resource = dependencies.InstanceDependency(pipeline)
-        pipeline_resource.is_ready = True
-
-        processor = self.make_and_configure_processor(fail_on_error=False, parallel=True)
-        processor.pipeline_dependency = pipeline_resource
-
-        baton = dict(iterable=range(3))
-
-        yield processor.process(baton)
-
-        # FakeFailingPipeline fails every second item.
-        self.assertEqual(baton['results'][0], 0)
-
-        # ... so we expect the second to be a failure.
-        failure_ = baton['results'][1]
-        self.assertTrue(isinstance(failure_, failure.Failure))
-        self.assertTrue(failure_.type is FakeError)
-
-        # We expect that processing has continued.
-        self.assertEqual(baton['results'][2], 2)
-
-    @defer.inlineCallbacks
-    def test_succeeding_when_the_first_one_is_done(self):
-        # Make a pipeline whose deferreds we can access.
-        deferreds = list()
-        batons = list()
-        class FakePipeline:
-
-            def process(self, baton):
-                d = defer.Deferred()
-                batons.append(baton)
-                deferreds.append(d)
-                return d
-
-        pipeline_resource = dependencies.InstanceDependency(FakePipeline())
-        pipeline_resource.is_ready = True
-
-        processor = self.make_and_configure_processor(done_on_first=True, parallel=True)
-        processor.pipeline_dependency = pipeline_resource
-
-        baton = dict(iterable=range(3))
-
-        d = processor.process(baton)
-
-        self.assertEqual(len(deferreds), 3)
-        self.assertEqual(len(batons), 3)
-
-        # Callback one of them.
-        deferreds[1].callback(['fake result'])
-
-        yield d
-
-        self.assertEqual(baton, dict(iterable=range(3), results='fake result'))
-
-    @defer.inlineCallbacks
-    def test_succeeding_when_the_first_one_is_done_serially(self):
-        # Make a pipeline whose deferreds we can access.
-        deferreds = list()
-        batons = list()
-        class FakePipeline:
-
-            def process(self, baton):
-                d = defer.Deferred()
-                batons.append(baton)
-                deferreds.append(d)
-                return d
-
-        pipeline_resource = dependencies.InstanceDependency(FakePipeline())
-        pipeline_resource.is_ready = True
-
-        processor = self.make_and_configure_processor(done_on_first=True)
-        processor.pipeline_dependency = pipeline_resource
-
-        baton = dict(iterable=range(3))
-
-        d = processor.process(baton)
-
-        # Only one item should have been attempted processed so far.
-        self.assertEqual(batons, [0])
-
-        # Fail it:
-        deferreds[0].errback(failure.Failure(FakeError('forced error')))
-
-        # Try the second item.
-        yield util.wait(0)
-        self.assertEqual(batons, [0, 1])
-        # ... and make it a success
-        deferreds[1].callback(['fake result'])
-
-        yield d
-
-        # That should have resulted in not attempting the last item.
-        self.assertEqual(batons, [0, 1])
-        self.assertEqual(baton, dict(iterable=range(3), results='fake result'))
-
-    @defer.inlineCallbacks
-    def test_failing_when_waiting_for_one_and_none_succeed_in_serial(self):
-        # Make a pipeline whose deferreds we can access.
-        deferreds = list()
-        batons = list()
-        class FakePipeline:
-
-            def process(self, baton):
-                d = defer.Deferred()
-                batons.append(baton)
-                deferreds.append(d)
-                return d
-
-        pipeline_resource = dependencies.InstanceDependency(FakePipeline())
-        pipeline_resource.is_ready = True
-
-        processor = self.make_and_configure_processor(done_on_first=True)
-        processor.pipeline_dependency = pipeline_resource
-
-        baton = dict(iterable=range(3))
-
-        d = processor.process(baton)
-
-        for i in range(3):
-            self.assertEqual(len(deferreds), i + 1)
-            deferreds[-1].errback(failure.Failure(FakeError('forced error')))
-
-        try:
-            yield d
-            self.fail('Expected failure')
-
-        except exceptions.AllPipelinesFailedError, e:
-            self.assertEqual(len(e.failures), 3)
-            for f in e.failures:
-                self.assertTrue(f.type, FakeError)
-
-    @defer.inlineCallbacks
-    def test_failing_when_waiting_for_one_and_none_succeed_in_parallel(self):
-        # Make a pipeline whose deferreds we can access.
-        deferreds = list()
-        batons = list()
-        class FakePipeline:
-
-            def process(self, baton):
-                d = defer.Deferred()
-                batons.append(baton)
-                deferreds.append(d)
-                return d
-
-        pipeline_resource = dependencies.InstanceDependency(FakePipeline())
-        pipeline_resource.is_ready = True
-
-        processor = self.make_and_configure_processor(done_on_first=True, parallel=True)
-        processor.pipeline_dependency = pipeline_resource
-
-        baton = dict(iterable=range(3))
-
-        d = processor.process(baton)
-
-        self.assertEqual(len(deferreds), 3)
-        self.assertEqual(len(batons), 3)
-
-        for d_to_fail in deferreds:
-            d_to_fail.errback(failure.Failure(FakeError('forced error')))
-
-        try:
-            yield d
-            self.fail('Expected failure')
-
-        except exceptions.AllPipelinesFailedError, e:
-            self.assertEqual(len(e.failures), 3)
-            for f in e.failures:
-                self.assertTrue(f.type, FakeError)
-
-    @defer.inlineCallbacks
-    def test_handles_empty_input_serially(self):
-        pipeline_resource = dependencies.InstanceDependency(FakePipeline())
-        pipeline_resource.is_ready = True
-
-        processor = self.make_and_configure_processor()
-        processor.pipeline_dependency = pipeline_resource
-
-        baton = dict(iterable=list())
-
-        yield processor.process(baton)
-
-        self.assertEqual(baton, dict(iterable=list(), results=list()))
-
-    @defer.inlineCallbacks
-    def test_handles_empty_input_in_parallel(self):
-        pipeline_resource = dependencies.InstanceDependency(FakePipeline())
-        pipeline_resource.is_ready = True
-
-        processor = self.make_and_configure_processor(parallel=True)
-        processor.pipeline_dependency = pipeline_resource
-
-        baton = dict(iterable=list())
-
-        yield processor.process(baton)
-
-        self.assertEqual(baton, dict(iterable=list(), results=list()))
 
 
 class TestMappingSetter(unittest.TestCase):
@@ -1009,6 +662,120 @@ class TestCounterIncrementer(unittest.TestCase):
         self.assertEquals(baton, dict(counter=0))
         processor.process(baton)
         self.assertEquals(baton, dict(counter=-1))
+
+
+class TestLogger(unittest.TestCase):
+
+    def test_complaining_about_invalid_log_level(self):
+        self.assertRaises(ValueError, util_processors.Logger, message='log message', level='invalid')
+
+    def test_complaining_about_both_message_and_path(self):
+        self.assertRaises(exceptions.ConfigurationError, util_processors.Logger, message='', message_path='path')
+
+    def test_complaining_about_neither_message_nor_path(self):
+        self.assertRaises(exceptions.ConfigurationError, util_processors.Logger)
+
+    def test_logging_with_default_level(self):
+        with mock.patch('piped.processors.util_processors.log') as mocked_log:
+            logger = util_processors.Logger(message='log message')
+            logger.process(dict())
+
+        mocked_log.info.assert_called_once_with('log message')
+
+    def test_logging_with_custom_level(self):
+        with mock.patch('piped.processors.util_processors.log') as mocked_log:
+            logger = util_processors.Logger(message='error message', level='error')
+            logger.process(dict())
+
+        mocked_log.error.assert_called_once_with('error message')
+
+    def test_logging_with_path(self):
+        with mock.patch('piped.processors.util_processors.log') as mocked_log:
+            logger = util_processors.Logger(message_path='log.message')
+            logger.process(dict(log=dict(message='log message')))
+
+        mocked_log.info.assert_called_once_with('log message')
+
+    def test_not_logging_when_no_message(self):
+        with mock.patch('piped.processors.util_processors.log') as mocked_log:
+            logger = util_processors.Logger(message_path='log.message')
+            logger.process(dict())
+
+        self.assertEquals(mocked_log.method_calls, [])
+
+class DependencyCallerTest(unittest.TestCase):
+    class TestResource(object):
+        def __call__(self):
+            return 'test __call__'
+
+        def echo(self, *a, **kw):
+            return [a, kw]
+
+    def setUp(self):
+        self.runtime_environment = processing.RuntimeEnvironment()
+        self.runtime_environment.configure()
+        self.runtime_environment.resource_manager.register('test', provider=self)
+
+    def add_consumer(self, resource_dependency):
+        resource_dependency.on_resource_ready(self.TestResource())
+
+    def _create_processor(self, **config):
+        return util_processors.DependencyCaller(**config)
+
+    @defer.inlineCallbacks
+    def test_simple_calling(self):
+        processor = self._create_processor(dependency='test', output_path='result')
+        processor.configure(self.runtime_environment)
+        self.runtime_environment.dependency_manager.resolve_initial_states()
+
+        baton = yield processor.process(dict())
+        self.assertEquals(baton['result'], 'test __call__')
+
+    @defer.inlineCallbacks
+    def test_simple_argument(self):
+        processor = self._create_processor(dependency='test', method='echo', arguments=dict(foo='bar'), output_path='result')
+        processor.configure(self.runtime_environment)
+        self.runtime_environment.dependency_manager.resolve_initial_states()
+
+        baton = yield processor.process(dict())
+        self.assertEquals(baton['result'], [(dict(foo='bar'), ), dict()])
+
+    @defer.inlineCallbacks
+    def test_argument_unpacking(self):
+        processor = self._create_processor(dependency='test', method='echo', arguments=dict(foo='bar'), unpack_arguments=True, output_path='result')
+        processor.configure(self.runtime_environment)
+        self.runtime_environment.dependency_manager.resolve_initial_states()
+
+        baton = yield processor.process(dict())
+        self.assertEquals(baton['result'], [tuple(), dict(foo='bar')])
+
+    @defer.inlineCallbacks
+    def test_baton_argument(self):
+        processor = self._create_processor(dependency='test', method='echo', arguments=yamlutil.BatonPath(), output_path='result')
+        processor.configure(self.runtime_environment)
+        self.runtime_environment.dependency_manager.resolve_initial_states()
+
+        baton = yield processor.process(dict(foo='bar'))
+        # the result will contain a reference to itself because the output is set in the same dict instance as the first argument.
+        self.assertEquals(baton['result'], [(dict(foo='bar', result=baton['result']), ), dict()])
+
+    @defer.inlineCallbacks
+    def test_baton_argument_unpacking(self):
+        processor = self._create_processor(dependency='test', method='echo', arguments=yamlutil.BatonPath(), unpack_arguments=True, output_path='result')
+        processor.configure(self.runtime_environment)
+        self.runtime_environment.dependency_manager.resolve_initial_states()
+
+        baton = yield processor.process(dict(foo='bar'))
+        self.assertEquals(baton['result'], [tuple(), dict(foo='bar')])
+
+    @defer.inlineCallbacks
+    def test_baton_argument_unpacking_with_list_arguments(self):
+        processor = self._create_processor(dependency='test', method='echo', arguments=['foo', 'bar'], unpack_arguments=True, output_path='result')
+        processor.configure(self.runtime_environment)
+        self.runtime_environment.dependency_manager.resolve_initial_states()
+
+        baton = yield processor.process(baton=dict())
+        self.assertEquals(baton['result'], [('foo', 'bar'), dict()])
 
 
 __doctests__ = [util_processors]

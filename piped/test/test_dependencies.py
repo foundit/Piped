@@ -51,6 +51,18 @@ class DependencyManagerTest(unittest.TestCase):
         # The providers add_dependency should be invoked with the resource dependency
         self.assertEquals(consumers, [resource_dependency])
 
+    def test_getting_dependencies(self):
+        foo = object()
+        bar = object()
+        baz = object()
+        zip = object()
+
+        self.dependency_manager.add_dependency(foo, bar)
+        self.dependency_manager.add_dependency(baz, bar)
+        self.dependency_manager.add_dependency(bar, zip)
+
+        self.assertEquals(self.dependency_manager.get_dependencies_of(foo), [self.dependency_manager.as_dependency(bar)])
+        self.assertEquals(self.dependency_manager.get_dependencies_of(zip), [])
 
     def test_bubbling_availability_for_trivial_dependencies(self):
         """

@@ -12,6 +12,13 @@ Utility processors
 .. currentmodule:: piped.processors.util_processors
 
 
+.. _call-dependency:
+
+call-dependency
+^^^^^^^^^^^^^^^
+.. autoclass:: DependencyCaller
+
+
 .. _callback-deferred:
 
 callback-deferred
@@ -84,13 +91,6 @@ flatten-nested-lists
 .. autoclass:: NestedListFlattener
 
 
-.. _for-each:
-
-for-each
-^^^^^^^^
-.. autoclass:: ForEach
-
-
 .. _group-by-value:
 
 group-by-value
@@ -112,6 +112,13 @@ lambda-decider
 .. autoclass:: LambdaConditional
 
 
+.. _log:
+
+log
+^^^
+.. autoclass:: Logger
+
+
 .. _merge-with-dict:
 
 merge-with-dict
@@ -122,16 +129,22 @@ merge-with-dict
 .. _passthrough:
 
 passthrough
-^^^^^^^^^^^^^^
+^^^^^^^^^^^
 .. autoclass:: Passthrough
+
+
+.. _prefix-string:
+
+prefix-string
+^^^^^^^^^^^^^
+.. autoclass:: StringPrefixer
 
 
 .. _pretty-print:
 
 pretty-print
-^^^^^^^^^^^^^^
+^^^^^^^^^^^^
 .. autoclass:: PrettyPrint
-
 
 .. _print-failure-traceback:
 
@@ -143,7 +156,7 @@ print-failure-traceback
 .. _print-nth:
 
 print-nth
-^^^^^^^^^^^^^^
+^^^^^^^^^
 .. autoclass:: NthPrinter
 
 
@@ -157,21 +170,21 @@ raise-exception
 .. _remap:
 
 remap
-^^^^^^^^^^^^^^^
+^^^^^
 .. autoclass:: RemapProcessor
 
 
 .. _set-value:
 
 set-value
-^^^^^^^^^^^^^^^
+^^^^^^^^^
 .. autoclass:: ValueSetter
 
 
 .. _set-values:
 
 set-values
-^^^^^^^^^^^^^^^
+^^^^^^^^^^
 .. autoclass:: MappingSetter
 
 
@@ -185,14 +198,21 @@ shutdown
 .. _stop:
 
 stop
-^^^^^^^^^^^^^^
+^^^^
 .. autoclass:: Stopper
+
+
+.. _trap-failure:
+
+trap-failure
+^^^^^^^^^^^^
+.. autoclass:: TrapFailure
 
 
 .. _wait:
 
 wait
-^^^^^^^^^^^^^^
+^^^^
 .. autoclass:: Waiter
 
 
@@ -201,6 +221,27 @@ wait
 wrap-coroutine
 ^^^^^^^^^^^^^^
 .. autoclass:: CoroutineWrapper
+
+
+Context processors
+------------------
+
+.. currentmodule:: piped.processors.context_processors
+
+.. seealso:: :ref:`provider-contexts`
+
+.. _fetch-context:
+
+fetch-context
+^^^^^^^^^^^^^
+.. autoclass:: ContextFetcher
+
+
+.. _fetch-persisted-context:
+
+fetch-persisted-context
+^^^^^^^^^^^^^^^^^^^^^^^
+.. autoclass:: PersistedContextFetcher
 
 
 
@@ -213,14 +254,14 @@ Datetime processors
 .. _format-date:
 
 format-date
-^^^^^^^^^^^^^^
+^^^^^^^^^^^
 .. autoclass:: DateFormatter
 
 
 .. _parse-date:
 
 parse-date
-^^^^^^^^^^^^^^
+^^^^^^^^^^
 .. autoclass:: DateTimeParser
 
 
@@ -301,6 +342,13 @@ diagram-dependencies
 diagram-pipelines
 ^^^^^^^^^^^^^^^^^
 .. autoclass:: PipelineDiagrammer
+
+
+.. _for-each:
+
+for-each
+^^^^^^^^
+.. autoclass:: ForEach
 
 
 .. _run-pipeline:
@@ -393,10 +441,40 @@ stop-tick-interval
 
 
 
+Trace processors
+----------------
+
+.. currentmodule:: piped.processors.trace_processors
+
+.. automodule:: piped.processors.trace_processors
+
+
+.. _diagram-trace:
+
+diagram-trace
+^^^^^^^^^^^^^
+.. autoclass:: DiagramTrace
+
+
+.. _render-trace:
+
+render-trace
+^^^^^^^^^^^^
+.. autoclass:: RenderTrace
+
+
+
 Web processors
 --------------
 
 .. currentmodule:: piped.processors.web_processors
+
+
+.. _chain-web-requests:
+
+chain-web-requests
+^^^^^^^^^^^^^^^^^^
+.. autoclass:: RequestChainer
 
 
 .. _determine-ip:
@@ -404,6 +482,20 @@ Web processors
 determine-ip
 ^^^^^^^^^^^^^^
 .. autoclass:: IPDeterminer
+
+
+.. _extract-web-request-arguments:
+
+extract-web-request-arguments
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. autoclass:: ExtractRequestArguments
+
+
+.. _proxy-forward:
+
+proxy-forward
+^^^^^^^^^^^^^
+.. autoclass:: ProxyForward
 
 
 .. _set-http-expires:

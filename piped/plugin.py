@@ -74,6 +74,8 @@ class PluginManager(object):
             for plugin in self._plugins:
                 self._register_plugin(plugin)
 
+            self.plugins_loaded = True
+
         self.on_plugins_loaded(self._plugins)
 
     def _get_bundled_packages(self):

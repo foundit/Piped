@@ -9,3 +9,5 @@ Contents:
    getting_started/index
    twitter/index
    distributing/index
+
+   tracing/index

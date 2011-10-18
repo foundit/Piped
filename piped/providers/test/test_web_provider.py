@@ -6,8 +6,7 @@ from twisted.application import service
 from twisted.internet import defer, address
 from twisted.python import filepath, failure
 from twisted.trial import unittest
-from twisted.web import server, resource
-from twisted.web.test import test_web
+from twisted.web import resource
 
 from piped import exceptions, util, processing, dependencies
 from piped.providers import web_provider
@@ -20,10 +19,6 @@ class StubPipeline(object):
 
     def process(self, baton):
         return self.processor(baton)
-
-
-class DummyRequest(test_web.DummyRequest, server.Request):
-    channel = Ellipsis
 
 
 class WebProviderTest(unittest.TestCase):
@@ -48,12 +43,23 @@ class WebProviderTest(unittest.TestCase):
         web_resource.configure(self.runtime_environment)
         return web_resource
 
-    def assertConfiguredWithPipeline(self, web_resource, pipeline):
-        self.assertEquals(web_resource.has_pipeline, True)
-        self.assertEquals(web_resource.pipeline_dependency.provider, pipeline)
+    def assertConfiguredWithPipeline(self, web_resource, pipeline=None, no_resource_pipeline=None):
+        if pipeline:
+            self.assertNotEquals(web_resource.pipeline_dependency, None)
+            self.assertEquals(web_resource.pipeline_dependency.provider, pipeline)
+        else:
+            self.assertEquals(web_resource.pipeline_dependency, None)
 
-    def getResourceForFakeRequest(self, site, post_path):
-        return site.factory.getResourceFor(DummyRequest(post_path))
+        if no_resource_pipeline:
+            self.assertNotEquals(web_resource.no_resource_pipeline_dependency, None)
+            self.assertEquals(web_resource.no_resource_pipeline_dependency.provider, no_resource_pipeline)
+        else:
+            self.assertEquals(web_resource.no_resource_pipeline_dependency, None)
+
+    def getResourceForFakeRequest(self, site, post_path=None, request=None):
+        if not request:
+            request = web_provider.DummyRequest(post_path)
+        return site.factory.getResourceFor(request)
 
     def getConfiguredWebSite(self, config):
         web_site = web_provider.WebSite('site_name', config)
@@ -86,6 +92,111 @@ class WebProviderTest(unittest.TestCase):
         web_resource = self.getResourceForFakeRequest(web_site, [''])
         self.assertConfiguredWithPipeline(web_resource, 'pipeline.a_pipeline')
 
+    def test_no_resource_pipeline_routing(self):
+        config = dict(
+            routing = dict(
+                __config__ = dict(pipeline='root_pipeline', no_resource_pipeline='root_no_resource_pipeline'),
+                foo = dict(
+                    __config__ = dict(pipeline = 'foo_pipeline')
+                ),
+                bar = dict(
+                    baz = dict(
+                        __config__ = dict(no_resource_pipeline = 'baz_pipeline')
+                    )
+                )
+            )
+        )
+
+        web_site = self.getConfiguredWebSite(config)
+
+        root_resource = self.getResourceForFakeRequest(web_site, [''])
+        self.assertConfiguredWithPipeline(root_resource, pipeline='pipeline.root_pipeline', no_resource_pipeline='pipeline.root_no_resource_pipeline')
+
+        # nonexistent resources should be rendered by the closest matching no-resource-pipeline
+        self.assertEquals(self.getResourceForFakeRequest(web_site, ['nonexistent']), root_resource)
+        self.assertEquals(self.getResourceForFakeRequest(web_site, ['nonexistent', 'nested']), root_resource)
+        # since foo does not have a no_resource_pipeline, its no_resources should be rendered by the root_resource
+        self.assertEquals(self.getResourceForFakeRequest(web_site, ['foo', 'nonexistent']), root_resource)
+        self.assertEquals(self.getResourceForFakeRequest(web_site, ['foo', 'nonexistent', 'nested']), root_resource)
+        # since bar does not have a pipeline/no_resource_pipeline, it should be rendered by the root_resource
+        self.assertEquals(self.getResourceForFakeRequest(web_site, ['bar']), root_resource)
+
+        self.assertConfiguredWithPipeline(self.getResourceForFakeRequest(web_site, ['foo']), pipeline='pipeline.foo_pipeline')
+        self.assertConfiguredWithPipeline(self.getResourceForFakeRequest(web_site, ['foo', '']), pipeline='pipeline.foo_pipeline')
+
+        baz_resource = self.getResourceForFakeRequest(web_site, ['bar', 'baz'])
+        self.assertConfiguredWithPipeline(baz_resource, no_resource_pipeline='pipeline.baz_pipeline')
+
+        # since baz has a no_resource_pipeline, it is capable of rendering that itself doesn't have a "proper" resource/pipeline
+        self.assertEquals(self.getResourceForFakeRequest(web_site, ['bar', 'baz', '']), baz_resource)
+        self.assertEquals(self.getResourceForFakeRequest(web_site, ['bar', 'baz', 'nonexistent']), baz_resource)
+        self.assertEquals(self.getResourceForFakeRequest(web_site, ['bar', 'baz', 'nonexistent', 'nested']), baz_resource)
+
+    def test_web_resource_no_resource_request_processing(self):
+        """ Test that various web resources are being rendered with a request instance that
+        has its "postpath" instance variable set to the remaining / unhandled path segments.
+        """
+        config = dict(
+            routing = dict(
+                __config__ = dict(pipeline='root_pipeline', no_resource_pipeline='root_no_resource_pipeline'),
+                foo = dict(
+                    __config__ = dict(pipeline = 'foo_pipeline')
+                ),
+                bar = dict(
+                    baz = dict(
+                        __config__ = dict(no_resource_pipeline = 'baz_pipeline')
+                    )
+                )
+            )
+        )
+
+        web_site = self.getConfiguredWebSite(config)
+
+        batons = list()
+        pipeline = StubPipeline(batons.append)
+
+        # fake the pipelines being ready:
+        root_resource = self.getResourceForFakeRequest(web_site, [''])
+        foo_resource = self.getResourceForFakeRequest(web_site, ['foo'])
+        baz_resource = self.getResourceForFakeRequest(web_site, ['bar', 'baz'])
+
+        for resource in (root_resource, foo_resource, baz_resource):
+            if resource.pipeline_dependency:
+                resource.pipeline_dependency.on_resource_ready(pipeline)
+            if resource.no_resource_pipeline_dependency:
+                resource.no_resource_pipeline_dependency.on_resource_ready(pipeline)
+
+        def assertRequestRenderedWithPostPath(web_site, batons, request, post_path):
+            self.getResourceForFakeRequest(web_site, request=request).render(request)
+            self.assertEquals(batons, [dict(request=request)])
+            request = batons.pop()['request']
+            self.assertEquals(request.postpath, post_path)
+
+        for request_path, expected_postpath in (
+            # paths under the root resource, which has both a regular pipeline and a no resource pipeline
+            ([''], []),
+            (['nonexistent'], ['nonexistent']),
+            (['nonexistent', 'nested'], ['nonexistent', 'nested']),
+
+            # paths under the foo/bar resource, which only has a regular pipeline
+            (['foo', 'bar'], ['foo', 'bar']),
+            (['foo', 'bar', ''], ['foo', 'bar', '']),
+            (['foo', 'bar', 'nested'], ['foo', 'bar', 'nested']),
+
+            # paths under the bar resource, which has a nested resource, but no pipelines at all
+            (['bar'], ['bar']),
+            (['bar', ''], ['bar', '']),
+            (['bar', 'nested'], ['bar', 'nested']),
+
+            # paths under the bar/baz resource, which only has a no resource pipeline
+            (['bar', 'baz'], []),
+            (['bar', 'baz', ''], ['']),
+            (['bar', 'baz', 'nested'], ['nested']),
+            (['bar', 'baz', 'nested', ''], ['nested', '']),
+            (['bar', 'baz', 'nested', 'deeply'], ['nested', 'deeply'])):
+
+            assertRequestRenderedWithPostPath(web_site, batons, web_provider.DummyRequest(request_path), expected_postpath)
+
     def test_static_preprocessors(self):
         current_file = filepath.FilePath(__file__)
 
@@ -105,11 +216,11 @@ class WebProviderTest(unittest.TestCase):
         web_site = self.getConfiguredWebSite(config)
 
         # send a request for this file:
-        request = DummyRequest([current_file.basename()])
+        request = web_provider.DummyRequest([current_file.basename()])
         resource = web_site.factory.getResourceFor(request)
         resource.render(request)
 
-        self.assertEquals(request.outgoingHeaders['foo'], 'bar')
+        self.assertEquals(request.responseHeaders.getRawHeaders('foo'), ['bar'])
 
     def test_pipeline_routing_with_nested_resources(self):
         config = dict(
@@ -140,7 +251,7 @@ class WebProviderTest(unittest.TestCase):
         self.assertIsInstance(static_resource, web_provider.StaticFile)
 
         web_resource = self.getResourceForFakeRequest(web_site, ['nested'])
-        self.assertEquals(web_resource.has_pipeline, False)
+        self.assertConfiguredWithPipeline(web_resource)
 
         no_resource = self.getResourceForFakeRequest(web_site, ['nested', 'nonexistent'])
         self.assertIsInstance(no_resource, resource.NoResource)
@@ -151,7 +262,7 @@ class WebProviderTest(unittest.TestCase):
     def test_web_resource_simple_request_processing(self):
         web_resource = self._create_configured_web_resource(dict(__config__=dict(pipeline='a_pipeline')))
 
-        request = DummyRequest([''])
+        request = web_provider.DummyRequest([''])
 
         batons = list()
         pipeline = StubPipeline(batons.append)
@@ -164,7 +275,7 @@ class WebProviderTest(unittest.TestCase):
     def test_web_resource_processing_handles_exceptions(self):
         web_resource = self._create_configured_web_resource(dict(__config__=dict(pipeline='a_pipeline')))
 
-        request = DummyRequest([''])
+        request = web_provider.DummyRequest([''])
 
         def raiser(baton):
             raise Exception()
@@ -176,14 +287,14 @@ class WebProviderTest(unittest.TestCase):
         web_resource.render(request)
 
         self.assertIn('Processing Failed', ''.join(request.written))
-        self.assertEquals(request.responseCode, 500)
+        self.assertEquals(request.code, 500)
 
     def test_web_resource_processing_raises_with_debugging(self):
         routing = dict(__config__=dict(pipeline='a_pipeline'))
         site_config = dict(debug=dict(allow=['localhost']))
         web_resource = self._create_configured_web_resource(routing, site_config)
 
-        request = DummyRequest([''])
+        request = web_provider.DummyRequest([''])
         request.client = address.IPv4Address('TCP', 'localhost', 1234)
 
         def raiser(baton):
@@ -196,7 +307,7 @@ class WebProviderTest(unittest.TestCase):
         web_resource.render(request)
 
         self.assertIn('web.Server Traceback (most recent call last)', ''.join(request.written))
-        self.assertEquals(request.responseCode, 500)
+        self.assertEquals(request.code, 500)
 
     @defer.inlineCallbacks
     def test_debug_handler_reaping(self):
@@ -226,7 +337,7 @@ class WebProviderTest(unittest.TestCase):
         f = failure.Failure(Exception())
         path = debug_handler.register_failure(f)
 
-        request = DummyRequest([path])
+        request = web_provider.DummyRequest([path])
 
         # localhost is not allowed to debug:
         request.client = address.IPv4Address('TCP', 'localhost', 1234)
@@ -248,7 +359,7 @@ class WebProviderTest(unittest.TestCase):
 
         web_debugger = web_provider.WebDebugger(f)
 
-        request = DummyRequest([])
+        request = web_provider.DummyRequest([])
         request.addArg('expr', 'foo')
         result = web_debugger.render(request)
 
@@ -273,7 +384,7 @@ class WebProviderTest(unittest.TestCase):
         web_resource.pipeline_dependency = dependencies.InstanceDependency(stub_pipeline)
         web_resource.pipeline_dependency.is_ready = True
 
-        request = DummyRequest([])
+        request = web_provider.DummyRequest([])
         web_resource.render(request)
 
         # the pipeline should have been asked to process a baton
@@ -296,7 +407,7 @@ class TestConcatenatedFile(unittest.TestCase):
         file_paths = [test_data_path.child('foo'), test_data_path.child('bar')]
         cf = web_provider.ConcatenatedFile('text/plain', file_paths)
 
-        request = DummyRequest([''])
+        request = web_provider.DummyRequest([''])
         text = cf.render_GET(request)
 
         self.assertEquals(text, 'foo\nbar\n')
@@ -306,7 +417,7 @@ class TestConcatenatedFile(unittest.TestCase):
         file_paths = [test_data_path.child('bar'), test_data_path.child('foo')]
         cf = web_provider.ConcatenatedFile('text/plain', file_paths)
 
-        request = DummyRequest([''])
+        request = web_provider.DummyRequest([''])
         text = cf.render_GET(request)
 
         self.assertEquals(text, 'bar\nfoo\n')
@@ -316,7 +427,7 @@ class TestConcatenatedFile(unittest.TestCase):
         file_paths = [test_data_path.child('foo')]
         cf = web_provider.ConcatenatedFile('text/plain', file_paths)
 
-        request = DummyRequest([''])
+        request = web_provider.DummyRequest([''])
         text = cf.render_GET(request)
 
         self.assertEquals(text, 'foo\n')
@@ -325,7 +436,7 @@ class TestConcatenatedFile(unittest.TestCase):
         file_paths = []
         cf = web_provider.ConcatenatedFile('text/plain', file_paths)
 
-        request = DummyRequest([''])
+        request = web_provider.DummyRequest([''])
         text = cf.render_GET(request)
 
         self.assertEquals(text, '')
@@ -334,7 +445,7 @@ class TestConcatenatedFile(unittest.TestCase):
         file_paths = []
         cf = web_provider.ConcatenatedFile('text/plain', file_paths)
 
-        request = DummyRequest([''])
+        request = web_provider.DummyRequest([''])
         cf.render_GET(request)
 
-        self.assertEquals(request.outgoingHeaders['content-type'], 'text/plain')
+        self.assertEquals(request.responseHeaders.getRawHeaders('content-type'), ['text/plain'])

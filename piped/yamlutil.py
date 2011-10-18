@@ -99,6 +99,8 @@ class Alias(dict):
     This is used in the configuration files to reference other parts of
     the configuration, which may be outside the scope of a single YAML
     file.
+
+    .. seealso:: :class:`YAMLAlias`
     """
     def __init__(self, path):
         self.path = path
@@ -108,6 +110,10 @@ class Alias(dict):
 
 
 class YAMLAlias(object):
+    """ YAML support for the !alias constructor.
+
+    .. seealso:: :ref:`alias-constructor`
+    """
     yaml_tag = u'!alias:'
 
     @classmethod
@@ -124,3 +130,28 @@ class YAMLAlias(object):
 
 yaml.add_representer(Alias, YAMLAlias.to_yaml)
 yaml.add_multi_constructor(YAMLAlias.yaml_tag, YAMLAlias.from_yaml)
+
+
+class BatonPath(str):
+    """ YAML support for the !path constructor.
+
+    This is used by :meth:`piped.processors.base.Processor.get_input` to distinguish
+    input values that are inlined in the configuration from input values that are found
+    at the specified path in the baton.
+
+    .. seealso::
+        The topic page for this tag: :ref:`path-constructor`
+    """
+    yaml_tag = u'!path'
+
+    @classmethod
+    def from_yaml(cls, loader, node):
+        scalar = loader.construct_scalar(node)
+        return cls(scalar)
+
+    @classmethod
+    def to_yaml(cls, dumper, data):
+        return dumper.represent_scalar(cls.yaml_tag, data)
+
+yaml.add_representer(BatonPath, BatonPath.to_yaml)
+yaml.add_constructor(BatonPath.yaml_tag, BatonPath.from_yaml)

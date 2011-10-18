@@ -40,7 +40,7 @@ class XPathProcessor(base.Processor):
             XPath-expression.
         """
         self._fail_if_lxml_is_not_available()
-        super(XPathProcessor, self).__init__(self, **kw)
+        super(XPathProcessor, self).__init__(**kw)
         self.xml_path = xml_path
         self.xpaths = xpaths
 

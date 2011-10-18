@@ -1,0 +1,33 @@
+includes:
+    - my_pipelines.yaml
+
+web:
+    site:
+        debug:
+            allow: [localhost]
+        routing:
+            __config__:
+                pipeline: tracing
+
+pipelines:
+    tracing:
+        - extract-web-request-arguments:
+            mapping:
+                - pipeline
+                - baton:
+                    load_json: true
+
+        - run-pipeline:
+            pipeline_path: pipeline
+            input_path: baton
+            trace_path: trace
+            error_consumers:
+                - print-failure-traceback:
+                    consumers:
+                        - existing: diagram
+        - diagram-trace:
+            id: diagram
+        - render-dot:
+            type: svg
+        - render-trace
+        - write-web-response

@@ -5,7 +5,7 @@ import types
 
 from twisted.internet import defer
 
-from piped import util, exceptions
+from piped import util, exceptions, yamlutil
 
 
 class Processor(object):
@@ -28,7 +28,7 @@ class Processor(object):
 
     #: list of strings identifying keywords processes of this class provides for the pipeline.
     provides = list()
-    #: list of string identifying keywords procesess of this class depends on from the pipeline.
+    #: list of string identifying keywords processes of this class depends on from the pipeline.
     depends_on = list()
 
     def __init__(self, node_name=None):
@@ -38,12 +38,65 @@ class Processor(object):
         self.time_spent = 0
         self._node_name = node_name
 
+    def get_input(self, baton, value, fallback=Ellipsis):
+        """ Gets the actual input value.
+
+        Example usage::
+
+            def process(self, baton):
+                foo = self.get_input(baton, self.foo)
+                bar = self.get_input(baton, self.bar)
+
+                return self.get_resulting_baton(baton, self.output_path, dict(foobar=foo*bar))
+
+        :param baton: The baton that might contain the actual input value.
+        :param value: An instance of :class:`~piped.yamlutil.BatonPath`, meaning the
+            input value is found at the specified path in the baton, *or* any other
+            value to be used as-is.
+        :param fallback: The value to use if the input does not exist.
+        """
+        if isinstance(value, yamlutil.BatonPath):
+            return util.dict_get_path(baton, value, fallback)
+        return value
+
+    def get_resulting_baton(self, baton, path, value):
+        """ Returns the new baton after optionally setting an output value.
+
+        Example usage::
+
+            def process(self, baton):
+                value = self._calculate(baton)
+                return self.get_resulting_baton(baton, self.output_path, value)
+
+        :param baton: The baton in which the output value may be set.
+        :param path: The path in the baton to set the value. Some paths have special meanings:
+
+            None:
+                The value should be discarded and the baton returned unchanged.
+            An empty string:
+                The value should completely replace the baton.
+        
+        :return: The new baton.
+        """
+        if path is None:
+            return baton
+        elif path == '':
+            return value
+
+        util.dict_set_path(baton, path, value)
+        return baton
+
+    @property
+    def instance_depends_on(self):
+        return list()
+
+    @property
+    def instance_provides(self):
+        return list()
+    
     @property
     def node_name(self):
         return self._node_name or self.name
-
-        self.instance_provides = list()
-        self.instance_depends_on = list()
 
     @abc.abstractmethod
     def process(self, baton):
@@ -332,16 +385,18 @@ class MappingProcessor(Processor):
         for map_entry in self.mapping:
             input_path = map_entry['input_path']
             output_path = map_entry['output_path']
+            additional_kwargs = map_entry['additional_kwargs']
 
-            input = util.dict_get_path(baton, input_path, Ellipsis)
+            input = self.get_input(baton, input_path, **additional_kwargs)
 
             if input is Ellipsis:
                 if self.skip_if_nonexistent:
                     continue
+                # TODO: per-entry fallback
                 input = self.input_fallback
 
             output = yield self.process_mapping(input=input, input_path=input_path, output_path=output_path,
-                                                baton=baton, **map_entry['additional_kwargs'])
+                                                baton=baton, **additional_kwargs)
 
             if output_path == '':
                 baton = output
@@ -350,9 +405,17 @@ class MappingProcessor(Processor):
             if output_path is None:
                 continue # discard the output
 
-            util.dict_set_path(baton, output_path, output)
+            self.set_output(baton, output, output_path, **additional_kwargs)
 
         defer.returnValue(baton)
+
+    def get_input(self, baton, input_path, **kwargs):
+        """ Return the appropriate input for the given input_path and baton. """
+        return util.dict_get_path(baton, input_path, Ellipsis)
+
+    def set_output(self, baton, output, output_path, **kwargs):
+        """ Set the output. """
+        util.dict_set_path(baton, output_path, output)
 
     @abc.abstractmethod
     def process_mapping(self, input, input_path, output_path, baton, **additional_kwargs):

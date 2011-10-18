@@ -4,6 +4,26 @@ Installing Piped
 Official releases can be installed from PYPI, and development versions are available from `GitHub <http://github.com/foundit/Piped>`_.
 
 
+
+A note about dependencies
+-------------------------
+
+While Piped itself is written in pure Python, some of the dependencies have C-extensions that needs to be built for each
+individual platform. We do not yet have these prepackaged.
+
+
+Windows users should be able to locate pre-built binaries from http://www.lfd.uci.edu/~gohlke/pythonlibs/ and
+http://www.voidspace.org.uk/python/modules.shtml.
+
+
+Linux users should setup a working build environment, which depends on their distribution. For Debian and Ubuntu
+users this is done by installing the ``build-essential`` and ``python-dev`` packages via the package manager.
+
+
+OS X users should install the `XCode Developer Tools <http://developer.apple.com/technologies/tools/>`_ before
+installing Piped.
+
+
 Installing from PYPI
 --------------------
 
@@ -28,7 +48,7 @@ The latest development version can be downloaded from `GitHub <http://github.com
 
 .. code-block:: bash
 
-    $ git clone git@github.com:foundit/Piped.git
+    $ git clone git://github.com/foundit/Piped.git
 
 
 If you do not have git installed, the latest commit can be downloaded a either a .zip or as
