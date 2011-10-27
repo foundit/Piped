@@ -5,7 +5,7 @@ from twisted.conch import manhole, manhole_ssh, error as conch_error
 from twisted.conch.insults import insults
 from twisted.conch.ssh import keys
 from twisted.cred import error, portal
-from twisted.python import reflect
+from twisted.python import reflect, failure
 from twisted.internet import defer, reactor
 from zope import interface
 
@@ -69,6 +69,7 @@ class ZookeeperClientProvider(object, service.MultiService):
 class PipedZookeeperClient(client.ZookeeperClient, service.Service):
     possible_events = ('starting', 'stopping', 'connected', 'reconnecting', 'reconnected', 'expired')
     connecting = None
+    cached_prefix = 'cached_'
     
     def __init__(self, events = None, *a, **kw):
         super(PipedZookeeperClient, self).__init__(*a, **kw)
@@ -76,8 +77,11 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
 
         self.on_connected = event.Event()
         self.on_disconnected = event.Event()
+        self.on_disconnected += self._clear_cache
 
         self.set_session_callback(self._watch_connection)
+        self._cache = dict()
+        self._pending = dict()
 
     def configure(self, runtime_environment):
         for key, value in self.events.items():
@@ -144,3 +148,63 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
             self.on_disconnected('stopping')
             self._on_event('stopping')
             return self.close()
+
+    def __getattr__(self, item):
+        if not item.startswith(self.cached_prefix):
+            raise AttributeError(item)
+
+        func = getattr(self, item[self.cached_prefix:]+'_and_watch', None)
+        if not func:
+            raise AttributeError(item)
+
+        return self._cached(func)
+
+    def _cached(self, func):
+        def wrapper(*a, **kw):
+            # determine cache key
+            kwargs = kw.items()
+            kwargs.sort(key=lambda k, v: k)
+            cache_tuple = (func.func_name,) + a + tuple(value for key, value in kwargs)
+
+            # see if we have the cached results
+            if cache_tuple in self._cache:
+                return defer.succeed(self._cache[cache_tuple])
+
+            # if we don't, see if we're already waiting for the results
+            if cache_tuple in self._pending:
+                d = defer.Deferred()
+                self._pending[cache_tuple] += lambda ok, result: d.callback(result) if ok else d.errback(result)
+                return d
+
+            # we're the first one in our process attempting to access this cached result,
+            # so we get the honors of setting it up
+            self._pending[cache_tuple] = event.Event()
+
+            d, watcher = func(*a, **kw)
+
+            def _watch_fired(event):
+                # TODO: handle self._pending?
+                self._cache.pop(cache_tuple, None)
+                return event
+
+            watcher.addBoth(_watch_fired)
+
+            #   return result when available, but remember to inform any other pending waiters.
+            def _cache(result):
+                if not isinstance(result, failure.Failure):
+                    self._cache[cache_tuple] = result
+
+                pending = self._pending.pop(cache_tuple)
+                pending((True, result))
+                return result
+
+            d.addBoth(_cache)
+            return d
+
+        return wrapper
+
+    def _clear_cache(self, reason):
+        self._cache.clear()
+        for pending in self._pending.values():
+            pending((False, reason))
+        self._pending.clear()
