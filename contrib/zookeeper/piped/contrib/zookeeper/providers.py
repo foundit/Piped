@@ -1,22 +1,16 @@
 # Copyright (c) 2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
-from twisted.application import internet, service
-from twisted.conch import manhole, manhole_ssh, error as conch_error
-from twisted.conch.insults import insults
-from twisted.conch.ssh import keys
-from twisted.cred import error, portal
-from twisted.python import reflect, failure
-from twisted.internet import defer, reactor
 from zope import interface
-
-import zookeeper
+from twisted.application import service
+from twisted.python import failure
+from twisted.internet import defer
 from txzookeeper import client
 
-from piped import resource, event, log, exceptions, util
+from piped import resource, event, log, exceptions
 
 
 class ZookeeperClientProvider(object, service.MultiService):
-    """ Embeds manholes in Piped services.
+    """ Zookeeper support for Piped services.
 
     Configuration example::
 
@@ -24,6 +18,10 @@ class ZookeeperClientProvider(object, service.MultiService):
             clients:
                 my_client:
                     servers: localhost:2181
+                    events:
+                        starting: my_pipeline
+
+    Available keys for events are: 'starting', 'stopping', 'connected', 'reconnecting', 'reconnected', 'expired'
     """
     interface.classProvides(resource.IResourceProvider)
 
@@ -69,7 +67,6 @@ class ZookeeperClientProvider(object, service.MultiService):
 class PipedZookeeperClient(client.ZookeeperClient, service.Service):
     possible_events = ('starting', 'stopping', 'connected', 'reconnecting', 'reconnected', 'expired')
     connecting = None
-    cached_prefix = 'cached_'
     
     def __init__(self, events = None, *a, **kw):
         super(PipedZookeeperClient, self).__init__(*a, **kw)
@@ -82,6 +79,10 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
         self.set_session_callback(self._watch_connection)
         self._cache = dict()
         self._pending = dict()
+
+        self.cached_get_children = self._cached(self.get_children_and_watch)
+        self.cached_get = self._cached(self.get_and_watch)
+        self.cached_exists = self._cached(self.exists_and_watch)
 
     def configure(self, runtime_environment):
         for key, value in self.events.items():
@@ -149,21 +150,11 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
             self._on_event('stopping')
             return self.close()
 
-    def __getattr__(self, item):
-        if not item.startswith(self.cached_prefix):
-            raise AttributeError(item)
-
-        func = getattr(self, item[self.cached_prefix:]+'_and_watch', None)
-        if not func:
-            raise AttributeError(item)
-
-        return self._cached(func)
-
     def _cached(self, func):
         def wrapper(*a, **kw):
             # determine cache key
             kwargs = kw.items()
-            kwargs.sort(key=lambda k, v: k)
+            kwargs.sort(key=lambda (k,v): k)
             cache_tuple = (func.func_name,) + a + tuple(value for key, value in kwargs)
 
             # see if we have the cached results
@@ -173,13 +164,13 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
             # if we don't, see if we're already waiting for the results
             if cache_tuple in self._pending:
                 d = defer.Deferred()
-                self._pending[cache_tuple] += lambda ok, result: d.callback(result) if ok else d.errback(result)
+                self._pending[cache_tuple] += lambda (ok, result): d.callback(result) if ok else d.errback(result)
                 return d
 
             # we're the first one in our process attempting to access this cached result,
             # so we get the honors of setting it up
             self._pending[cache_tuple] = event.Event()
-
+            
             d, watcher = func(*a, **kw)
 
             def _watch_fired(event):

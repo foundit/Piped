@@ -598,3 +598,44 @@ send-zmq-message
 send-mongrel-reply
 """"""""""""""""""""""""
 .. autoclass:: piped.contrib.zmq.mongrel2_processors.MongrelReplySender
+
+
+
+
+ZooKeeper processors
+^^^^^^^^^^^^^^^^^^^^
+
+
+.. _create-zookeeper-node:
+
+create-zookeeper-node
+"""""""""""""""""""""
+.. autoclass:: piped.contrib.zookeeper.processors.CreateZooKeeperNode
+
+
+.. _get-zookeeper-children:
+
+get-zookeeper-children
+""""""""""""""""""""""
+.. autoclass:: piped.contrib.zookeeper.processors.GetZooKeeperChildren
+
+
+.. _get-zookeeper-data:
+
+get-zookeeper-data
+""""""""""""""""""
+.. autoclass:: piped.contrib.zookeeper.processors.GetZooKeeperData
+
+
+.. _set-zookeeper-data:
+
+set-zookeeper-data
+""""""""""""""""""
+.. autoclass:: piped.contrib.zookeeper.processors.SetZooKeeperData
+
+
+.. _zookeeper-node-exists:
+
+zookeeper-node-exists
+"""""""""""""""""""""
+.. autoclass:: piped.contrib.zookeeper.processors.ZooKeeperNodeExists
