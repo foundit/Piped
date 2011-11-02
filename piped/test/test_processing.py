@@ -5,6 +5,7 @@ import difflib
 import pprint
 import warnings
 
+from mock import patch
 from twisted.internet import reactor, defer
 from twisted.trial import unittest
 from twisted.python import failure
@@ -1378,7 +1379,9 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
                 ]
             )
             # These should not be recognized as pipeline configurations at all..
-            self.assertConfigurationProperlyTransformed(invalid_pipeline_configuration, dict(), reason)
+            with patch.object(processing.log, 'warn') as mocked_warn:
+                self.assertConfigurationProperlyTransformed(invalid_pipeline_configuration, dict(), reason)
+                self.assertEquals(mocked_warn.call_count, 1)
 
     def test_rewriting_invalid_processor_when_in_pipeline(self):
 
