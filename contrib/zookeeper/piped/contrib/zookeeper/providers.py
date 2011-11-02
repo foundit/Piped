@@ -9,6 +9,10 @@ from txzookeeper import client
 from piped import resource, event, log, exceptions
 
 
+class DisconnectException(exceptions.PipedError):
+    pass
+
+
 class ZookeeperClientProvider(object, service.MultiService):
     """ Zookeeper support for Piped services.
 
@@ -67,17 +71,20 @@ class ZookeeperClientProvider(object, service.MultiService):
 class PipedZookeeperClient(client.ZookeeperClient, service.Service):
     possible_events = ('starting', 'stopping', 'connected', 'reconnecting', 'reconnected', 'expired')
     connecting = None
+    connected = False
     
     def __init__(self, events = None, *a, **kw):
         super(PipedZookeeperClient, self).__init__(*a, **kw)
         self.events = events or dict()
 
         self.on_connected = event.Event()
+        self.on_connected += lambda _: setattr(self, 'connected', True)
         self.on_disconnected = event.Event()
-        self.on_disconnected += self._clear_cache
+        self.on_disconnected += lambda _: setattr(self, 'connected', False)
 
         self.set_session_callback(self._watch_connection)
         self._cache = dict()
+        self.on_disconnected += lambda _: self._cache.clear()
         self._pending = dict()
 
         self.cached_get_children = self._cached(self.get_children_and_watch)
@@ -120,17 +127,16 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
         elif event.state_name == 'connecting':
             # TODO: if we're in "connecting" for too long, give up and give us a new connection (old session might be bad
             #       because the server rollbacked -- see https://issues.apache.org/jira/browse/ZOOKEEPER-832)
-            self.on_disconnected(event.state_name)
+            self.on_disconnected(failure.Failure(DisconnectException(event.state_name)))
             self._on_event('reconnecting')
         elif event.state_name == 'expired':
-            self.on_disconnected(event.state_name)
-            self._on_event('expired')
+            self.on_disconnected(failure.Failure(DisconnectException(event.state_name)))
+            self._on_event(event.state_name)
             # force a full reconnect in order to ensure we get a new session
             yield self.stopService()
             yield self.startService()
         else:
-            # do nothing for auth failed or associating
-            pass
+            log.warn('Unhandled event: {0}'.format(event))
 
     def startService(self):
         if not self.running:
@@ -139,14 +145,17 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
             if self.connecting:
                 log.warn('Started connecting before previous connect finished.')
                 return
-            # TODO: what if I have to stop/start during connecting?
+            # TODO: what if we have to stop/start during connecting?
+            # TODO: handle connection timeouts
+            # set a really high timeout (1 year) because we want txzookeeper to keep
+            # trying to connect for a considerable amount of time.
             self.connecting = self.connect(timeout=60*60*24*365)
             return self.connecting.addCallback(lambda _: self._started())
 
     def stopService(self):
         if self.running:
             service.Service.stopService(self)
-            self.on_disconnected('stopping')
+            self.on_disconnected(failure.Failure(DisconnectException('stopping service')))
             self._on_event('stopping')
             return self.close()
 
@@ -164,7 +173,7 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
             # if we don't, see if we're already waiting for the results
             if cache_tuple in self._pending:
                 d = defer.Deferred()
-                self._pending[cache_tuple] += lambda (ok, result): d.callback(result) if ok else d.errback(result)
+                self._pending[cache_tuple] += d.callback
                 return d
 
             # we're the first one in our process attempting to access this cached result,
@@ -174,7 +183,8 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
             d, watcher = func(*a, **kw)
 
             def _watch_fired(event):
-                # TODO: handle self._pending?
+                # TODO: Determine whether it is possible that the watch fires before the
+                # result has been cached, in which case we need to clear self._pending here.
                 self._cache.pop(cache_tuple, None)
                 return event
 
@@ -186,16 +196,10 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
                     self._cache[cache_tuple] = result
 
                 pending = self._pending.pop(cache_tuple)
-                pending((True, result))
+                pending(result)
                 return result
 
             d.addBoth(_cache)
             return d
 
         return wrapper
-
-    def _clear_cache(self, reason):
-        self._cache.clear()
-        for pending in self._pending.values():
-            pending((False, reason))
-        self._pending.clear()

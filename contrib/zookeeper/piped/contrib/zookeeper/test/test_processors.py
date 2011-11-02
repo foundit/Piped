@@ -25,6 +25,10 @@ class TestZooKeeperProcessor(unittest.TestCase):
         self.client_dependency = self.runtime_environment.dependency_manager.as_dependency(self.client)
         self.client_dependency.is_ready = True
 
+
+class TestZooKeeperProcessorDepending(TestZooKeeperProcessor):
+
+    @defer.inlineCallbacks
     def test_depending_on_zookeeper_client(self):
         provider = providers.ZookeeperClientProvider()
         cm = self.runtime_environment.configuration_manager
@@ -45,7 +49,7 @@ class TestZooKeeperProcessor(unittest.TestCase):
 
 class TestGetChildren(TestZooKeeperProcessor):
     @defer.inlineCallbacks
-    def test_simple(self):
+    def test_getting_children(self):
         processor = processors.GetZooKeeperChildren(client='test', path='/foo/bar')
         processor.client_dependency = self.client_dependency
 
@@ -75,7 +79,7 @@ class TestGetChildren(TestZooKeeperProcessor):
 
 class TestGetData(TestZooKeeperProcessor):
     @defer.inlineCallbacks
-    def test_simple(self):
+    def test_getting_data(self):
         processor = processors.GetZooKeeperData(client='test', path='/foo/bar', metadata_output_path='meta')
         processor.client_dependency = self.client_dependency
 
@@ -87,7 +91,7 @@ class TestGetData(TestZooKeeperProcessor):
 
 class TestNodeExists(TestZooKeeperProcessor):
     @defer.inlineCallbacks
-    def test_simple(self):
+    def test_node_exists(self):
         processor = processors.ZooKeeperNodeExists(client='test', path='/foo/bar', metadata_output_path='meta')
         processor.client_dependency = self.client_dependency
 
@@ -99,7 +103,7 @@ class TestNodeExists(TestZooKeeperProcessor):
 
 class TestSetData(TestZooKeeperProcessor):
     @defer.inlineCallbacks
-    def test_simple(self):
+    def test_set_data(self):
         processor = processors.SetZooKeeperData(client='test', path='/foo/bar', data='foo')
         processor.client_dependency = self.client_dependency
 
@@ -131,7 +135,7 @@ class TestSetData(TestZooKeeperProcessor):
 
 class TestCreateNode(TestZooKeeperProcessor):
     @defer.inlineCallbacks
-    def test_simple(self):
+    def test_create_node(self):
         processor = processors.CreateZooKeeperNode(client='test', path='/foo/bar', data='foo')
         processor.client_dependency = self.client_dependency
 
@@ -149,6 +153,16 @@ class TestCreateNode(TestZooKeeperProcessor):
         baton = yield processor.process(dict())
         self.assertEquals(baton, dict(create=dict(metadata=True)))
         self.client.create.assert_called_once_with('/foo/bar', 'foo', flags=zookeeper.SEQUENCE|zookeeper.EPHEMERAL)
+
+    @defer.inlineCallbacks
+    def test_flags_as_string(self):
+        processor = processors.CreateZooKeeperNode(client='test', path='/foo/bar', data='foo', flags='SEQUENCE')
+        processor.client_dependency = self.client_dependency
+
+        self.client.create.return_value = dict(metadata=True)
+        baton = yield processor.process(dict())
+        self.assertEquals(baton, dict(create=dict(metadata=True)))
+        self.client.create.assert_called_once_with('/foo/bar', 'foo', flags=zookeeper.SEQUENCE)
 
     @defer.inlineCallbacks
     def test_creating_intermediary(self):
