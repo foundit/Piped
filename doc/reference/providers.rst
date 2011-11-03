@@ -202,3 +202,10 @@ zmq
 
 .. automodule:: piped.contrib.zmq.providers
     :members: ZMQSocketProvider, ZMQPipelineFeederProvider
+
+
+zookeeper
+^^^^^^^^^
+
+.. automodule:: piped.contrib.zookeeper.providers
+    :members: ZookeeperClientProvider
