@@ -5,6 +5,10 @@ Features:
       with ZooKeeper ensembles. In addition to a ZooKeeper-client
       provider, a few processors were added as well.
 
+    - AMQP: Support for providing AMQP-connections, consuming messages
+      and processing them in pipelines, as well as a simple helper
+      for creating and providing AMQP-based RPC-clients.
+
 New processors:
     - get-zookeeper-children: Get a list of children for a ZooKeeper node.
     - get-zookeeper-data: Get the data of a ZooKeeper node.
