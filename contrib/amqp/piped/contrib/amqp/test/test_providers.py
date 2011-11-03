@@ -183,7 +183,7 @@ class TestMockConnection(unittest.TestCase):
         connection.setServiceParent(self.service)
 
         # create a list of return values for connect. the last element is a deferred, which enables
-        # us to assert that the reconnecting haven't given up.
+        # us to assert that the reconnecting hasn't given up.
         endpoints = list()
         connect_return_values = [error.ConnectError('test_error'), error.DNSLookupError('test_error'), error.ConnectionDone('test_error'), Exception('test_exception'), defer.Deferred()]
         expected_errors = list(connect_return_values[:-1])
