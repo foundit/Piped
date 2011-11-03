@@ -72,6 +72,6 @@ Internal changes:
     - DummyRequest moved from test_web_provider to web_provider, as it might
         prove useful outside of the test suite
 
-========================== Release 0.1.0 2011-10-17 ==========================
+========================== Release 0.1.0 2011-06-14 ==========================
 
 This was the first official release.
