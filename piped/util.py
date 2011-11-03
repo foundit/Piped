@@ -575,3 +575,46 @@ class NonCleaningFailure(failure.Failure):
 
     def cleanFailure(self):
         pass
+
+
+def create_deferred_state_watcher(obj, attribute_name='_currently'):
+    """
+    Creates a function that when called with a deferred, assigns the deferred to the
+    specified attribute on the target object. When the deferred callbacks or errbacks,
+    the attribute is cleared.
+
+    This can be used to implement functions that should only be executed by one concurrent
+    invocation:
+
+        >>> class A(object):
+        ...     running = None # stores the currently running state
+        ...
+        ...     def run(self):
+        ...         if self.running:
+        ...             # in this example we return here, but we could have called
+        ...             # ``self.running.cancel()`` to cancel the previous invocation and continued.
+        ...             print 'already running'
+        ...             return
+        ...
+        ...         # create the watcher.
+        ...         currently = create_deferred_state_watcher(self, 'running')
+        ...
+        ...         return currently(wait(0))
+        ...
+        >>> a = A()
+        >>> d = a.run()
+        >>> a.run()
+        already running
+    """
+    def clear(result):
+        setattr(obj, attribute_name, None)
+        return result
+
+    def wrapper(retval):
+        if isinstance(retval, defer.Deferred):
+            setattr(obj, attribute_name, retval)
+            retval.addBoth(clear)
+
+        return retval
+
+    return wrapper

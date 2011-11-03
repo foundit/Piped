@@ -183,6 +183,48 @@ More detailed tracebacks with live objects are available if :option:`piped -D` i
 Contrib providers
 -----------------
 
+
+amqp
+^^^^
+
+Connecting
+""""""""""
+
+.. currentmodule:: piped.contrib.amqp.providers
+
+.. autoclass:: AMQPConnectionProvider
+    :members:
+
+.. autoclass:: AMQPConnection
+    :members:
+
+.. autoclass:: AMQProtocol
+    :members:
+
+
+Consuming
+"""""""""
+
+.. currentmodule:: piped.contrib.amqp.providers
+
+.. autoclass:: AMQPConsumerProvider
+    :members:
+
+.. autoclass:: AMQPConsumer
+    :members:
+
+RPC helpers
+"""""""""""
+
+.. currentmodule:: piped.contrib.amqp.rpc
+
+.. autoclass:: RPCClientProvider
+    :members:
+
+.. autoclass:: RPCClientBase
+    :members:
+
+
 database
 ^^^^^^^^
 
