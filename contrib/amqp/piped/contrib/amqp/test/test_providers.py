@@ -74,6 +74,15 @@ class TestMockConnection(unittest.TestCase):
     def tearDown(self):
         yield self.service.stopService()
 
+    def test_servers_config(self):
+        # servers are usually specified as a list ...
+        rpc_client = providers.AMQPConnection('test_name', servers=['tcp:host=localhost:port=5672'])
+        self.assertEquals(rpc_client.get_next_server(), 'tcp:host=localhost:port=5672')
+
+        # ... but it can be a string, which should be wrapped in a list:
+        rpc_client = providers.AMQPConnection('test_name', servers='tcp:host=localhost:port=5672')
+        self.assertEquals(rpc_client.get_next_server(), 'tcp:host=localhost:port=5672')
+
     @defer.inlineCallbacks
     def test_get_named_channels(self):
         connection = providers.AMQPConnection('test_name', servers=['tcp:host=server_1:port=5672'])
@@ -338,12 +347,11 @@ class TestConsumer(unittest.TestCase):
         return consumer
 
     def test_queue_declaration(self):
-        # Anonymous queues are exclusive by default
+        # the default is an anonymous queue:
         consumer = self._create_consumer(
             pipeline='p', connection='c'
         )
         self.assertEquals(consumer.queue_declare['queue'], '')
-        self.assertEquals(consumer.queue_declare['exclusive'], True)
 
         # queues can be a simple string-named queue, which means it
         # should be passive
@@ -352,7 +360,6 @@ class TestConsumer(unittest.TestCase):
             queue = 'foo'
         )
         self.assertEquals(consumer.queue_declare['queue'], 'foo')
-        self.assertEquals(consumer.queue_declare['exclusive'], False)
 
         # we can use a dict to be more explicit about the queue configuration.
         consumer = self._create_consumer(
@@ -365,26 +372,17 @@ class TestConsumer(unittest.TestCase):
         self.assertEquals(consumer.queue_declare['queue'], 'bar')
         self.assertEquals(consumer.queue_declare['exclusive'], True)
 
-    def test_invalid_configurations(self):
+    def test_invalid_ack_nack_configurations(self):
         self.assertRaises(exceptions.ConfigurationError, self._create_consumer,
             pipeline='p', connection='c',
-            ack_before_processing = True,
-            ack_after_successful_processing = True,
+            ack_after_failed_processing = True,
             nack_after_failed_processing = True
         )
 
+    def test_invalid_log_configurations(self):
         self.assertRaises(exceptions.ConfigurationError, self._create_consumer,
             pipeline='p', connection='c',
-            ack_before_processing = True,
-            ack_after_successful_processing = False,
-            nack_after_failed_processing = True
-        )
-
-        self.assertRaises(exceptions.ConfigurationError, self._create_consumer,
-            pipeline='p', connection='c',
-            ack_before_processing = True,
-            ack_after_successful_processing = True,
-            nack_after_failed_processing = False
+            log_processor_exceptions = 'foo'
         )
 
     def test_messages_are_delivered_to_pipelines(self):
@@ -504,26 +502,23 @@ class TestConsumer(unittest.TestCase):
 
         # no messages have entered the queue yet:
         self.assertEquals(mocked_pipeline.process.call_count, 0)
-
-        def raiser(baton):
-            raise Exception('test exception')
-
-        mocked_pipeline.process.side_effect = raiser
+        mocked_pipeline.process.side_effect = failure.Failure(Exception('test exception'))
 
         # but putting message into the queue should result in the pipeline being invoked
         with patch.object(providers.log, 'warn') as mocked_warn:
             mocked_method = mock.Mock(name='method')
+            self.assertEquals(mocked_warn.call_count, 0)
             message_queue.put((mocked_channel, mocked_method, mock.Mock(name='properties'), 'test message body'))
+            self.assertEquals(mocked_warn.call_count, 1)
         
         self.assertEquals(mocked_pipeline.process.call_count, 1)
         
         # since the processing raised an exception, the message should have been rejected
         mocked_channel.basic_reject.assert_called_once_with(delivery_tag=mocked_method.delivery_tag)
 
-    def test_message_acking_before_processing(self):
+    def test_message_acking_on_failed_processing(self):
         consumer = self._create_consumer(pipeline='test_pipeline', connection='test_connection',
-            ack_before_processing=True, ack_after_successful_processing=False,
-            nack_after_failed_processing=False)
+            ack_after_failed_processing=True, nack_after_failed_processing=False)
         consumer.startService()
 
         mocked_pipeline = mock.Mock(name='pipeline')
@@ -537,14 +532,74 @@ class TestConsumer(unittest.TestCase):
 
         consumer.connection_dependency.on_resource_ready(mocked_connection)
 
-        # return a deferred that never fires
-        mocked_pipeline.process.return_value = defer.Deferred()
+        # no messages have entered the queue yet:
+        self.assertEquals(mocked_pipeline.process.call_count, 0)
+        mocked_pipeline.process.side_effect = failure.Failure(Exception('test exception'))
 
+        # but putting message into the queue should result in the pipeline being invoked
         with patch.object(providers.log, 'warn') as mocked_warn:
             mocked_method = mock.Mock(name='method')
+            self.assertEquals(mocked_warn.call_count, 0)
             message_queue.put((mocked_channel, mocked_method, mock.Mock(name='properties'), 'test message body'))
+            self.assertEquals(mocked_warn.call_count, 1)
 
         self.assertEquals(mocked_pipeline.process.call_count, 1)
 
-        # the message should be acked even if we're not done processing it
+        # even though the processing raised an exception, the message should have been rejected
         mocked_channel.basic_ack.assert_called_once_with(delivery_tag=mocked_method.delivery_tag)
+
+    def test_logging_on_failed_processing_can_be_turned_off(self):
+        consumer = self._create_consumer(pipeline='test_pipeline', connection='test_connection', log_processor_exceptions=False)
+
+        mocked_pipeline = mock.Mock(name='pipeline')
+        consumer.pipeline_dependency.on_resource_ready(mocked_pipeline)
+        mocked_pipeline.process.return_value = failure.Failure(Exception('test exception'))
+
+        with patch.object(providers.log, 'warn') as mocked_warn:
+            mocked_method = mock.Mock(name='method')
+            consumer._process(mock.Mock(name='channel'), mocked_method, mock.Mock(name='properties'), 'test message body')
+
+            # the pipeline should be invoked, but no warnings should be logged
+            self.assertEquals(mocked_pipeline.process.call_count, 1)
+            self.assertEquals(mocked_warn.call_count, 0)
+
+    def test_changing_log_level_on_failed_processing(self):
+        consumer = self._create_consumer(pipeline='test_pipeline', connection='test_connection', log_processor_exceptions='critical')
+
+        mocked_pipeline = mock.Mock(name='pipeline')
+        consumer.pipeline_dependency.on_resource_ready(mocked_pipeline)
+        mocked_pipeline.process.return_value = failure.Failure(Exception('test exception'))
+
+        with patch.object(providers.log, 'critical') as mocked_critical:
+            self.assertEquals(mocked_critical.call_count, 0)
+            mocked_method = mock.Mock(name='method')
+            consumer._process(mock.Mock(name='channel'), mocked_method, mock.Mock(name='properties'), 'test message body')
+
+            # since we set the log level to critical, the exception should be logged as such
+            self.assertEquals(mocked_pipeline.process.call_count, 1)
+            self.assertEquals(mocked_critical.call_count, 1)
+
+    def test_no_ack_consuming(self):
+        consumer = self._create_consumer(pipeline='test_pipeline', connection='test_connection', no_ack=True)
+        consumer.startService()
+
+        mocked_pipeline = mock.Mock(name='pipeline')
+        consumer.pipeline_dependency.on_resource_ready(mocked_pipeline)
+
+        message_queue = defer.DeferredQueue()
+        mocked_connection = mock.Mock(name='connection')
+        mocked_channel = mocked_connection.channel.return_value = mock.Mock(name='channel')
+        mocked_consumer_tag = mock.Mock(name='consumer_tag')
+        mocked_channel.basic_consume.return_value = message_queue, mocked_consumer_tag
+
+        consumer.connection_dependency.on_resource_ready(mocked_connection)
+
+        for return_value in [failure.Failure(Exception('test_exception')), 'test result']:
+            mocked_pipeline.process.return_value = return_value
+
+            with patch.object(providers.log, 'warn') as mocked_warn:
+                message_queue.put((mocked_channel, mock.Mock(name='method'), mock.Mock(name='properties'), 'test message body'))
+
+            # since no_ack is True, neither message should be acked/nacked
+            self.assertEquals(mocked_channel.basic_ack.call_count, 0)
+            self.assertEquals(mocked_channel.basic_reject.call_count, 0)

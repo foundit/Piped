@@ -1,11 +1,12 @@
 # Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
-from twisted.application import service
-from twisted.internet import defer
 from zope import interface
+from pika import exceptions as pika_exceptions
+from twisted.application import service
+from twisted.internet import defer, reactor
 from twisted.python import reflect
 
-from piped import log, resource, util, event
+from piped import log, resource, util, event, dependencies
 
 
 class RPCClientProvider(object, service.MultiService):
@@ -64,6 +65,7 @@ class RPCClientProvider(object, service.MultiService):
         client_dependency.on_ready += lambda dep: resource_dependency.on_resource_ready(dep.get_resource())
         client_dependency.on_lost += lambda dep, reason: resource_dependency.on_resource_lost(reason)
 
+        # the client might already be ready:
         if client_dependency.is_ready:
             resource_dependency.on_resource_ready(client)
 
@@ -81,35 +83,37 @@ class RPCClientBase(object, service.Service):
     _starting = None
     _consuming = None
 
-    def __init__(self, name, connection, consumer=None):
+    def __init__(self, name, connection, reopen_consumer_channel_interval=1, consumer=None):
         """
         :param name: Logical name of this rpc client.
         :param connection: Name of the AMQP connection.
         :param consumer: Configuration options for the consuming:
             
             no_ack
-                Whether the server should require the consumer to ack the responses. Defaults to false.
+                Whether the server should require the consumer to ack the responses. Defaults to True.
+
+            exclusive
+                Request exclusive consumer access, meaning only this consumer can access the queue. Defaults to True.
 
             queue
                 Name of the response queue (string) or a queue declaration (dict). Defaults to
                 the empty string, which creates an anonymous queue.
                 See `queue_declare <http://www.rabbitmq.com/amqp-0-9-1-quickref.html#queue.declare>`_.
+        :param reopen_consumer_channel_interval: The number of seconds to wait before reopening the
+            consumer channel if it is closed.
         """
         self.name = name
         self.connection_name = connection
         self.consumer_config = consumer or dict()
+        self.consumer_config.setdefault('no_ack', True)
+        self.consumer_config.setdefault('exclusive', True)
         
-        response_queue = self.consumer_config.get('queue', None)
+        response_queue = self.consumer_config.pop('queue', None)
         if isinstance(response_queue, basestring):
             response_queue = dict(queue=response_queue)
+        self.response_queue_declare = response_queue or dict(queue='')
+        self.reopen_consumer_channel_interval = reopen_consumer_channel_interval
 
-        self.response_queue_declare = response_queue or dict()
-        self.response_queue_declare.setdefault('queue', '')
-        self.response_queue_declare.setdefault('auto_delete', True)
-        self.response_queue_declare.setdefault('durable', False)
-        self.response_queue_declare.setdefault('exclusive', True)
-
-        self.requests = dict()
         self.on_connection_lost = event.Event()
         self.on_connection_lost += lambda reason: self._handle_disconnect()
 
@@ -119,20 +123,25 @@ class RPCClientBase(object, service.Service):
         dm = self.dependency_manager
 
         self.dependency = dm.as_dependency(self)
-        self.dependency.cascade_ready = False
-        self.dependency.on_dependency_ready += lambda dependency: self._consider_starting()
+
+        # create a dependency representing our consuming state, which we will fire
+        # on_ready and on_lost ourselves on depending on whether we're ready to consume
+        self.consuming_dependency = dependencies.Dependency()
+        self.consuming_dependency.cascade_ready = False
+        dm.add_dependency(self, self.consuming_dependency)
 
         self.connection_dependency = dm.add_dependency(self, dict(provider='amqp.connection.{0}'.format(self.connection_name)))
         self.connection_dependency.on_lost += lambda dep, reason: self.on_connection_lost(reason)
+        self.connection_dependency.on_ready += lambda dependency: self._consider_starting()
 
     @defer.inlineCallbacks
     def _consider_starting(self):
         currently = util.create_deferred_state_watcher(self, '_starting')
 
-        if not self.dependency_manager.has_all_dependencies_provided(self.dependency):
+        if not self.connection_dependency.is_ready:
             return
 
-        if not self.running or self._starting:
+        if not self.running or self._starting or self._consuming:
             return
 
         try:
@@ -143,6 +152,7 @@ class RPCClientBase(object, service.Service):
             if not self.response_queue:
                 self.response_queue = yield currently(self.consume_channel.queue_declare(**self.response_queue_declare))
 
+            # we're ready to start consuming now:
             self._consume_queue()
         except defer.CancelledError as ce:
             log.info('Initialization of %r was cancelled.' % self)
@@ -168,21 +178,35 @@ class RPCClientBase(object, service.Service):
             if current_operation:
                 current_operation.cancel()
 
-        self.dependency.fire_on_lost('stopping client')
-
     @defer.inlineCallbacks
     def _consume_queue(self):
         currently = util.create_deferred_state_watcher(self, '_consuming')
-        
-        queue, consumer_tag = yield currently(self.consume_channel.basic_consume(queue=self.response_queue.method.queue, no_ack=self.consumer_config.get('no_ack', True), exclusive=self.response_queue_declare['exclusive']))
-        if self.running:
-            self.dependency.fire_on_ready()
+
+        queue, consumer_tag = yield currently(self.consume_channel.basic_consume(queue=self.response_queue.method.queue, **self.consumer_config))
         try:
-            while self.dependency.is_ready and self.running:
+            self.consuming_dependency.fire_on_ready()
+
+            while self.running:
+                # don't get from the queue unless our dependency is ready
+                yield currently(self.dependency.wait_for_resource())
+
                 channel, method, properties, body = yield currently(queue.get())
-                d = defer.maybeDeferred(self.process_response, channel, method, properties, body)
+
+                self.process_response(channel, method, properties, body)
+
+        except pika_exceptions.ChannelClosed as cc:
+            log.warn()
+            self.consuming_dependency.fire_on_lost('channel closed')
+            self._handle_disconnect()
+
+            # wait a little before reopening the channel
+            reactor.callLater(self.reopen_consumer_channel_interval, self._consider_starting)
+
         except defer.CancelledError as ce:
             return
+
+        finally:
+            self.consuming_dependency.fire_on_lost('stopped consuming')
 
     def process_response(self, channel, method, properties, body):
         raise NotImplementedError()

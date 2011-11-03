@@ -2,12 +2,13 @@
 # See LICENSE for details.
 import mock
 from mock import patch
+from pika import exceptions as pika_exceptions
 from twisted.application import service
-from twisted.python import reflect
+from twisted.python import reflect, failure
 from twisted.trial import unittest
 from twisted.internet import defer
 
-from piped import processing, dependencies
+from piped import processing, dependencies, util
 from piped.contrib.amqp import rpc
 
 
@@ -15,7 +16,7 @@ class StubRPCClient(rpc.RPCClientBase):
     pass
 
 
-class TestConnectionProvider(unittest.TestCase):
+class TestRPCClientProvider(unittest.TestCase):
     def setUp(self):
         self.runtime_environment = processing.RuntimeEnvironment()
         self.runtime_environment.application = service.MultiService()
@@ -47,9 +48,7 @@ class TestConnectionProvider(unittest.TestCase):
 
         with patch.object(self.runtime_environment.resource_manager, 'resolve') as mocked_resolve:
             def resolve(resource_dependency):
-                if 'amqp.connection' not in resource_dependency.provider:
-                    return self.runtime_environment.resource_manager.resolve(resource_dependency)
-
+                self.assertEquals(resource_dependency.provider, 'amqp.connection.test_connection')
                 resource_dependency.on_resource_ready(mocked_connection)
 
             # replace 'amqp.connection' with the mocked connection:
@@ -61,7 +60,8 @@ class TestConnectionProvider(unittest.TestCase):
         client = client_dependency.get_resource()
         self.assertIsInstance(client, StubRPCClient)
 
-        self.assertEquals(client.consumer_config['queue']['queue'], 'my_queue')
+        self.assertEquals(client.response_queue_declare['queue'], 'my_queue')
+
 
         # if another dependency asks for the same connection, it should receive the same instance
         another_client_dependency = dependencies.ResourceDependency(provider='amqp.rpc_client.test_client')
@@ -90,10 +90,10 @@ class TestRPC(unittest.TestCase):
         rpc_client.configure(self.runtime_environment)
 
         dm._dependency_graph.node[rpc_client.connection_dependency]['resolved'] = True
+        dm._dependency_graph.node[rpc_client.consuming_dependency]['resolved'] = True
         dm._dependency_graph.node[rpc_client.dependency]['resolved'] = True
 
         return rpc_client
-
 
     def test_connect_disconnect_when_service_starts_stops(self):
         dm = self.runtime_environment.dependency_manager
@@ -108,7 +108,7 @@ class TestRPC(unittest.TestCase):
 
         rpc_client.connection_dependency.on_resource_ready(mocked_connection)
 
-        self.assertTrue(dm.has_all_dependencies_provided(rpc_client.dependency))
+        # the service isn't started yet
         self.assertFalse(rpc_client.dependency.is_ready)
 
         # starting the service should make the rpc-clients dependency ready
@@ -147,7 +147,7 @@ class TestRPC(unittest.TestCase):
 
         rpc_client.connection_dependency.on_resource_ready(mocked_connection)
 
-        self.assertTrue(dm.has_all_dependencies_provided(rpc_client.dependency))
+        # the client is not ready yet, since it isn't consuming
         self.assertFalse(rpc_client.dependency.is_ready)
 
         # starting the service should make the rpc-clients dependency ready
@@ -182,7 +182,7 @@ class TestRPC(unittest.TestCase):
 
         rpc_client.connection_dependency.on_resource_ready(mocked_connection)
 
-        self.assertTrue(dm.has_all_dependencies_provided(rpc_client.dependency))
+        # the service isn't started yet:
         self.assertFalse(rpc_client.dependency.is_ready)
 
         # starting the service should make the rpc-clients dependency ready
@@ -203,7 +203,7 @@ class TestRPC(unittest.TestCase):
 
         self.assertEquals(mocked_channel.basic_consume.call_count, 2)
 
-    def test_consumer_configuration_no_ack(self):
+    def test_consumer_configuration_with_acking(self):
         rpc_client = self._create_rpc_client(consumer=dict(no_ack=False))
 
         mocked_connection = mock.Mock()
@@ -250,3 +250,33 @@ class TestRPC(unittest.TestCase):
             no_ack = True,
             exclusive = True
         )
+
+    @defer.inlineCallbacks
+    def test_channel_reopened_if_closed(self):
+        rpc_client = self._create_rpc_client(reopen_consumer_channel_interval=0)
+
+        mocked_connection = mock.Mock()
+        mocked_channel = mocked_connection.channel.return_value = mock.Mock()
+
+        message_queue = defer.DeferredQueue()
+        mocked_consumer_tag = mock.Mock()
+        mocked_channel.basic_consume.return_value = message_queue, mocked_consumer_tag
+
+        rpc_client.connection_dependency.on_resource_ready(mocked_connection)
+        rpc_client.startService()
+
+        with patch.object(rpc_client, 'process_response') as mocked_response:
+            with patch.object(rpc.log, 'warn') as mocked_warn:
+                message_queue.put(failure.Failure(pika_exceptions.ChannelClosed('test closed')))
+                self.assertEquals(mocked_warn.call_count, 1)
+
+        # the channel closed exception should stop the consuming
+        self.assertEquals(rpc_client.consuming_dependency.is_ready, False)
+        self.assertEquals(len(message_queue.waiting), 0)
+
+        # wait for the reopen_consumer_channel_interval to pass
+        yield util.wait(0)
+
+        # .. the consuming should have been restarted:
+        self.assertEquals(rpc_client.consuming_dependency.is_ready, True)
+        self.assertEquals(len(message_queue.waiting), 1)

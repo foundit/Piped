@@ -584,7 +584,7 @@ def create_deferred_state_watcher(obj, attribute_name='_currently'):
     the attribute is cleared.
 
     This can be used to implement functions that should only be executed by one concurrent
-    thread:
+    invocation:
 
         >>> class A(object):
         ...     running = None # stores the currently running state
