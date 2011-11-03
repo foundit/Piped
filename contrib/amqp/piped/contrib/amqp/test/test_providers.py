@@ -182,6 +182,8 @@ class TestMockConnection(unittest.TestCase):
         connection = providers.AMQPConnection('test_name', servers=['tcp:host=server_1:port=5672', 'tcp:host=server_2:port=5673'], reconnect_interval=0)
         connection.setServiceParent(self.service)
 
+        # create a list of return values for connect. the last element is a deferred, which enables
+        # us to assert that the reconnecting haven't given up.
         endpoints = list()
         connect_return_values = [error.ConnectError('test_error'), error.DNSLookupError('test_error'), error.ConnectionDone('test_error'), Exception('test_exception'), defer.Deferred()]
         expected_errors = list(connect_return_values[:-1])
@@ -190,7 +192,7 @@ class TestMockConnection(unittest.TestCase):
         connection.on_disconnected += disconnects.append
 
         with patch.object(connection, '_connect') as mocked_connect:
-            def verify(endpoint):
+            def connect(endpoint):
                 endpoints.append(dict(host=endpoint._host, port=endpoint._port))
 
                 return_value = connect_return_values.pop(0)
@@ -199,7 +201,7 @@ class TestMockConnection(unittest.TestCase):
                 return return_value
 
 
-            mocked_connect.side_effect = verify
+            mocked_connect.side_effect = connect
 
             with patch.object(providers.log, 'warn') as mocked_warn:
                 connection.startService()
@@ -216,6 +218,9 @@ class TestMockConnection(unittest.TestCase):
             # all our expected errors should be seen as reasons for disconnects:
             errors = [disconnect.value for disconnect in disconnects]
             self.assertEquals(errors, expected_errors)
+
+        # None of the exceptions should have caused the reconnecting to give up.
+        self.assertIsInstance(connection._reconnecting, defer.Deferred)
 
     @defer.inlineCallbacks
     def test_stopping_service_cancels_pending_connections(self):
