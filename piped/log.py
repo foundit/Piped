@@ -195,7 +195,7 @@ def _set_global_logger(logger):
 
 # default to using an non-configured DefaultLogger until something else is configured.
 # the reason this is defined in-line instead of using _set_global_logger is to assist
-# IDEs in recognizig the logging functions
+# IDEs in recognizing the logging functions
 
 _logger = DefaultLogger()
 debug = _logger.debug

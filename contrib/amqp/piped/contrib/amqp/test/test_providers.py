@@ -183,8 +183,8 @@ class TestMockConnection(unittest.TestCase):
         connection.setServiceParent(self.service)
 
         endpoints = list()
-        connect_return_values = [error.ConnectError('test_error'), error.DNSLookupError('test_error'), error.ConnectionDone('test_error')]
-        expected_errors = list(connect_return_values)
+        connect_return_values = [error.ConnectError('test_error'), error.DNSLookupError('test_error'), error.ConnectionDone('test_error'), Exception('test_exception'), defer.Deferred()]
+        expected_errors = list(connect_return_values[:-1])
 
         disconnects = list()
         connection.on_disconnected += disconnects.append
@@ -192,7 +192,12 @@ class TestMockConnection(unittest.TestCase):
         with patch.object(connection, '_connect') as mocked_connect:
             def verify(endpoint):
                 endpoints.append(dict(host=endpoint._host, port=endpoint._port))
-                raise connect_return_values.pop(0)
+
+                return_value = connect_return_values.pop(0)
+                if isinstance(return_value, Exception):
+                    raise return_value
+                return return_value
+
 
             mocked_connect.side_effect = verify
 
@@ -206,11 +211,30 @@ class TestMockConnection(unittest.TestCase):
             # the servers should be attempted in a round-robin fashion:
             server_1 = dict(host='server_1', port=5672)
             server_2 = dict(host='server_2', port=5673)
-            self.assertEquals(endpoints, [server_1, server_2, server_1])
+            self.assertEquals(endpoints, [server_1, server_2, server_1, server_2, server_1])
 
             # all our expected errors should be seen as reasons for disconnects:
             errors = [disconnect.value for disconnect in disconnects]
             self.assertEquals(errors, expected_errors)
+
+    @defer.inlineCallbacks
+    def test_stopping_service_cancels_pending_connections(self):
+        connection = providers.AMQPConnection('test_name', servers=['tcp:host=server_1:port=5672', 'tcp:host=server_2:port=5673'], reconnect_interval=0)
+        connection.setServiceParent(self.service)
+
+        with patch.object(providers, 'endpoints') as mocked_endpoints:
+            mocked_endpoints.clientFromString.return_value.connect.return_value = defer.Deferred()
+            connection.startService()
+
+            self.assertEquals(mocked_endpoints.clientFromString.return_value.connect.call_count, 1)
+
+            self.assertIsInstance(connection._reconnecting, defer.Deferred)
+            self.assertIsInstance(connection._connecting, defer.Deferred)
+
+            yield connection.stopService()
+
+            self.assertEquals(connection._reconnecting, None)
+            self.assertEquals(connection._connecting, None)
 
     def test_reconnect_on_connection_lost(self):
         connection = providers.AMQPConnection('test_name', servers=['tcp:host=server_1:port=5672'])
