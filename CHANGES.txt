@@ -37,7 +37,7 @@ Backward-incompatible changes:
 
             OR
 
-            - procsesor_name:
+            - processor_name:
                 foo: bar
 
             OR

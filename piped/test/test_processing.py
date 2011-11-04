@@ -1379,9 +1379,9 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
                 ]
             )
             # These should not be recognized as pipeline configurations at all..
-            with patch.object(processing.log, 'warn') as mocked_warn:
+            with patch.object(processing.log, 'info') as mocked_info:
                 self.assertConfigurationProperlyTransformed(invalid_pipeline_configuration, dict(), reason)
-                self.assertEquals(mocked_warn.call_count, 1)
+                self.assertEquals(mocked_info.call_args_list, [(('No pipeline definitions were found in the configuration.',), {})])
 
     def test_rewriting_invalid_processor_when_in_pipeline(self):
 

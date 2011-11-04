@@ -525,7 +525,7 @@ class ProcessorGraphFactory(object):
         self.pipelines_configuration = self._get_pipeline_configuration(runtime_environment)
 
         if not self.pipelines_configuration:
-            log.warn('Could not find any pipeline definitions in the configuration.')
+            log.info('No pipeline definitions were found in the configuration.')
 
         self.plugin_manager = ProcessorPluginManager()
         self.plugin_manager.configure(runtime_environment)
