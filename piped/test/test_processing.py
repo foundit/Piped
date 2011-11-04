@@ -138,7 +138,7 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
             possibilities.append(processor_name)
 
         possibilities.append({processor_name:dict(processor_kwargs)})
-        possibilities.append(dict(processor=processor_name, **processor_kwargs))
+        possibilities.append(dict(__processor__=processor_name, **processor_kwargs))
 
         return possibilities
 
@@ -149,8 +149,8 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'only-pipeline': {
                 'chained_consumers': [
-                    {'processor': 'uppercase'},
-                    {'processor': 'reverse'},
+                    {'__processor__': 'uppercase'},
+                    {'__processor__': 'reverse'},
                 ]
             }
         }
@@ -175,7 +175,7 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'only-pipeline': {
                 'chained_consumers': [
-                    {'processor': 'any', u'æøå':'value'},
+                    {'__processor__': 'any', u'æøå':'value'},
                 ]
             }
         }
@@ -192,7 +192,7 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'only-pipeline': {
                 'chained_consumers': [
-                    {'processor': 'raise-exception'},
+                    {'__processor__': 'raise-exception'},
                 ]
             }
         }
@@ -217,11 +217,11 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'only-pipeline': {
                 'chained_consumers': [
-                    {'processor': 'raise-exception'},
-                    {'processor': 'uppercase'},
+                    {'__processor__': 'raise-exception'},
+                    {'__processor__': 'uppercase'},
                 ],
                 'chained_error_consumers': [
-                    {'processor': 'reverse'},
+                    {'__processor__': 'reverse'},
                 ]
             }
         }
@@ -248,11 +248,11 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'only-pipeline': {
                 'chained_consumers': [
-                    {'processor': 'raise-exception'},
-                    {'processor': 'uppercase'},
+                    {'__processor__': 'raise-exception'},
+                    {'__processor__': 'uppercase'},
                 ],
                 'error_consumers': [
-                    {'processor': 'reverse'},
+                    {'__processor__': 'reverse'},
                 ],
             }
         }
@@ -280,15 +280,15 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'only-pipeline': {
                 'chained_consumers': [
-                    {'processor': 'raise-exception'},
-                    {'processor': 'uppercase'},
+                    {'__processor__': 'raise-exception'},
+                    {'__processor__': 'uppercase'},
                 ],
                 'chained_error_consumers':[
-                    {'processor': 'reverse'},
-                    {'processor': 'uppercase'},
+                    {'__processor__': 'reverse'},
+                    {'__processor__': 'uppercase'},
                 ],
                 'error_consumers': [
-                    {'processor': 'reverse'},
+                    {'__processor__': 'reverse'},
                 ],
             }
         }
@@ -315,11 +315,11 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'only-pipeline': {
                 'chained_consumers': [
-                    {'processor': 'uppercase'},
-                    {'processor': 'reverse'},
+                    {'__processor__': 'uppercase'},
+                    {'__processor__': 'reverse'},
                 ],
                 'chained_error_consumers': [
-                    {'processor': 'raise-exception'},
+                    {'__processor__': 'raise-exception'},
                 ]
             }
         }
@@ -348,10 +348,10 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
             'only-pipeline': {
                     'consumers': [
                         {
-                            'processor': 'reverse',
+                            '__processor__': 'reverse',
                             'consumers': [
-                                {'processor': 'uppercase'},
-                                {'processor': 'lowercase'},
+                                {'__processor__': 'uppercase'},
+                                {'__processor__': 'lowercase'},
                             ]
                         }
                     ]
@@ -381,8 +381,8 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'only-pipeline': {
                 'consumers': [
-                    {'processor': 'uppercase'},
-                    {'processor': 'lowercase'},
+                    {'__processor__': 'uppercase'},
+                    {'__processor__': 'lowercase'},
                 ]
             }
         }
@@ -412,13 +412,13 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
             'only-pipeline': {
                 'consumers': [
                     {
-                        'processor': 'uppercase',
+                        '__processor__': 'uppercase',
                         'consumers': [
-                            {'processor': 'reverse', 'id': 'reuse_me'},
+                            {'__processor__': 'reverse', 'id': 'reuse_me'},
                         ]
                     },
                     {
-                        'processor': 'lowercase',
+                        '__processor__': 'lowercase',
                         'consumers': [{'existing': 'reuse_me'}]
                     }
                 ]
@@ -444,14 +444,14 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'reverse-and-uppercase': {
                 'chained_consumers': [
-                    {'processor': 'reverse'},
-                    {'processor': 'uppercase'},
+                    {'__processor__': 'reverse'},
+                    {'__processor__': 'uppercase'},
                 ]
             },
             'reverse-and-lowercase': {
                 'chained_consumers': [
-                    {'processor': 'reverse'},
-                    {'processor': 'lowercase'},
+                    {'__processor__': 'reverse'},
+                    {'__processor__': 'lowercase'},
                 ]
             },
             'use-the-others': {
@@ -465,32 +465,32 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         expected_pipeline_configuration = {
             'reverse-and-uppercase': {
                 'consumers': [
-                    {'processor': 'reverse',
+                    {'__processor__': 'reverse',
                      'consumers': [
-                            {'processor': 'uppercase'},
+                            {'__processor__': 'uppercase'},
                         ]
                     }
                 ]
             },
             'reverse-and-lowercase': {
                 'consumers': [
-                    {'processor': 'reverse',
+                    {'__processor__': 'reverse',
                      'consumers': [
-                            {'processor': 'lowercase'},
+                            {'__processor__': 'lowercase'},
                         ]
                     }
                 ]
             },
             'use-the-others': {
                  'consumers': [
-                    {'processor': 'reverse',
+                    {'__processor__': 'reverse',
                      'consumers': [
-                            {'processor': 'uppercase'},
+                            {'__processor__': 'uppercase'},
                         ]
                     },
-                    {'processor': 'reverse',
+                    {'__processor__': 'reverse',
                      'consumers': [
-                            {'processor': 'lowercase'},
+                            {'__processor__': 'lowercase'},
                         ]
                     }
                 ]
@@ -504,16 +504,16 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'reverse-and-uppercase': {
                 'chained_consumers': [
-                    {'processor': 'reverse'},
-                    {'processor': 'uppercase'},
+                    {'__processor__': 'reverse'},
+                    {'__processor__': 'uppercase'},
                 ]
             },
             'reverse-and-lowercase': {
                 'chained_consumers': [
-                    {'processor': 'reverse'},
-                    {'processor': 'lowercase'},
+                    {'__processor__': 'reverse'},
+                    {'__processor__': 'lowercase'},
                 ],
-                'chained_error_consumers': [{'processor': 'reverse'}],
+                'chained_error_consumers': [{'__processor__': 'reverse'}],
             },
             'use-the-others': {
                  'consumers': [
@@ -526,35 +526,35 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         expected_pipeline_configuration = {
             'reverse-and-uppercase': {
                 'consumers': [
-                    {'processor': 'reverse',
+                    {'__processor__': 'reverse',
                      'consumers': [
-                            {'processor': 'uppercase'},
+                            {'__processor__': 'uppercase'},
                         ]
                     }
                 ]
             },
             'reverse-and-lowercase': {
                 'consumers': [
-                    {'processor': 'reverse',
+                    {'__processor__': 'reverse',
                      'consumers': [
-                            {'processor': 'lowercase'},
+                            {'__processor__': 'lowercase'},
                         ],
-                     'error_consumers': [{'processor': 'reverse'}],
+                     'error_consumers': [{'__processor__': 'reverse'}],
                     }
                 ]
             },
             'use-the-others': {
                  'consumers': [
-                    {'processor': 'reverse',
+                    {'__processor__': 'reverse',
                      'consumers': [
-                            {'processor': 'uppercase'},
+                            {'__processor__': 'uppercase'},
                         ]
                     },
-                    {'processor': 'reverse',
+                    {'__processor__': 'reverse',
                      'consumers': [
-                            {'processor': 'lowercase'},
+                            {'__processor__': 'lowercase'},
                         ],
-                     'error_consumers': [{'processor': 'reverse'}],
+                     'error_consumers': [{'__processor__': 'reverse'}],
                     }
                 ]
             },
@@ -568,14 +568,14 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'reverse-and-uppercase': {
                 'chained_consumers': [
-                    {'processor': 'reverse'},
-                    {'processor': 'uppercase'},
+                    {'__processor__': 'reverse'},
+                    {'__processor__': 'uppercase'},
                 ]
             },
             'consume-the-other': {
                  'chained_consumers': [
                     {'inline-pipeline': 'reverse-and-uppercase'},
-                    {'processor': 'reverse'},
+                    {'__processor__': 'reverse'},
                 ]
             },
         }
@@ -583,19 +583,19 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         expected_pipeline_configuration = {
             'reverse-and-uppercase': {
                 'consumers': [
-                    {'processor': 'reverse',
+                    {'__processor__': 'reverse',
                      'consumers': [
-                            {'processor': 'uppercase'},
+                            {'__processor__': 'uppercase'},
                         ]
                     }
                 ]
             },
             'consume-the-other': {
                 'consumers': [
-                    {'processor': 'reverse',
+                    {'__processor__': 'reverse',
                      'consumers': [
-                            {'processor': 'uppercase',
-                             'consumers': [{'processor': 'reverse'}]},
+                            {'__processor__': 'uppercase',
+                             'consumers': [{'__processor__': 'reverse'}]},
                         ]
                     }
                 ]
@@ -609,14 +609,14 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'reverse-and-uppercase': {
                 'chained_consumers': [
-                    {'processor': 'reverse-in-pipeline'},
-                    {'processor': 'uppercase'},
+                    {'__processor__': 'reverse-in-pipeline'},
+                    {'__processor__': 'uppercase'},
                 ]
             },
             'consume-the-other': {
                  'chained_consumers': [
                     {'inline-pipeline': 'reverse-and-uppercase'},
-                    {'processor': 'reverse'},
+                    {'__processor__': 'reverse'},
                  ],
                  'chained_error_consumers': [{'inline-pipeline':'reverse-and-uppercase'}]
             },
@@ -625,24 +625,24 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         expected_pipeline_configuration = {
             'reverse-and-uppercase': {
                 'consumers': [
-                    {'processor': 'reverse-in-pipeline',
+                    {'__processor__': 'reverse-in-pipeline',
                      'consumers': [
-                            {'processor': 'uppercase'},
+                            {'__processor__': 'uppercase'},
                         ]
                     }
                 ]
             },
             'consume-the-other': {
                 'consumers': [
-                    {'processor': 'reverse-in-pipeline',
+                    {'__processor__': 'reverse-in-pipeline',
                      'consumers': [
-                            {'processor': 'uppercase',
-                             'consumers': [{'processor': 'reverse'}]},
+                            {'__processor__': 'uppercase',
+                             'consumers': [{'__processor__': 'reverse'}]},
                        ],
                      'error_consumers': [
-                         {'processor': 'reverse-in-pipeline',
+                         {'__processor__': 'reverse-in-pipeline',
                           'consumers': [
-                                 {'processor': 'uppercase'},
+                                 {'__processor__': 'uppercase'},
                              ]
                          }
                      ]
@@ -660,37 +660,37 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
             'A': {
                 'chained_consumers': [
                     {'inline-pipeline': 'B'},
-                    {'processor': 'P1'},
+                    {'__processor__': 'P1'},
                 ]
             },
             'B': {
                  'chained_consumers': [
-                    {'processor': 'P2'},
+                    {'__processor__': 'P2'},
                     {'inline-pipeline': 'C'},
                 ]
             },
             'C': {
-                'consumers': [{'processor': 'P3'}],
+                'consumers': [{'__processor__': 'P3'}],
             }
         }
 
         expected_pipeline_configuration = {
             'A': {
                  'consumers': [
-                    {'processor': 'P2',
-                     'consumers': [{'processor': 'P3',
+                    {'__processor__': 'P2',
+                     'consumers': [{'__processor__': 'P3',
                                     'consumers': [
-                                    {'processor': 'P1'}]}]
+                                    {'__processor__': 'P1'}]}]
                     }]
             },
             'B': {
                  'consumers': [
-                    {'processor': 'P2',
-                     'consumers': [{'processor': 'P3'}]}
+                    {'__processor__': 'P2',
+                     'consumers': [{'__processor__': 'P3'}]}
                 ]
             },
             'C': {
-                'consumers': [{'processor': 'P3'}],
+                'consumers': [{'__processor__': 'P3'}],
             }
         }
 
@@ -716,17 +716,17 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
             'A': {
                 'chained_consumers': [
                     {'inline-pipeline': 'B'},
-                    {'processor': 'P1'},
+                    {'__processor__': 'P1'},
                 ]
             },
             'B': {
                  'chained_consumers': [
-                    {'processor': 'P2'},
+                    {'__processor__': 'P2'},
                     {'inline-pipeline': 'C'},
                 ]
             },
             'C': {
-                'consumers': [{'processor': 'P3'}],
+                'consumers': [{'__processor__': 'P3'}],
             },
             'D': {
                 'chained_consumers': [
@@ -735,24 +735,24 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
                     },
                 ],
                 'chained_error_consumers': [
-                    {'processor': 'D-handler'}
+                    {'__processor__': 'D-handler'}
                 ]
             },
             'E': {
                 'consumers': [
-                    {'processor': 'solo-e'},
+                    {'__processor__': 'solo-e'},
                     {
-                        'processor': 'E1',
-                        'error_consumers': [{'processor': 'E1-fail-handler'}],
+                        '__processor__': 'E1',
+                        'error_consumers': [{'__processor__': 'E1-fail-handler'}],
                         'consumers': [{'inline-pipeline': 'D'}],
                     }
                 ]
             },
             'F': {
                 'consumers': [
-                    {'processor': 'solo-f'},
+                    {'__processor__': 'solo-f'},
                     {
-                        'processor': 'F1',
+                        '__processor__': 'F1',
                         'error_consumers': [{'inline-pipeline': 'E'}],
                         'consumers': [{'inline-pipeline': 'D'}],
                     }
@@ -763,46 +763,46 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         expected_pipeline_configuration = {
             'A': {
                  'consumers': [
-                    {'processor': 'P2',
-                     'consumers': [{'processor': 'P3',
+                    {'__processor__': 'P2',
+                     'consumers': [{'__processor__': 'P3',
                                     'consumers': [
-                                    {'processor': 'P1'}]}]
+                                    {'__processor__': 'P1'}]}]
                     }]
             },
             'B': {
                  'consumers': [
-                    {'processor': 'P2',
-                     'consumers': [{'processor': 'P3'}]}
+                    {'__processor__': 'P2',
+                     'consumers': [{'__processor__': 'P3'}]}
                 ]
             },
             'C': {
-                'consumers': [{'processor': 'P3'}],
+                'consumers': [{'__processor__': 'P3'}],
             },
             'D': {
                 'consumers': [
                     {
-                        'processor': 'P3',
+                        '__processor__': 'P3',
                         'error_consumers': [
-                            {'processor':'D-handler'}
+                            {'__processor__':'D-handler'}
                         ]
                     }
                 ]
             },
             'E': {
                 'consumers': [
-                    {'processor': 'solo-e'},
+                    {'__processor__': 'solo-e'},
                     {
-                        'processor': 'E1',
+                        '__processor__': 'E1',
                         'error_consumers': [
                             {
-                                'processor': 'E1-fail-handler',
+                                '__processor__': 'E1-fail-handler',
                             }
                         ],
                         'consumers': [
                             {
-                                'processor': 'P3',
+                                '__processor__': 'P3',
                                 'error_consumers': [
-                                    {'processor':'D-handler'}
+                                    {'__processor__':'D-handler'}
                                 ]
                             }
                         ]
@@ -811,23 +811,23 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
             },
             'F': {
                 'consumers': [
-                    {'processor': 'solo-f'},
+                    {'__processor__': 'solo-f'},
                     {
-                        'processor': 'F1',
+                        '__processor__': 'F1',
                         'error_consumers': [
-                            {'processor': 'solo-e'},
+                            {'__processor__': 'solo-e'},
                             {
-                                'processor': 'E1',
+                                '__processor__': 'E1',
                                 'error_consumers': [
                                     {
-                                        'processor': 'E1-fail-handler',
+                                        '__processor__': 'E1-fail-handler',
                                     }
                                 ],
                                 'consumers': [
                                     {
-                                        'processor': 'P3',
+                                        '__processor__': 'P3',
                                         'error_consumers': [
-                                            {'processor':'D-handler'}
+                                            {'__processor__':'D-handler'}
                                         ]
                                     }
                                 ]
@@ -835,9 +835,9 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
                         ],
                         'consumers': [
                             {
-                                'processor': 'P3',
+                                '__processor__': 'P3',
                                 'error_consumers': [
-                                    {'processor':'D-handler'}
+                                    {'__processor__':'D-handler'}
                                 ]
                             }
                         ]
@@ -853,10 +853,10 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'included-pipeline': {
                 'chained_consumers': [
-                    {'processor': 'do-something'}
+                    {'__processor__': 'do-something'}
                 ],
                 'chained_error_consumers': [
-                    {'processor': 'handle-error'},
+                    {'__processor__': 'handle-error'},
                 ],
             },
             'some-pipeline': {
@@ -864,7 +864,7 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
                     {'inline-pipeline': 'included-pipeline'}
                 ],
                 'chained_error_consumers': [
-                    {'processor': 'some-error-consumer'},
+                    {'__processor__': 'some-error-consumer'},
                 ],
             }
         }
@@ -873,16 +873,16 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
             'included-pipeline': {
                 'consumers': [
                     {
-                        'processor': 'do-something',
-                        'error_consumers': [{'processor': 'handle-error'}],
+                        '__processor__': 'do-something',
+                        'error_consumers': [{'__processor__': 'handle-error'}],
                     },
                 ]
             },
             'some-pipeline': {
                 'consumers': [
                     {
-                        'processor': 'do-something',
-                        'error_consumers': [{'processor': 'handle-error'}, {'processor': 'some-error-consumer'}],
+                        '__processor__': 'do-something',
+                        'error_consumers': [{'__processor__': 'handle-error'}, {'__processor__': 'some-error-consumer'}],
                     }
                 ]
             }
@@ -894,11 +894,11 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'my-pipeline': {
                 'chained_consumers': [
-                    {'processor': 'do-something'}
+                    {'__processor__': 'do-something'}
                 ],
                 'chained_error_consumers': [
-                    {'processor': 'handle-error'},
-                    {'processor': 'assume-error-is-handled'}
+                    {'__processor__': 'handle-error'},
+                    {'__processor__': 'assume-error-is-handled'}
                 ],
             },
         }
@@ -907,12 +907,12 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
             'my-pipeline': {
                 'consumers': [
                     {
-                        'processor': 'do-something',
+                        '__processor__': 'do-something',
                         'error_consumers': [
                             {
-                                'processor': 'handle-error',
+                                '__processor__': 'handle-error',
                                 'consumers': [
-                                    {'processor': 'assume-error-is-handled'}
+                                    {'__processor__': 'assume-error-is-handled'}
                                 ],
                             }
                         ],
@@ -929,14 +929,14 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'reverse-and-uppercase': {
                 'consumers': [ # Diff to previous test, these are not chained.
-                    {'processor': 'reverse'},
-                    {'processor': 'uppercase'},
+                    {'__processor__': 'reverse'},
+                    {'__processor__': 'uppercase'},
                 ]
             },
             'consume-the-other': {
                  'chained_consumers': [
                     {'inline-pipeline': 'reverse-and-uppercase'},
-                    {'processor': 'reverse'},
+                    {'__processor__': 'reverse'},
                 ]
             },
         }
@@ -944,16 +944,16 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         expected_pipeline_configuration = {
             'reverse-and-uppercase': {
                 'consumers': [
-                    {'processor': 'reverse'},
-                    {'processor': 'uppercase'},
+                    {'__processor__': 'reverse'},
+                    {'__processor__': 'uppercase'},
                 ]
             },
             'consume-the-other': {
                 'consumers': [
-                    {'processor': 'reverse',
-                     'consumers': [{'processor': 'reverse'}]},
-                    {'processor': 'uppercase',
-                     'consumers': [{'processor': 'reverse'}]},
+                    {'__processor__': 'reverse',
+                     'consumers': [{'__processor__': 'reverse'}]},
+                    {'__processor__': 'uppercase',
+                     'consumers': [{'__processor__': 'reverse'}]},
                 ]
             },
         }
@@ -965,8 +965,8 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'some-pipeline': {
                 'chained_consumers': [
-                    {'processor': 'A'},
-                    {'processor': 'B'},
+                    {'__processor__': 'A'},
+                    {'__processor__': 'B'},
                 ]
             }
         }
@@ -974,9 +974,9 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         expected_pipeline_configuration = {
             'some-pipeline': {
                 'consumers': [
-                    {'processor': 'A',
+                    {'__processor__': 'A',
                      'consumers': [
-                            {'processor': 'B'},
+                            {'__processor__': 'B'},
                     ]}
                 ]
             }
@@ -993,16 +993,16 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'some-pipeline': {
                 'consumers': [
-                    {'processor': 'C'},
+                    {'__processor__': 'C'},
                 ],
                 'chained_consumers': [
-                    {'processor': 'A',
-                     'consumers': [{'processor':'D'}]
+                    {'__processor__': 'A',
+                     'consumers': [{'__processor__':'D'}]
                     },
-                    {'processor': 'B',
+                    {'__processor__': 'B',
                      'chained_consumers': [
-                            {'processor': 'E'},
-                            {'processor': 'F'},
+                            {'__processor__': 'E'},
+                            {'__processor__': 'F'},
                         ]
                     },
                 ]
@@ -1012,18 +1012,18 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         expected_pipeline_configuration = {
             'some-pipeline': {
                 'consumers': [
-                    {'processor': 'A',
+                    {'__processor__': 'A',
                      'consumers': [
-                            {'processor': 'D'},
-                            {'processor': 'B',
+                            {'__processor__': 'D'},
+                            {'__processor__': 'B',
                              'consumers': [
-                                    {'processor': 'E',
-                                     'consumers': [{'processor':'F'}]},
+                                    {'__processor__': 'E',
+                                     'consumers': [{'__processor__':'F'}]},
                                     ]
                             },
                         ]
                      },
-                    {'processor': 'C'},
+                    {'__processor__': 'C'},
                 ]
             }
         }
@@ -1035,16 +1035,16 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'a-pipeline': {
                 'chained_consumers': [
-                    {'processor': 'reverse'},
+                    {'__processor__': 'reverse'},
                 ],
                 'consumers': [
-                    {'processor': 'uppercase'},
+                    {'__processor__': 'uppercase'},
                 ],
                 'chained_error_consumers': [
-                    {'processor': 'reverse'},
+                    {'__processor__': 'reverse'},
                 ],
                 'error_consumers': [
-                    {'processor': 'uppercase'},
+                    {'__processor__': 'uppercase'},
                 ]
             }
         }
@@ -1055,17 +1055,17 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
             'a-pipeline': {
                 'consumers': [
                     {
-                        'processor': 'reverse',
+                        '__processor__': 'reverse',
                         'error_consumers': [
-                            {'processor': 'reverse'},
-                            {'processor': 'uppercase'},
+                            {'__processor__': 'reverse'},
+                            {'__processor__': 'uppercase'},
                         ]
                     },
                     {
-                        'processor': 'uppercase',
+                        '__processor__': 'uppercase',
                         'error_consumers': [
-                            {'processor': 'reverse'},
-                            {'processor': 'uppercase'},
+                            {'__processor__': 'reverse'},
+                            {'__processor__': 'uppercase'},
                         ]
                     },
                 ],
@@ -1078,8 +1078,8 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'only-pipeline': {
                 'chained_consumers': [
-                    {'processor': 'uppercase'},
-                    {'processor': 'reverse'},
+                    {'__processor__': 'uppercase'},
+                    {'__processor__': 'reverse'},
                 ]
             },
             'alias': {
@@ -1092,15 +1092,15 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         expected_pipeline_configuration = {
             'only-pipeline': {
                 'consumers': [
-                    {'processor': 'uppercase',
-                     'consumers': [{'processor': 'reverse'}],
+                    {'__processor__': 'uppercase',
+                     'consumers': [{'__processor__': 'reverse'}],
                     }
                 ]
             },
             'alias': {
                 'consumers': [
-                    {'processor': 'uppercase',
-                     'consumers': [{'processor': 'reverse'}],
+                    {'__processor__': 'uppercase',
+                     'consumers': [{'__processor__': 'reverse'}],
                     }
                 ]
             },
@@ -1113,8 +1113,8 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'only-pipeline': {
                 'chained_consumers': [
-                    {'processor': 'uppercase'},
-                    {'processor': 'i-do-not-exist'},
+                    {'__processor__': 'uppercase'},
+                    {'__processor__': 'i-do-not-exist'},
                 ]
             }
         }
@@ -1138,7 +1138,7 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'only-pipeline': {
                 'chained_consumers': [
-                    {'processor': 'must-have-foo', 'notfoo': 'though'}, # but it won't get it
+                    {'__processor__': 'must-have-foo', 'notfoo': 'though'}, # but it won't get it
                 ]
             }
         }
@@ -1164,7 +1164,7 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'only-pipeline': {
                 'chained_consumers': [
-                    {'processor': 'must-have-foo', 'foo': 'GOT IT', 'bar': 'nooo'},
+                    {'__processor__': 'must-have-foo', 'foo': 'GOT IT', 'bar': 'nooo'},
                 ]
             }
         }
@@ -1180,16 +1180,16 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'base-pipeline': {
                 'chained_consumers': [
-                    {'processor': 'uppercase',
+                    {'__processor__': 'uppercase',
                      'option': 'to-override',
                      'this-option': 'will be gone'},
-                    {'processor': 'reverse'},
+                    {'__processor__': 'reverse'},
                 ]
             },
             'inheriting-pipeline': {
                 'inherits': 'base-pipeline',
                 'overrides': [
-                    {'processor': 'uppercase',
+                    {'__processor__': 'uppercase',
                      'option': 'now overridden'}
                 ]
             }
@@ -1198,19 +1198,19 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         expected_pipeline_configuration = {
             'base-pipeline': {
                 'consumers': [
-                    {'processor': 'uppercase',
+                    {'__processor__': 'uppercase',
                      'option': 'to-override',
                      'this-option': 'will be gone',
-                     'consumers': [{'processor': 'reverse'}],
+                     'consumers': [{'__processor__': 'reverse'}],
                     }
                 ]
             },
             'inheriting-pipeline': {
                 'inherits': 'base-pipeline',
                 'consumers': [
-                    {'processor': 'uppercase',
+                    {'__processor__': 'uppercase',
                      'option': 'now overridden',
-                     'consumers': [{'processor': 'reverse'}],
+                     'consumers': [{'__processor__': 'reverse'}],
                     }
                 ]
             },
@@ -1221,11 +1221,11 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
     def test_inheriting_fails_with_deep_nesting(self):
         pipeline_configuration = {
             'a': {
-                'chained_consumers': [{'processor': 'uppercase'}]
+                'chained_consumers': [{'__processor__': 'uppercase'}]
             },
             'b': {
                 'inherits': 'a',
-                'overrides': [{'processor': 'uppercase', 'foo': 'bar'}]
+                'overrides': [{'__processor__': 'uppercase', 'foo': 'bar'}]
             },
             'c': {
                 'inherits': 'b',
@@ -1238,11 +1238,11 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
     def test_inheriting_bogus_pipeline(self):
         pipeline_configuration = {
             'a': {
-                'chained_consumers': [{'processor': 'uppercase'}]
+                'chained_consumers': [{'__processor__': 'uppercase'}]
             },
             'b': {
                 'inherits': 'not a',
-                'overrides': [{'processor': 'uppercase', 'foo': 'bar'}]
+                'overrides': [{'__processor__': 'uppercase', 'foo': 'bar'}]
             },
         }
 
@@ -1251,11 +1251,11 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
     def test_not_all_overrides_used(self):
         pipeline_configuration = {
             'a': {
-                'chained_consumers': [{'processor': 'uppercase'}]
+                'chained_consumers': [{'__processor__': 'uppercase'}]
             },
             'b': {
                 'inherits': 'a',
-                'overrides': [{'processor': 'uppercase', 'foo': 'bar'}, {'processor': 'reverse', 'bar': 'baz'}],
+                'overrides': [{'__processor__': 'uppercase', 'foo': 'bar'}, {'__processor__': 'reverse', 'bar': 'baz'}],
             },
         }
         self.assertRaises(exceptions.ConfigurationError, self.get_processor_graph_factory, pipeline_configuration)
@@ -1268,16 +1268,16 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'some-pipeline': {
                 'consumers': [
-                    {'processor': 'C'},
+                    {'__processor__': 'C'},
                 ],
                 'chained_consumers': [
-                    {'processor': 'A',
-                     'consumers': [{'processor':'D'}]
+                    {'__processor__': 'A',
+                     'consumers': [{'__processor__':'D'}]
                     },
-                    {'processor': 'C',
+                    {'__processor__': 'C',
                      'chained_consumers': [
-                            {'processor': 'E'},
-                            {'processor': 'F'},
+                            {'__processor__': 'E'},
+                            {'__processor__': 'F'},
                         ]
                     },
                 ]
@@ -1285,9 +1285,9 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
             'other-pipeline': {
                 'inherits': 'some-pipeline',
                 'overrides': [
-                    {'processor': 'C', 'other_option': 'this processor should have E as a consumer'},
-                    {'processor': 'F', 'foo': 'bar'},
-                    {'processor': 'C', 'some_option': 'this processor should not have consumers'},
+                    {'__processor__': 'C', 'other_option': 'this processor should have E as a consumer'},
+                    {'__processor__': 'F', 'foo': 'bar'},
+                    {'__processor__': 'C', 'some_option': 'this processor should not have consumers'},
                 ]
             }
         }
@@ -1295,26 +1295,26 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         expected_pipeline_configuration = {
             'other-pipeline': {
                 'consumers': [
-                    {'consumers': [{'processor': 'D'},
-                                   {'consumers': [{'consumers': [{'foo': 'bar', 'processor': 'F'}],
-                                                   'processor': 'E'}],
+                    {'consumers': [{'__processor__': 'D'},
+                                   {'consumers': [{'consumers': [{'foo': 'bar', '__processor__': 'F'}],
+                                                   '__processor__': 'E'}],
                                     'other_option': 'this processor should have E as a consumer',
-                                    'processor': 'C'}],
-                     'processor': 'A'},
-                    {'processor': 'C', 'some_option': 'this processor should not have consumers'},
+                                    '__processor__': 'C'}],
+                     '__processor__': 'A'},
+                    {'__processor__': 'C', 'some_option': 'this processor should not have consumers'},
                 ],
                 'inherits': 'some-pipeline'
             },
             'some-pipeline': {
                 'consumers': [
                     {'consumers': [
-                            {'processor': 'D'},
+                            {'__processor__': 'D'},
                             {'consumers': [
-                                    {'consumers': [{'processor': 'F'}],
-                                     'processor': 'E'}],
-                             'processor': 'C'}],
-                     'processor': 'A'},
-                    {'processor': 'C'},
+                                    {'consumers': [{'__processor__': 'F'}],
+                                     '__processor__': 'E'}],
+                             '__processor__': 'C'}],
+                     '__processor__': 'A'},
+                    {'__processor__': 'C'},
                 ]
             }
         }
@@ -1325,7 +1325,7 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
         pipeline_configuration = {
             'base-pipeline': {
                 'chained_consumers': [
-                    {'processor': 'uppercase'}
+                    {'__processor__': 'uppercase'}
                 ]
             },
             'inheriting-pipeline': {
@@ -1341,9 +1341,9 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
             my_pipeline=dict(
                 consumers=[
                     dict(
-                        processor='uppercase',
+                        __processor__='uppercase',
                         consumers=[
-                            dict(processor='lowercase')
+                            dict(__processor__='lowercase')
                         ]
                     )
                 ]
@@ -1408,10 +1408,10 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
             my_pipeline=dict(
                 consumers=[
                     dict(
-                        processor='uppercase',
+                        __processor__='uppercase',
                         uppercaser='UPPERCASER',
                         consumers=[
-                            dict(processor='lowercase', lowercaser='LOWERCASER')
+                            dict(__processor__='lowercase', lowercaser='LOWERCASER')
                         ]
                     )
                 ]
@@ -1435,10 +1435,10 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
             'namespace1.namespace2.my_pipeline':dict(
                 consumers=[
                     dict(
-                        processor='uppercase',
+                        __processor__='uppercase',
                         uppercaser='UPPERCASER',
                         consumers=[
-                            dict(processor='lowercase', lowercaser='LOWERCASER')
+                            dict(__processor__='lowercase', lowercaser='LOWERCASER')
                         ]
                     )
                 ]
@@ -1459,21 +1459,21 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
 
     def test_namespaced_imports(self):
         expected_pipeline_configuration = {
-            'ns1.ns2.ns3.lower':dict(consumers=[{'processor':'lowercaser'}]),
-            'ns1.upper':dict(consumers=[{'processor':'uppercaser'}]),
-            'ns1.ns2.side':dict(consumers=[{'processor':'sidecaser'}]),
+            'ns1.ns2.ns3.lower':dict(consumers=[{'__processor__':'lowercaser'}]),
+            'ns1.upper':dict(consumers=[{'__processor__':'uppercaser'}]),
+            'ns1.ns2.side':dict(consumers=[{'__processor__':'sidecaser'}]),
             'ns1.ns2.my_pipeline':dict(
                 consumers=[
                     dict(
-                        processor='uppercaser',
+                        __processor__='uppercaser',
                         consumers=[
-                            dict(processor='lowercaser',
+                            dict(__processor__='lowercaser',
                                  consumers=[
-                                    dict(processor='sidecaser',
+                                    dict(__processor__='sidecaser',
                                          consumers=[
-                                            dict(processor='rootcaser',
+                                            dict(__processor__='rootcaser',
                                                 consumers=[
-                                                    dict(processor='rootcaser')
+                                                    dict(__processor__='rootcaser')
                                                 ]
                                             )
                                          ]
@@ -1484,7 +1484,7 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
                     )
                 ]
             ),
-            'root':dict(consumers=[{'processor':'rootcaser'}])
+            'root':dict(consumers=[{'__processor__':'rootcaser'}])
         }
 
         # create a pipeline that uses different imports:
@@ -1515,17 +1515,17 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
             'namespace1.namespace2.my_pipeline':dict(
                 consumers=[
                     dict(
-                        processor='uppercase',
+                        __processor__='uppercase',
                         uppercaser='UPPERCASER',
                         consumers=[
-                            dict(processor='lowercase', lowercaser='LOWERCASER')
+                            dict(__processor__='lowercase', lowercaser='LOWERCASER')
                         ]
                     )
                 ]
             ),
             'namespace1.namespace2.included_pipeline':dict(
                 consumers=[
-                    dict(processor='lowercase', lowercaser='LOWERCASER')
+                    dict(__processor__='lowercase', lowercaser='LOWERCASER')
                 ]
             )
         }
@@ -1606,10 +1606,10 @@ class TestMisconfigurationHinting(ProcessorGraphTest):
         pipeline_configuration = {
             'only-pipeline': {
                 'chained_consumers': [
-                    {'processor': 'foo-provider'},
-                    {'processor': 'bar-provider'},
-                    {'processor': 'bar-consumer'},
-                    {'processor': 'foo-consumer'},
+                    {'__processor__': 'foo-provider'},
+                    {'__processor__': 'bar-provider'},
+                    {'__processor__': 'bar-consumer'},
+                    {'__processor__': 'foo-consumer'},
                 ]
             }
         }
@@ -1624,10 +1624,10 @@ class TestMisconfigurationHinting(ProcessorGraphTest):
         pipeline_configuration = {
             'only-pipeline': {
                 'chained_consumers': [
-                    {'processor': 'foo-consumer'},
-                    {'processor': 'foo-provider'},
-                    {'processor': 'bar-provider'},
-                    {'processor': 'bar-consumer'},
+                    {'__processor__': 'foo-consumer'},
+                    {'__processor__': 'foo-provider'},
+                    {'__processor__': 'bar-provider'},
+                    {'__processor__': 'bar-consumer'},
                 ]
             }
         }
@@ -1649,10 +1649,10 @@ class TestMisconfigurationHinting(ProcessorGraphTest):
         pipeline_configuration = {
             'only-pipeline': {
                 'chained_consumers': [
-                    {'processor': 'foo-consumer'},
-                    {'processor': 'bar-consumer'},
-                    {'processor': 'foo-provider'},
-                    {'processor': 'bar-provider'},
+                    {'__processor__': 'foo-consumer'},
+                    {'__processor__': 'bar-consumer'},
+                    {'__processor__': 'foo-provider'},
+                    {'__processor__': 'bar-provider'},
                 ]
             }
         }
@@ -1680,13 +1680,13 @@ class TestMisconfigurationHinting(ProcessorGraphTest):
             'only-pipeline': {
                 'consumers': [
                     {
-                        'processor': 'foo-consumer2',
+                        '__processor__': 'foo-consumer2',
                         'consumers': [
-                            {'processor': 'foo-consumer', 'id': 'reuse_me'},
+                            {'__processor__': 'foo-consumer', 'id': 'reuse_me'},
                         ]
                     },
                     {
-                        'processor': 'foo-provider',
+                        '__processor__': 'foo-provider',
                         'consumers': [{'existing': 'reuse_me'}]
                     }
                 ]
@@ -1724,21 +1724,21 @@ class TestConditional(ProcessorGraphTest):
             'only-pipeline': {
                 'consumers': [
                     {
-                        'processor': 'lambda-decider',
+                        '__processor__': 'lambda-decider',
                         'lambda': 'input, map=["upper", "lower"]: map.index(input.lower())',
                         'consumers': [
                             {
-                                'processor': 'uppercase',
+                                '__processor__': 'uppercase',
                                 'consumers': [{'existing': 'exit'}]
                             },
                             {
-                                'processor': 'lowercase',
+                                '__processor__': 'lowercase',
                                 'consumers': [{'existing': 'exit'}]
                             },
                         ]
                     },
                     {
-                        'processor': 'reverse',
+                        '__processor__': 'reverse',
                         'id': 'exit'
                     },
                 ]

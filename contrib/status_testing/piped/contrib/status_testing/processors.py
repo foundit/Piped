@@ -20,13 +20,13 @@ class ReporterCreator(base.Processor):
     interface.classProvides(processing.IProcessor)
     name = 'create-statustest-reporter'
 
-    def __init__(self, reporter='piped.contrib.status_testing.statustest.ProcessorReporter', result_processor=None, arguments=None, output_path='reporter', **kw):
+    def __init__(self, reporter='piped.contrib.status_testing.statustest.ProcessorReporter', processor=None, arguments=None, output_path='reporter', **kw):
         """
 
         :param reporter: The fully qualified name of the reporter class to instantiate. This
             should be a subclass of :class:`~piped.contrib.status_testing.statustest.PipelineReporter`.
 
-        :param result_processor: The name of a processor that will be used. The resulting dependency
+        :param processor: The name of a processor that will be used. The resulting dependency
             object is passed to the reporter as the first argument. If set to ``None`` the dependency
             will also be ``None``, and no processor will be used.
 
@@ -39,7 +39,7 @@ class ReporterCreator(base.Processor):
         """
         super(ReporterCreator, self).__init__(**kw)
 
-        self.processor_config = dict(provider=result_processor) if isinstance(result_processor, basestring) else result_processor
+        self.processor_config = dict(provider=processor) if isinstance(processor, basestring) else processor
         self.reporter_name = reporter
 
         self.output_path = output_path

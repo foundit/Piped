@@ -312,7 +312,7 @@ class PBClientTest(PBTestBase):
 
         self.create_pb_server()
         cm.set('pb.clients.test_client.endpoint', 'tcp:host=localhost:port=%i'%self.port)
-        cm.set('pipelines.test_pipeline', [{'processor':'eval-lambda', 'lambda': 'baton: baton["deferred"].callback("foo")'}])
+        cm.set('pipelines.test_pipeline', [{'eval-lambda': {'lambda': 'baton: baton["deferred"].callback("foo")'}}])
         pp = pipeline_provider.PipelineProvider()
         pp.configure(self.runtime_environment)
 
@@ -384,7 +384,7 @@ class PBClientTest(PBTestBase):
             password = 'test_password'
         ))
 
-        cm.set('pipelines.test_pipeline', [{'processor':'eval-lambda', 'lambda': 'baton: baton["deferred"].callback("logged in as %s"%baton["avatar_id"])'}])
+        cm.set('pipelines.test_pipeline', [{'eval-lambda': {'lambda': 'baton: baton["deferred"].callback("logged in as %s"%baton["avatar_id"])'}}])
         pp = pipeline_provider.PipelineProvider()
         pp.configure(self.runtime_environment)
 
@@ -456,7 +456,7 @@ class PBClientTest(PBTestBase):
             endpoint = 'tcp:host=localhost:port=%i'%self.port,
         ))
 
-        cm.set('pipelines.test_pipeline', [{'processor':'eval-lambda', 'lambda': 'baton: baton["deferred"].callback("logged in as %s"%baton["avatar_id"])'}])
+        cm.set('pipelines.test_pipeline', [{'eval-lambda': {'lambda': 'baton: baton["deferred"].callback("logged in as %s"%baton["avatar_id"])'}}])
         pp = pipeline_provider.PipelineProvider()
         pp.configure(self.runtime_environment)
 

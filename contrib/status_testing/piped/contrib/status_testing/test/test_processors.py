@@ -60,8 +60,8 @@ class TestSimpleStatus(unittest.TestCase):
         self.runtime_environment.configuration_manager.set('pipelines', dict(
             collect=['collect-batons'],
             status=[
-                    dict(processor='call-named-any', name='StringIO.StringIO', output_path='stream'),
-                    dict(processor='create-statustest-reporter', arguments=dict(stream_path='stream'), result_processor='pipeline.collect'),
+                    {'call-named-any': dict(name='StringIO.StringIO', output_path='stream')},
+                    {'create-statustest-reporter': dict(arguments=dict(stream_path='stream'), processor='pipeline.collect')},
                     'test-processor',
                     'test-processor-success',
                     'wait-for-statustest-reporter'
@@ -106,11 +106,11 @@ class TestSimpleStatus(unittest.TestCase):
     def test_without_reporter_processor(self):
         self.runtime_environment.configuration_manager.set('pipelines', dict(
             status=[
-                    dict(processor='call-named-any', name='StringIO.StringIO', output_path='stream'),
-                    dict(processor='create-statustest-reporter', arguments=dict(stream_path='stream')),
+                    {'call-named-any': dict(name='StringIO.StringIO', output_path='stream')},
+                    {'create-statustest-reporter': dict(arguments=dict(stream_path='stream'))},
                     'test-processor',
                     'test-processor-success',
-                    dict(processor='wait-for-statustest-reporter', done=True)
+                    {'wait-for-statustest-reporter': dict(done=True)}
             ]
         ))
 

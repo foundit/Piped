@@ -306,6 +306,17 @@ A :class:`dict` with a single key, the processor name, may be used to pass optio
             foo: bar
 
 
+Using a dict containing the key ``__processor__``
+"""""""""""""""""""""""""""""""""""""""""""""""""
+
+A dictionary with the ``__processor__`` key set to the processor name::
+
+    my_pipeline:
+        - __processor__: processor_name
+          foo: bar
+
+
+
 Reserved keys used in processor definitions
 """""""""""""""""""""""""""""""""""""""""""
 
