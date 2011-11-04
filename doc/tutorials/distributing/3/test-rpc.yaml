@@ -9,7 +9,7 @@ plugins:
 
 system-events:
     startup:
-        system-test: system-testing.start
+        system-test: pipeline.system-testing.start
 
 pipelines:
     system-testing:

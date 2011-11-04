@@ -9,7 +9,7 @@ web:
                 - localhost
         routing:
             __config__:
-                pipeline: hello
+                processor: pipeline.hello
 
 plugins:
     bundles:

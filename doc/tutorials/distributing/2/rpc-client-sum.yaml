@@ -4,7 +4,7 @@ includes:
 zmq:
     queues:
         worker_sum_in:
-            pipeline: zmq.sum
+            processor: pipeline.zmq.sum
     
 pipelines:
     zmq:

@@ -55,7 +55,7 @@ If you just want to have a peek at how ``hello world`` looks in Piped, here is a
         first_step:
             routing:
                 __config__:
-                    pipeline: hello
+                    processor: pipeline.hello
 
     pipelines:
         hello:

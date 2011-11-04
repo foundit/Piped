@@ -2,7 +2,7 @@ web:
     site:
         routing:
             __config__:
-                pipeline: web.compute
+                processor: pipeline.web.compute
 
 pipelines:
     web:

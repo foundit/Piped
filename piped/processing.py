@@ -466,6 +466,9 @@ class TwistedProcessorGraphEvaluator(object):
 
         defer.returnValue(results)
 
+    # Calling the evaluator directly should be the same as starting to process a baton in a pipeline:
+    __call__ = process
+
     @defer.inlineCallbacks
     def traced_process(self, *a, **kw):
         """ Traces and processes a baton asynchronously through a processor graph.
@@ -522,7 +525,7 @@ class ProcessorGraphFactory(object):
         self.pipelines_configuration = self._get_pipeline_configuration(runtime_environment)
 
         if not self.pipelines_configuration:
-            log.warn('Could not find any pipeline definitions in the configuration.')
+            log.info('No pipeline definitions were found in the configuration.')
 
         self.plugin_manager = ProcessorPluginManager()
         self.plugin_manager.configure(runtime_environment)
@@ -545,7 +548,7 @@ class ProcessorGraphFactory(object):
         # attempt to convert the configuration to a base format before checking if it is a valid configuration.
         config = self._as_processor_configuration(maybe_configuration)
         if isinstance(config, dict):
-            if 'processor' in config or 'inline-pipeline' in config:
+            if '__processor__' in config or 'inline-pipeline' in config:
                 return True
         return False
 
@@ -632,7 +635,7 @@ class ProcessorGraphFactory(object):
 
         Processors can be defined in several ways, the base format being:
 
-            processor: processor-name
+            __processor__: processor-name
             key1: value1
             key2: value2
 
@@ -658,10 +661,10 @@ class ProcessorGraphFactory(object):
 
         if isinstance(processor_configuration, basestring):
             # if it is a string, we assume it is the name of a processor
-            return dict(processor=processor_configuration)
+            return dict(__processor__=processor_configuration)
 
         if isinstance(processor_configuration, dict):
-            if 'processor' in processor_configuration or 'inline-pipeline' in processor_configuration:
+            if '__processor__' in processor_configuration or 'inline-pipeline' in processor_configuration:
                 # it is already a processor configuration
                 return processor_configuration
 
@@ -681,7 +684,7 @@ class ProcessorGraphFactory(object):
             del processor_configuration[processor_name]
 
             # update the processor name and configuration
-            processor_configuration['processor'] = processor_name
+            processor_configuration['__processor__'] = processor_name
             processor_configuration.update(processor_arguments)
 
             return processor_configuration
@@ -695,7 +698,7 @@ class ProcessorGraphFactory(object):
     def _fail_if_pipeline_is_misconfigured(cls, pipeline):
         # the pipeline configuration might not be iterable...
         if isinstance(pipeline, collections.Iterable):
-            if any(key in pipeline for key in ('processor', 'inline-pipeline', 'chained_consumers', 'consumers', 'existing')):
+            if any(key in pipeline for key in ('__processor__', 'inline-pipeline', 'chained_consumers', 'consumers', 'existing')):
                 return
 
         e_msg = 'invalid contents of pipeline-configuration'
@@ -740,7 +743,7 @@ class ProcessorGraphFactory(object):
                 # Sub-pipelines can be nested in sub-consumers.
                 self._flatten_pipeline(pipeline_name, attribute)
 
-                if 'processor' in attribute or 'existing' in attribute:
+                if '__processor__' in attribute or 'existing' in attribute:
                     attribute_after_flattening.append(attribute)
                     # Any potential sub-pipelines in consumers have been flattened above,
                     # so we're done here.
@@ -846,7 +849,7 @@ class ProcessorGraphFactory(object):
             processor_queue.extendleft(current_processor.get('error_consumers', tuple()))
 
             next_in_queue = overrides[0] # Peek
-            if current_processor['processor'] == next_in_queue['processor']:
+            if current_processor['__processor__'] == next_in_queue['__processor__']:
                 cls._override_processor_options(current_processor, overrides.popleft())
 
         cls._fail_if_not_all_overrides_were_used(overrides, pipeline_name)
@@ -902,7 +905,7 @@ class ProcessorGraphFactory(object):
         if not overrides:
             return
 
-        names_of_processors = [override['processor'] for override in overrides]
+        names_of_processors = [override['__processor__'] for override in overrides]
         e_msg = 'overrides provided but not used: %s' % (names_of_processors, )
         detail = ('The pipeline "%s" was provided with overrides to processors not found in the pipeline it '
                   'inherited from.') % (pipeline_name, )
@@ -944,7 +947,7 @@ class ProcessorGraphFactory(object):
 
         # We pop away stuff because we want the remaining dictionary to define the
         # configuration values.
-        plugin_name = copied_processor_configuration.pop('processor')
+        plugin_name = copied_processor_configuration.pop('__processor__')
         processor_id = copied_processor_configuration.pop('id', None)
 
         plugin_factory = self._get_plugin_factory_or_fail(plugin_name)

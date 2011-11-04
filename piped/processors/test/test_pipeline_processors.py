@@ -16,8 +16,10 @@ class StubPipelineResource(object):
         self.waiter = waiter
         if not waiter:
             self.waiter = lambda: self
-    def process(self, baton):
+
+    def __call__(self, baton):
         return self.processor(baton)
+
     def wait_for_resource(self):
         return self.waiter()
 
@@ -115,14 +117,17 @@ class PipelineRunnerTest(unittest.TestCase):
 
         dm = self.runtime_environment.dependency_manager
         test_pipeline = dm.add_dependency(self, dict(provider='pipeline.test'))
+        test_pipeline_evaluator = dm.add_dependency(self, dict(provider='pipeline.test'))
         dm.resolve_initial_states()
 
         pipeline = test_pipeline.get_resource()
+        pipeline_evaluator = test_pipeline_evaluator.get_resource()
 
-        results = yield pipeline.process(dict())
+        results = yield pipeline(dict())
 
         self.assertEquals(results, [dict(foo=42)])
-        self.assertEquals(dm.get_dependencies_of(pipeline[0]), [pipeline[0].pipeline_dependency])
+
+        self.assertEquals(dm.get_dependencies_of(pipeline_evaluator[0]), [pipeline_evaluator[0].pipeline_dependency])
 
     @defer.inlineCallbacks
     def test_simple_dynamic_pipeline_dependency(self):
@@ -139,7 +144,7 @@ class PipelineRunnerTest(unittest.TestCase):
 
         pipeline = test_pipeline.get_resource()
 
-        results = yield pipeline.process(dict(pipeline='foo'))
+        results = yield pipeline(dict(pipeline='foo'))
 
         self.assertEquals(results, [dict(foo=42, pipeline='foo')])
         self.assertEquals(dm.get_dependencies_of(pipeline[0]), list())
@@ -159,7 +164,7 @@ class PipelineRunnerTest(unittest.TestCase):
         pipeline = test_pipeline.get_resource()
 
         try:
-            yield pipeline.process(dict(pipeline='foo'))
+            yield pipeline(dict(pipeline='foo'))
             self.fail('Expected the pipeline "foo" to not be provided.')
         except exceptions.UnprovidedResourceError as e:
             pass
@@ -182,7 +187,7 @@ class PipelineRunnerTest(unittest.TestCase):
         pipeline = test_pipeline.get_resource()
 
         try:
-            yield pipeline.process(dict(pipeline='foo'))
+            yield pipeline(dict(pipeline='foo'))
             self.fail('Expected the pipeline "foo" to contain a processor that does not exist.')
         except exceptions.ConfigurationError as e:
             self.assertIn('invalid plugin name: "no-such-processor"', e.args[0])
@@ -204,7 +209,7 @@ class PipelineRunnerTest(unittest.TestCase):
 
         pipeline = test_pipeline.get_resource()
 
-        results = yield pipeline.process(dict())
+        results = yield pipeline(dict())
 
         self.assertEquals(len(results), 1)
         self.assertEquals(results[0]['foo'], 42)
@@ -226,7 +231,7 @@ class PipelineRunnerTest(unittest.TestCase):
 
         pipeline = test_pipeline.get_resource()
 
-        results = yield pipeline.process(dict(pipeline='foo'))
+        results = yield pipeline(dict(pipeline='foo'))
 
         self.assertEquals(len(results), 1)
         self.assertEquals(results[0]['foo'], 42)
@@ -240,7 +245,7 @@ class FakePipeline(object):
         self.batons = list()
         self.i = 0
 
-    def process(self, baton):
+    def __call__(self, baton):
         self.batons.append(baton)
         self.i += 1
         return [self.i]
@@ -248,17 +253,17 @@ class FakePipeline(object):
 
 class FakePipelineWithMultipleSinks(FakePipeline):
 
-    def process(self, baton):
-        FakePipeline.process(self, baton)
+    def __call__(self, baton):
+        super(FakePipelineWithMultipleSinks, self).__call__(baton)
         return ['pretended', 'multiple', 'results']
 
 
 class FakeSlowPipeline(FakePipeline):
 
     @defer.inlineCallbacks
-    def process(self, baton):
+    def __call__(self, baton):
         yield util.wait(0)
-        FakePipeline.process(self, baton)
+        super(FakeSlowPipeline, self).__call__(baton)
         defer.returnValue([baton])
 
 
@@ -268,7 +273,7 @@ class FakeError(exceptions.PipedError):
 
 class FakeFailingPipeline(FakePipeline):
 
-    def process(self, baton):
+    def __call__(self, baton):
         self.i += 1
         if not (self.i % 2):
             raise FakeError('forced failure')
@@ -484,7 +489,7 @@ class TestForEach(unittest.TestCase):
         batons = list()
         class FakePipeline:
 
-            def process(self, baton):
+            def __call__(self, baton):
                 d = defer.Deferred()
                 batons.append(baton)
                 deferreds.append(d)
@@ -517,7 +522,7 @@ class TestForEach(unittest.TestCase):
         batons = list()
         class FakePipeline:
 
-            def process(self, baton):
+            def __call__(self, baton):
                 d = defer.Deferred()
                 batons.append(baton)
                 deferreds.append(d)
@@ -558,7 +563,7 @@ class TestForEach(unittest.TestCase):
         batons = list()
         class FakePipeline:
 
-            def process(self, baton):
+            def __call__(self, baton):
                 d = defer.Deferred()
                 batons.append(baton)
                 deferreds.append(d)
@@ -594,7 +599,7 @@ class TestForEach(unittest.TestCase):
         batons = list()
         class FakePipeline:
 
-            def process(self, baton):
+            def __call__(self, baton):
                 d = defer.Deferred()
                 batons.append(baton)
                 deferreds.append(d)
@@ -656,7 +661,7 @@ class TestForEach(unittest.TestCase):
     @defer.inlineCallbacks
     def test_dict_input(self):
         class CustomFakePipeline(FakePipeline):
-            def process(self, input):
+            def __call__(self, input):
                 return [dict(bar=42, baz=93).get(input)]
 
         pipeline_resource = dependencies.InstanceDependency(CustomFakePipeline())

@@ -12,7 +12,7 @@ class StubPipelineProvider(object):
         self.process = collector
 
     def add_consumer(self, resource_dependency):
-        resource_dependency.on_resource_ready(self)
+        resource_dependency.on_resource_ready(self.process)
 
 
 class TickProviderTest(unittest.TestCase):
@@ -32,7 +32,7 @@ class TickProviderTest(unittest.TestCase):
         configuration_manager.set('ticks.interval.my_interval',
             dict(
                 interval=0, # creates a baton every reactor iteration
-                pipeline='pipeline_name'
+                processor='pipeline.pipeline_name'
             )
         )
 
@@ -63,16 +63,16 @@ class TickProviderTest(unittest.TestCase):
 
         configuration_manager = runtime_environment.configuration_manager
         configuration_manager.set('ticks.interval.my_interval',
-            dict(enabled=False, interval=0, pipeline='pipeline_name')
+            dict(enabled=False, interval=0, processor='pipeline.pipeline_name')
         )
         configuration_manager.set('ticks.interval.another_interval',
-            dict(enabled=True, interval=0, pipeline='another_name')
+            dict(enabled=True, interval=0, processor='pipeline.another_name')
         )
 
         provider.configure(runtime_environment)
 
         self.assertEquals(len(provider._tick_intervals), 1)
-        self.assertEquals(provider._tick_intervals['another_interval'].pipeline_name, 'another_name')
+        self.assertEquals(provider._tick_intervals['another_interval'].processor_dependency_config, dict(provider='pipeline.another_name'))
 
     def test_tickprovider_globally_disabled(self):
         provider = tick_provider.TickProvider()
@@ -84,13 +84,12 @@ class TickProviderTest(unittest.TestCase):
         configuration_manager = runtime_environment.configuration_manager
         configuration_manager.set('ticks.enabled', False)
         configuration_manager.set('ticks.interval.my_interval',
-            dict(interval=0, pipeline='pipeline_name')
+            dict(interval=0, processor='pipeline.pipeline_name')
         )
 
         provider.configure(runtime_environment)
 
         self.assertEquals(provider._tick_intervals, dict())
-
 
     @defer.inlineCallbacks
     def test_tickintervals_provided(self):
@@ -102,7 +101,7 @@ class TickProviderTest(unittest.TestCase):
         configuration_manager.set('ticks.interval.my_interval',
             dict(
                 interval=0, # creates a baton every reactor iteration
-                pipeline='pipeline_name'
+                processor='pipeline.pipeline_name'
             )
         )
 
@@ -128,14 +127,11 @@ class TickIntervalTest(unittest.TestCase):
     @defer.inlineCallbacks
     def test_that_ticks_are_generated(self):
         # ticks every reactor iteration
-        source = tick_provider.TickInterval('test_interval', 0, 'a_pipeline_name')
+        source = tick_provider.TickInterval('test_interval', 0, processor='pipeline.a_pipeline_name')
 
         ticks = defer.DeferredQueue()
 
-        def collector(baton):
-            ticks.put(baton)
-
-        fake_dependencies = util.AttributeDict(wait_for_resource=lambda key: defer.succeed(util.AttributeDict(process=collector)))
+        fake_dependencies = util.AttributeDict(wait_for_resource=lambda key: defer.succeed(ticks.put))
         source.dependencies = fake_dependencies
         source.running = True
 
@@ -153,7 +149,7 @@ class TickIntervalTest(unittest.TestCase):
     @defer.inlineCallbacks
     def test_waiting_for_completion_generating_new_tick(self):
         # ticks every reactor iteration
-        source = tick_provider.TickInterval('test_interval', 0, 'a_pipeline_name')
+        source = tick_provider.TickInterval('test_interval', 0, processor='pipeline.a_pipeline_name')
 
         collected_ticks = defer.DeferredQueue()
 
@@ -162,7 +158,7 @@ class TickIntervalTest(unittest.TestCase):
             yield util.wait(0.001) # spend at least 1 ms "processing"
             collected_ticks.put(baton)
 
-        fake_dependencies = util.AttributeDict(wait_for_resource=lambda key: defer.succeed(util.AttributeDict(process=collector)))
+        fake_dependencies = util.AttributeDict(wait_for_resource=lambda key: defer.succeed(collector))
         source.dependencies = fake_dependencies
         source.running = True
 
@@ -182,14 +178,14 @@ class TickIntervalTest(unittest.TestCase):
     @defer.inlineCallbacks
     def test_restart_without_duplicates_during_sleeping(self):
         # ticks every reactor iteration
-        interval = tick_provider.TickInterval('test_interval', 0, 'a_pipeline_name')
+        interval = tick_provider.TickInterval('test_interval', 0, processor='pipeline.a_pipeline_name')
 
         ticks = defer.DeferredQueue()
 
         def collector(baton):
             ticks.put(baton)
 
-        interval.dependencies = util.AttributeDict(wait_for_resource=lambda key: defer.succeed(util.AttributeDict(process=collector)))
+        interval.dependencies = util.AttributeDict(wait_for_resource=lambda key: defer.succeed(collector))
         interval.running = True
 
         # this immediately produces a tick
@@ -211,7 +207,7 @@ class TickIntervalTest(unittest.TestCase):
     @defer.inlineCallbacks
     def test_restart_without_duplicates_during_processing(self):
         # ticks every reactor iteration
-        interval = tick_provider.TickInterval('test_interval', 0, 'a_pipeline_name')
+        interval = tick_provider.TickInterval('test_interval', 0, processor='pipeline.a_pipeline_name')
 
         ticks = defer.DeferredQueue()
 
@@ -220,7 +216,7 @@ class TickIntervalTest(unittest.TestCase):
             ticks.put(baton)
             yield util.wait(0)
 
-        interval.dependencies = util.AttributeDict(wait_for_resource=lambda key: defer.succeed(util.AttributeDict(process=collector)))
+        interval.dependencies = util.AttributeDict(wait_for_resource=lambda key: defer.succeed(collector))
         interval.running = True
 
         # this immediately produces a tick
@@ -245,14 +241,11 @@ class TickIntervalTest(unittest.TestCase):
     @defer.inlineCallbacks
     def test_start_stop_ticking(self):
         # ticks every reactor iteration
-        source = tick_provider.TickInterval('test_interval', 0, 'a_pipeline_name', auto_start=False)
+        source = tick_provider.TickInterval('test_interval', 0, processor='pipeline.a_pipeline_name', auto_start=False)
 
         collected_ticks = defer.DeferredQueue()
 
-        def collector(baton):
-            collected_ticks.put(baton)
-
-        fake_dependencies = util.AttributeDict(wait_for_resource=lambda key: defer.succeed(util.AttributeDict(process=collector)))
+        fake_dependencies = util.AttributeDict(wait_for_resource=lambda key: defer.succeed(collected_ticks.put))
         source.dependencies = fake_dependencies
 
         # simply starting the service should not produce any ticks

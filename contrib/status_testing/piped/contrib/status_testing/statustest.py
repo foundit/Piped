@@ -99,12 +99,12 @@ class StatusReporter(reporter.TreeReporter):
         super(StatusReporter, self).__init__(stream=StreamAdapter(stream), **kw)
 
 
-class PipelineReporter(StatusReporter):
-    """ Reporter that can pass test results into a pipeline. """
+class ProcessorReporter(StatusReporter):
+    """ Reporter that can pass test results using a processor. """
 
-    def __init__(self, pipeline_dependency=None, *a, **kw):
-        super(PipelineReporter, self).__init__(*a, **kw)
-        self.pipeline_dependency = pipeline_dependency
+    def __init__(self, processor_dependency=None, *a, **kw):
+        super(ProcessorReporter, self).__init__(*a, **kw)
+        self.processor_dependency = processor_dependency
         self._in_processing = []
 
     def wait_for_result_processing(self):
@@ -113,41 +113,41 @@ class PipelineReporter(StatusReporter):
 
     @defer.inlineCallbacks
     def process_baton(self, baton):
-        if not self.pipeline_dependency:
+        if not self.processor_dependency:
             return
         
-        pipeline = yield self.pipeline_dependency.wait_for_resource()
+        processor = yield self.processor_dependency.wait_for_resource()
 
         baton['reporter'] = self
-        yield pipeline.process(baton)
+        yield processor(baton)
 
     def addSuccess(self, test):
-        super(PipelineReporter, self).addSuccess(test)
+        super(ProcessorReporter, self).addSuccess(test)
         d = self.process_baton(dict(test=test, status='success'))
         self._in_processing.append(d)
 
     def addFailure(self, test, err):
-        super(PipelineReporter, self).addFailure(test, err)
+        super(ProcessorReporter, self).addFailure(test, err)
         d = self.process_baton(dict(test=test, failure=err, status='failure'))
         self._in_processing.append(d)
 
     def addError(self, test, err):
-        super(PipelineReporter, self).addError(test, err)
+        super(ProcessorReporter, self).addError(test, err)
         d = self.process_baton(dict(test=test, failure=err, status='error'))
         self._in_processing.append(d)
 
     def addSkip(self, test, err):
-        super(PipelineReporter, self).addSkip(test, err)
+        super(ProcessorReporter, self).addSkip(test, err)
         d = self.process_baton(dict(test=test, failure=err, status='skipped'))
         self._in_processing.append(d)
 
     def addExpectedFailure(self, test, err, todo):
-        super(PipelineReporter, self).addExpectedFailure(test, err, todo)
+        super(ProcessorReporter, self).addExpectedFailure(test, err, todo)
         d = self.process_baton(dict(test=test, failure=err, status='expected_failure'))
         self._in_processing.append(d)
 
     def addUnexpectedSuccess(self, test, todo):
-        super(PipelineReporter, self).addUnexpectedSuccess(test, todo)
+        super(ProcessorReporter, self).addUnexpectedSuccess(test, todo)
         d = self.process_baton(dict(test=test, todo=todo, status='todone'))
         self._in_processing.append(d)
 

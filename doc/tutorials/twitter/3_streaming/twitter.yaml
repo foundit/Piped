@@ -20,14 +20,14 @@ twitter:
         streams:
             track_happy:
                 method: filter
-                pipeline: print-status
+                processor: pipeline.print-status
 
                 track:
                     - happy
 
 system-events:
     startup:
-        tutorial: startup
+        tutorial: pipeline.startup
 
 pipelines:
     startup:

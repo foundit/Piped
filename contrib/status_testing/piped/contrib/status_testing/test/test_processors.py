@@ -60,8 +60,8 @@ class TestSimpleStatus(unittest.TestCase):
         self.runtime_environment.configuration_manager.set('pipelines', dict(
             collect=['collect-batons'],
             status=[
-                    dict(processor='call-named-any', name='StringIO.StringIO', output_path='stream'),
-                    dict(processor='create-statustest-reporter', arguments=dict(stream_path='stream'), pipeline='collect'),
+                    {'call-named-any': dict(name='StringIO.StringIO', output_path='stream')},
+                    {'create-statustest-reporter': dict(arguments=dict(stream_path='stream'), processor='pipeline.collect')},
                     'test-processor',
                     'test-processor-success',
                     'wait-for-statustest-reporter'
@@ -83,8 +83,8 @@ class TestSimpleStatus(unittest.TestCase):
 
         # get the report creator processor
         report_creator = list(evaluators['status'])[1]
-        report_creator.pipeline_dependency.on_resource_ready(evaluators['collect'])
-        report_creator.pipeline_dependency.fire_on_ready()
+        report_creator.processor_dependency.on_resource_ready(evaluators['collect'].process)
+        report_creator.processor_dependency.fire_on_ready()
 
         processed = yield evaluators['status'].process(dict())
 
@@ -103,14 +103,14 @@ class TestSimpleStatus(unittest.TestCase):
         self.assertEquals(len(reporter.unexpectedSuccesses), 1)
 
     @defer.inlineCallbacks
-    def test_without_reporter_pipeline(self):
+    def test_without_reporter_processor(self):
         self.runtime_environment.configuration_manager.set('pipelines', dict(
             status=[
-                    dict(processor='call-named-any', name='StringIO.StringIO', output_path='stream'),
-                    dict(processor='create-statustest-reporter', arguments=dict(stream_path='stream')),
+                    {'call-named-any': dict(name='StringIO.StringIO', output_path='stream')},
+                    {'create-statustest-reporter': dict(arguments=dict(stream_path='stream'))},
                     'test-processor',
                     'test-processor-success',
-                    dict(processor='wait-for-statustest-reporter', done=True)
+                    {'wait-for-statustest-reporter': dict(done=True)}
             ]
         ))
 

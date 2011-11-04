@@ -25,4 +25,8 @@ class PipelineProviderTest(unittest.TestCase):
         self.dependency_manager.resolve_initial_states()
 
         self.assertEquals(pipeline_provider_dependency.get_resource(), pp)
-        self.assertIsInstance(pipeline_dependency.get_resource(), processing.TwistedProcessorGraphEvaluator)
+
+        processor = pipeline_dependency.get_resource()
+        self.assertTrue(hasattr(processor, '__call__'))
+        self.assertEquals(processor.__call__.im_func.func_name, 'process')
+        self.assertIsInstance(processor, processing.TwistedProcessorGraphEvaluator)

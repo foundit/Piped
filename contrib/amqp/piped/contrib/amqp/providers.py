@@ -341,17 +341,17 @@ class AMQPConsumerProvider(object, service.MultiService):
 
 
 class AMQPConsumer(object, service.Service):
-    """ Consumes messages from an AMQP queue and processes them in a pipeline. """
+    """ Consumes messages from an AMQP queue and processes them with a processor. """
     _working = None
 
-    def __init__(self, name, pipeline, connection, queue=None, qos=None,
+    def __init__(self, name, processor, connection, queue=None, qos=None,
                  no_ack = False, exclusive = False,
                  ack_after_failed_processing=False, ack_after_successful_processing=True,
                  nack_after_failed_processing=True, channel_reopen_interval=1,
                  log_processor_exceptions='warn'):
         """
         :param name: Logical name of this consumer.
-        :param pipeline: The pipeline used to process the messages.
+        :param processor: The processor used to process the messages.
         :param connection: Name of the connection.
         :param queue: Either a name (string) or a queue declaration (dict).
             See `queue_declare <http://www.rabbitmq.com/amqp-0-9-1-quickref.html#queue.declare>`_.
@@ -372,7 +372,7 @@ class AMQPConsumer(object, service.Service):
             to disable.
         """
         self.name = name
-        self.pipeline_name = pipeline
+        self.processor_config = dict(provider=processor) if isinstance(processor, basestring) else processor
         self.connection_name = connection
 
         if isinstance(queue, basestring):
@@ -410,7 +410,7 @@ class AMQPConsumer(object, service.Service):
         self.dependency.on_ready += lambda _: self._run()
         self.dependency.on_lost += lambda _, reason: self._stop_working()
 
-        self.pipeline_dependency = dm.add_dependency(self, dict(provider='pipeline.{0}'.format(self.pipeline_name)))
+        self.processor_dependency = dm.add_dependency(self, self.processor_config)
         self.connection_dependency = dm.add_dependency(self, dict(provider='amqp.connection.{0}'.format(self.connection_name)))
 
     def _stop_working(self):
@@ -475,8 +475,8 @@ class AMQPConsumer(object, service.Service):
 
     @defer.inlineCallbacks
     def process(self, **baton):
-        pipeline = yield self.pipeline_dependency.wait_for_resource()
-        yield pipeline.process(baton)
+        processor = yield self.processor_dependency.wait_for_resource()
+        yield processor(baton)
 
     def startService(self):
         if not self.running:

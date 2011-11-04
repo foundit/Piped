@@ -17,7 +17,7 @@ class FakePipeline(object):
         self.batons = defer.DeferredQueue()
         self.i = 0
 
-    def process(self, baton):
+    def __call__(self, baton):
         self.batons.put(baton)
         self.i += 1
         return [self.i]
@@ -38,7 +38,7 @@ class SendEmailTest(test_smtp_provider.SMTPServerTestBase):
     @defer.inlineCallbacks
     def test_sending_an_email(self):
         self.create_smtp_server()
-        self.server.pipeline_dependency = self.pipeline_dependency
+        self.server.processor_dependency = self.pipeline_dependency
 
         self.server.startService()
         self.addCleanup(self.server.stopService)
@@ -53,7 +53,7 @@ class SendEmailTest(test_smtp_provider.SMTPServerTestBase):
     @defer.inlineCallbacks
     def test_valid_from_to_formats(self):
         self.create_smtp_server()
-        self.server.pipeline_dependency = self.pipeline_dependency
+        self.server.processor_dependency = self.pipeline_dependency
 
         self.server.startService()
         self.addCleanup(self.server.stopService)

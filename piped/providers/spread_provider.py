@@ -102,14 +102,14 @@ class PBServerProvider(object, service.MultiService):
             servers:
                 named_server:
                     listen: tcp:8789
-                    pipeline: a_pipeline_name
-                    wait_for_pipeline: False # this is the default
+                    processor: processor_name
+                    wait_for_processor: False # this is the default
 
-                    # if the pipeline does not callback the deferred, the following default is used
+                    # if the processor does not callback the deferred, the following default is used
                     # if the default is not provided, the deferred will be errbacked.
                     default_callback: None
 
-                    # if a checker is specified, access to the pipeline will be restricted,
+                    # if a checker is specified, access to the processor will be restricted,
                     # and the baton will contain the avatar_id.
                     checker:
                         name: twisted.cred.checkers.InMemoryUsernamePasswordDatabaseDontUse
@@ -118,7 +118,7 @@ class PBServerProvider(object, service.MultiService):
 
     Given the above configuration, a pb.PBServerFactory will be created to listen on the
     specified port. When methods are called on the server, a baton will be produced. If
-    ``wait_for_pipeline`` is ``True``, incoming batons are buffered until the pipeline
+    ``wait_for_processor`` is ``True``, incoming batons are buffered until the processor
     becomes available, otherwise the client receives an errback immediately.
 
     The baton contains the following keys:
@@ -136,7 +136,7 @@ class PBServerProvider(object, service.MultiService):
         The username of the authenticated user. This key is only set if a checker was configured.
 
     deferred
-        A `twisted.internet.defer.Deferred` object that the pipeline should
+        A `twisted.internet.defer.Deferred` object that the processor should
         callback or errback in order to produce a response to the client.
 
     """
@@ -246,22 +246,22 @@ class PipedPBRealm(object):
 class PipedPBService(pb.Root, service.MultiService):
     """ A perspective broker service for Piped. """
     
-    def __init__(self, listen, pipeline, wait_for_pipeline=False, default_callback=Ellipsis, checker=None):
+    def __init__(self, listen, processor, wait_for_processor=False, default_callback=Ellipsis, checker=None):
         service.MultiService.__init__(self)
         
         if isinstance(listen, basestring):
             listen = [listen]
         self.listen = listen
 
-        self.pipeline_name = pipeline
-        self.wait_for_pipeline = wait_for_pipeline
+        self.processor_config = dict(provider=processor) if isinstance(processor, basestring) else processor
+        self.wait_for_processor = wait_for_processor
         self.default_callback = default_callback
 
         self.checker = checker
 
     def configure(self, runtime_environment):
         dependency_manager = runtime_environment.dependency_manager
-        self.pipeline_dependency = dependency_manager.add_dependency(self, dict(provider='pipeline.%s'%self.pipeline_name))
+        self.processor_dependency = dependency_manager.add_dependency(self, self.processor_config)
 
         root = PipedPBRoot(server=self)
 
@@ -305,20 +305,20 @@ class PipedPBService(pb.Root, service.MultiService):
 
     @defer.inlineCallbacks
     def handle_baton(self, baton):
-        """ Processes the baton in the pipeline. """
+        """ Processes the baton using the processor. """
 
-        if self.wait_for_pipeline:
-            pipeline = yield self.pipeline_dependency.wait_for_resource()
+        if self.wait_for_processor:
+            processor = yield self.processor_dependency.wait_for_resource()
         else:
-            # if the pipeline is unavailable, this will raise an exception that
+            # if the processor is unavailable, this will raise an exception that
             # is propagated back to the client.
-            pipeline = self.pipeline_dependency.get_resource()
+            processor = self.processor_dependency.get_resource()
 
         deferred = baton['deferred'] = defer.Deferred()
 
-        # from here now, however, the pipeline is in charge of callbacking or errbacking
+        # from here now, however, the processor is in charge of callbacking or errbacking
         # the deferred.
-        yield pipeline.process(baton)
+        yield processor(baton)
 
         # we check if we have a result here, because we want to avoid having to monitor
         # the garbage collection of the deferred unless required.
@@ -355,7 +355,7 @@ class PipedPBService(pb.Root, service.MultiService):
             if self.default_callback is not Ellipsis:
                 deferred.callback(self.default_callback)
             else:
-                e_msg = 'The pipeline did not callback/errback the deferred.'
+                e_msg = 'The processor did not callback/errback the deferred.'
                 detail = 'Additionally, no default_callback was configured.'
                 deferred.errback(exceptions.MissingCallback(e_msg, detail))
 

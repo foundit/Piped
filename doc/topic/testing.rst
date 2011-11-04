@@ -57,7 +57,7 @@ The following configuration runs a list of test processors inside the same proce
 
     system-events:
         startup:
-            test: system-testing.start
+            test: pipeline.system-testing.start
 
     pipelines:
         system-testing:    
@@ -102,7 +102,7 @@ Status tests can also be run continuous:
             system_testing.start:
                 # run the tests every 5 seconds:
                 interval: 5
-                pipeline: system-testing.start
+                processor: pipeline.system-testing.start
 
     pipelines:
         system-testing:
@@ -135,7 +135,8 @@ The above tests will output their results to the logging mechanism, but creating
         system-testing:
             port: 8080
             routing:
-                __pipeline__: web.system-testing
+                __config__:
+                    processor: pipeline.web.system-testing
 
     pipelines:
         web:

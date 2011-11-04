@@ -82,7 +82,9 @@ class PipelineProvider(object):
         pipeline_dependency = self.dependency_manager.as_dependency(pipeline)
 
         # Give the resource_dependency the actual pipeline resource
-        pipeline_dependency.on_ready += lambda dependency: resource_dependency.on_resource_ready(pipeline)
+        resource = pipeline
+
+        pipeline_dependency.on_ready += lambda dependency: resource_dependency.on_resource_ready(resource)
         pipeline_dependency.on_lost += lambda dependency, reason: resource_dependency.on_resource_lost(reason)
 
         # this isn't strictly required, but makes for an easier graph to follow
@@ -91,4 +93,4 @@ class PipelineProvider(object):
         # if the pipeline already is ready, the on_ready will not be called later, and we give
         # the resource dependency the pipeline immediately
         if pipeline_dependency.is_ready:
-            resource_dependency.on_resource_ready(pipeline)
+            resource_dependency.on_resource_ready(resource)

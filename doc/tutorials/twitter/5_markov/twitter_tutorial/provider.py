@@ -66,7 +66,7 @@ class MyTwitterProvider(object, service.MultiService):
         return auth
 
     def add_consumer(self, resource_dependency):
-        # since we registered for 'twitter.<account_name>.api', we can find the account_name requested by splitting:
+        # since we registered for 'twitter.<account_name>', we can find the account_name requested by splitting:
         twitter, account_name = resource_dependency.provider.split('.')
 
         resource_dependency.on_resource_ready(self._api_by_name[account_name])
@@ -75,10 +75,10 @@ class MyTwitterProvider(object, service.MultiService):
 class TwitterStreamListener(tweepy.StreamListener, service.MultiService):
     """ A custom stream listener that feeds statuses into pipelines. """
 
-    def __init__(self, name, auth, pipeline, method, **method_kwargs):
+    def __init__(self, name, auth, processor, method, **method_kwargs):
         """
         :param auth: A tweepy AuthHandler.
-        :param pipeline: The name of a pipeline.
+        :param processor: The processor name or config.
         :param method: The stream method to use.
         :param method_kwargs: Additional keyword arguments to pass to the method.
         """
@@ -87,22 +87,24 @@ class TwitterStreamListener(tweepy.StreamListener, service.MultiService):
 
         self.name = name
 
-        # by setting ourself as the streams service parent, it will be started and
+        # by setting ourselves as the streams service parent, it will be started and
         # stopped when we are.
         self.stream = TwitterStream(auth, listener=self)
         self.stream.setServiceParent(self)
 
-        # Get and call the stream method. Since we've overriden ``_start``, no requests
+        # Get and call the stream method. Since we've overridden ``_start``, no requests
         # will be performed before the service is started.
         self.method = getattr(self.stream, method)
         self.method(**method_kwargs)
 
-        self.pipeline_name = pipeline
+        # create the dependency config for the processor, and allow the user to use a simple string as the
+        # processor name as a shorthand.
+        self.processor_config = dict(provider=processor) if isinstance(processor, basestring) else processor
 
     def configure(self, runtime_environment):
         dm = runtime_environment.dependency_manager
         # Create a dependency to the pipeline that we will use to process the statuses
-        self.pipeline_dependency = dm.add_dependency(self, dict(provider='pipeline.%s'%self.pipeline_name))
+        self.pipeline_dependency = dm.add_dependency(self, self.processor_config)
 
     def on_status(self, status):
         # on_status is called from outside the twisted reactor mainthread, and we want to process the
@@ -115,11 +117,13 @@ class TwitterStreamListener(tweepy.StreamListener, service.MultiService):
 
     @defer.inlineCallbacks
     def _process_status(self, status):
+        # We've received a status object from our stream and are now in the main thread of the process.
+        # create the baton that will be processed in the pipeline.
         baton = dict(status=status)
 
         # wait for the pipeline to become available, then process the baton
         pipeline = yield self.pipeline_dependency.wait_for_resource()
-        yield pipeline.process(baton)
+        yield pipeline(baton)
 
 
 class TwitterStream(tweepy.Stream, service.Service):

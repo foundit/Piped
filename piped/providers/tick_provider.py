@@ -10,7 +10,7 @@ from piped import event, log, util, resource
 
 
 class TickProvider(object, service.MultiService):
-    """ Provides tick-batons that are sent into pipelines at regular intervals.
+    """ Provides tick-batons that are sent to processors at regular intervals.
 
     Example configuration::
 
@@ -18,14 +18,12 @@ class TickProvider(object, service.MultiService):
             interval:
                 any_name:
                     interval: 120
-                    pipeline: pipeline_name
+                    processor: processor_name
                     auto_start: true # if true, starts the interval when the application starts.
 
     The above will create a :class:`TickInterval` that generates a baton every 120 seconds or
     every time the previous tick baton finished processing, whichever takes the
     longest.
-
-    .. note:: The pipeline name must not include the ``pipeline.`` prefix.
 
     .. seealso:: :mod:`piped.processors.tick_processors`.
     
@@ -67,20 +65,20 @@ class TickProvider(object, service.MultiService):
 
 
 class TickInterval(object, service.Service):
-    _waiting_for_pipeline = None
+    _waiting_for_processor = None
     _sleeping = None
 
-    def __init__(self, interval_name, interval, pipeline, auto_start=True):
+    def __init__(self, interval_name, interval, processor, auto_start=True):
         self.name = interval_name
         self.interval = interval
-        self.pipeline_name = pipeline
+        self.processor_dependency_config = dict(provider=processor) if isinstance(processor, basestring) else processor
 
         self._can_start = auto_start
 
         self._previous_tick = time.time()
 
     def configure(self, runtime_environment):
-        self.dependencies = runtime_environment.create_dependency_map(self, pipeline=dict(provider='pipeline.%s'%self.pipeline_name))
+        self.dependencies = runtime_environment.create_dependency_map(self, processor=self.processor_dependency_config)
 
     def start_ticking(self):
         self._can_start = True
@@ -99,7 +97,7 @@ class TickInterval(object, service.Service):
 
         service.Service.startService(self)
         
-        if self._waiting_for_pipeline:
+        if self._waiting_for_processor:
             return
 
         self.produce_ticks()
@@ -120,19 +118,19 @@ class TickInterval(object, service.Service):
     def produce_ticks(self):
         while self.running:
             try:
-                self._waiting_for_pipeline = self.dependencies.wait_for_resource('pipeline')
-                pipeline = yield self._waiting_for_pipeline
+                self._waiting_for_processor = self.dependencies.wait_for_resource('processor')
+                processor = yield self._waiting_for_processor
 
                 baton = self._create_baton()
 
-                self._waiting_for_pipeline = pipeline.process(baton)
-                yield self._waiting_for_pipeline
+                self._waiting_for_processor = processor(baton)
+                yield self._waiting_for_processor
             except Exception as e:
                 log.error()
             finally:
-                self._waiting_for_pipeline = None
+                self._waiting_for_processor = None
 
-            # we might have stopped running while waiting for the pipeline to finish processing
+            # we might have stopped running while waiting for the processor to finish processing
             if not self.running:
                 return
 

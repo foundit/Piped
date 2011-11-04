@@ -7,17 +7,15 @@ from piped import resource
 
 
 class SystemEventsProvider(object):
-    """ Provides batons that are sent into pipelines when system events are triggered.
+    """ Provides batons that are sent to processors when system events are triggered.
 
     Example configuration::
 
         system-events:
             startup:
-                logical_name: pipeline_name
+                logical_name: processor_name
             shutdown:
-                logical_name: another_pipeline_name
-
-    .. note:: The pipeline name must not include the ``pipeline.`` prefix.
+                logical_name: another_processor_name
 
     """
     interface.classProvides(resource.IResourceProvider)
@@ -27,19 +25,18 @@ class SystemEventsProvider(object):
 
         dependencies = dict()
 
-        for event_name, pipeline_name in runtime_environment.get_configuration_value('system-events.startup', dict()).items():
-            dependencies[pipeline_name] = dict(provider='pipeline.%s'%pipeline_name)
-            reactor.callLater(0, self._relay_event, pipeline_name=pipeline_name, baton=dict(event_type='startup'))
+        for event_name, processor in runtime_environment.get_configuration_value('system-events.startup', dict()).items():
+            dependencies[processor] = dict(provider=processor) if isinstance(processor, basestring) else processor
+            reactor.callLater(0, self._relay_event, processor_name=processor, baton=dict(event_type='startup'))
 
-        for event_name, pipeline_name in runtime_environment.get_configuration_value('system-events.shutdown', dict()).items():
-            dependencies[pipeline_name] = dict(provider='pipeline.%s'%pipeline_name)
-            reactor.addSystemEventTrigger('before', 'shutdown', self._relay_event, pipeline_name=pipeline_name, baton=dict(event_type='shutdown'))
+        for event_name, processor in runtime_environment.get_configuration_value('system-events.shutdown', dict()).items():
+            dependencies[processor] = dict(provider=processor) if isinstance(processor, basestring) else processor
+            reactor.addSystemEventTrigger('before', 'shutdown', self._relay_event, processor_name=processor, baton=dict(event_type='shutdown'))
 
         if dependencies:
             self.dependencies = runtime_environment.create_dependency_map(self, **dependencies)
 
     @defer.inlineCallbacks
-    def _relay_event(self, pipeline_name, baton):
-        pipeline = yield self.dependencies.wait_for_resource(pipeline_name)
-
-        yield pipeline.process(baton)
+    def _relay_event(self, processor_name, baton):
+        processor = yield self.dependencies.wait_for_resource(processor_name)
+        yield processor(baton)

@@ -67,7 +67,7 @@ The following is an processor stub that processes a baton in a pipeline for ever
         baton_to_process = dict(foo='bar')
 
         # wait until the pipeline has finished processing the baton_to_process:
-        yield pipeline.process(baton_to_process)
+        yield pipeline(baton_to_process)
 
         # return the baton unchanged
         defer.returnValue(baton)
@@ -243,7 +243,7 @@ zmq
 ^^^
 
 .. automodule:: piped.contrib.zmq.providers
-    :members: ZMQSocketProvider, ZMQPipelineFeederProvider
+    :members: ZMQSocketProvider, ZMQProcessorFeederProvider
 
 
 zookeeper

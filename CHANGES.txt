@@ -9,12 +9,43 @@ Features:
       and processing them in pipelines, as well as a simple helper
       for creating and providing AMQP-based RPC-clients.
 
+    - Built-in and contrib providers now use "processor: ..." instead
+        of "pipeline: ...", and are able to depend on arbitrary dependencies.
+        The dependencies are invoked with the baton as the first and
+        only argument.
+
+        This makes it easier for one provider to call a function on another
+        provider.
+
 New processors:
     - get-zookeeper-children: Get a list of children for a ZooKeeper node.
     - get-zookeeper-data: Get the data of a ZooKeeper node.
     - zookeeper-node-exists: Check whether a given ZooKeeper node exists.
     - set-zookeeper-data: Set the contents of a ZooKeeper node.
     - create-zookeeper-node: Create a ZooKeeper node.
+
+Internal changes:
+    - piped.processing now uses stores the processor name under the
+        '__processor__' key instead of 'processor', enabling processors to
+        take 'processor' as a keyword argument.
+
+Backward-incompatible changes:
+    - The syntax for creating processors in the YAML configuration has changed.
+        Using "processor: processor_name" is no longer supported. Use
+
+            - processor_name
+
+            OR
+
+            - processor_name:
+                foo: bar
+
+            OR
+
+            - __processor__: processor_name
+              foo: bar
+
+         instead.
 
 ========================== Release 0.2.0 2011-10-17 ==========================
 

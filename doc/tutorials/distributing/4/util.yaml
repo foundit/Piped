@@ -3,10 +3,10 @@ web:
         routing:
             dependencies:
                 __config__:
-                    pipeline: web.dependencies
+                    processor: pipeline.web.dependencies
             pipelines:
                 __config__:
-                    pipeline: web.pipelines
+                    processor: pipeline.web.pipelines
             
     
 pipelines:

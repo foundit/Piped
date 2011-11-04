@@ -7,7 +7,7 @@ web:
             allow: [localhost]
         routing:
             __config__:
-                pipeline: tracing
+                processor: pipeline.tracing
 
 pipelines:
     tracing:

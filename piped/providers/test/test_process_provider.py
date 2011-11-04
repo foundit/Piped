@@ -70,8 +70,8 @@ class DefaultProcessProtocolTest(unittest.TestCase):
         protocol_config.setdefault('provider', None)
         protocol_config.setdefault('process_name', 'test')
         protocol_config.setdefault('executable', None)
-        protocol_config.setdefault('stdout', dict(pipeline='FAKE'))
-        protocol_config.setdefault('stderr', dict(pipeline='FAKE'))
+        protocol_config.setdefault('stdout', dict(processor='FAKE'))
+        protocol_config.setdefault('stderr', dict(processor='FAKE'))
 
         return process_provider.DefaultProcessProtocol(**protocol_config)
 
@@ -108,7 +108,7 @@ class DefaultProcessProtocolTest(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_custom_delimiter(self):
-        protocol = self._make_protocol(stdout=dict(delimiter='e', pipeline='FAKE'))
+        protocol = self._make_protocol(stdout=dict(delimiter='e', processor='FAKE'))
         stdout = self._make_baton_collector(protocol.stdout_protocol)
 
         data = 'the quick brown fox jumps over the lazy dog'

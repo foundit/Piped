@@ -10,22 +10,13 @@ from piped import log, processing, dependencies, util
 from piped.contrib.zmq import providers
 
 
-class TestSocketPoller(providers.ZMQSocketPoller):
+class StubSocketPoller(providers.ZMQSocketPoller):
 
     def __init__(self, register_callback):
         self.register_callback = register_callback
 
-    def register_socket(self, pipeliner, socket):
-        self.register_callback(pipeliner, socket)
-
-
-class StubPipelineEvaluator(object):
-
-    def __init__(self, process_callback):
-        self.process_callback = process_callback
-
-    def process(self, baton):
-        return defer.maybeDeferred(self.process_callback, baton)
+    def register_socket(self, feeder, socket):
+        self.register_callback(feeder, socket)
 
 
 class ZMQSocketProviderTest(unittest.TestCase):
@@ -198,7 +189,7 @@ class ZMQSocketProviderTest(unittest.TestCase):
         self.assertEquals(socket_by_name, dict(binder=binder_socket, connecter=connecter_socket))
 
 
-class ZMQMessagePipelinerTest(unittest.TestCase):
+class ZMQProcessorFeederProviderTest(unittest.TestCase):
 
     def setUp(self):
         self.mocker = mocker.Mocker()
@@ -211,16 +202,16 @@ class ZMQMessagePipelinerTest(unittest.TestCase):
 
     def test_that_message_providers_request_the_necessary_sockets(self):
         queues = dict(
-            binder=dict(type='PUSH', pipeline='foo', binds=['inproc://socketname']),
-            connecter=dict(type='PULL', pipeline='bar', connects=['inproc://socketname']),
+            binder=dict(type='PUSH', processor='pipeline.foo', binds=['inproc://socketname']),
+            connecter=dict(type='PULL', processor='bar', connects=['inproc://socketname']),
         )
 
         self.runtime_environment.configuration_manager.set('zmq.queues', queues)
 
-        message_source = providers.ZMQPipelineFeederProvider()
+        message_source = providers.ZMQProcessorFeederProvider()
         message_source.configure(self.runtime_environment)
 
-        expected_dependencies = ['zmq.context', 'zmq.socket.binder', 'zmq.socket.connecter', 'pipeline.foo', 'pipeline.bar']
+        expected_dependencies = ['zmq.context', 'zmq.socket.binder', 'zmq.socket.connecter', 'pipeline.foo', 'bar']
 
         # The configure calls should have resulted in the sockets being requested
         for depended_on in [dependency.provider for dependency in self.dependency_manager._dependency_graph.nodes() if hasattr(dependency, 'provider')]:
@@ -232,16 +223,16 @@ class ZMQMessagePipelinerTest(unittest.TestCase):
     def test_no_queues(self):
         self.runtime_environment.dependency_manager = self.mocker.mock()
         self.runtime_environment.resource_manager = self.mocker.mock()
-        # since there are no queues defined that uses a pipeline, no dependencies are added
+        # since there are no queues defined that uses a processor, no dependencies are added
         self.mocker.replay()
 
-        message_pipeliner = providers.ZMQPipelineFeederProvider()
-        message_pipeliner.configure(self.runtime_environment)
+        feeder_provider = providers.ZMQProcessorFeederProvider()
+        feeder_provider.configure(self.runtime_environment)
 
         self.mocker.verify()
 
 
-class ZMQPipelineFeederTest(unittest.TestCase):
+class ZMQProcessorFeederTest(unittest.TestCase):
 
     def setUp(self):
         self.mocker = mocker.Mocker()
@@ -257,46 +248,45 @@ class ZMQPipelineFeederTest(unittest.TestCase):
         self.mocker.restore()
 
     @defer.inlineCallbacks
-    def test_using_pipeline(self):
+    def test_using_processor(self):
         processed = list()
-        pipeline = StubPipelineEvaluator(processed.append)
 
         registered = list()
-        stub_poller = TestSocketPoller(lambda pipeliner, socket: registered.append(pipeliner))
+        stub_poller = StubSocketPoller(lambda feeder, socket: registered.append(feeder))
         # we don't configure this poller, so it doesn't request any dependencies
 
         class Provider:
             def add_consumer(self, resource_dependency):
-                resource_dependency.on_resource_ready(pipeline)
+                resource_dependency.on_resource_ready(processed.append)
         provider = Provider()
 
-        # the pipeliner will request the pipeline and the socket, we only care about
-        # the pipeline, so it does not matter what the resource given to the
+        # the feeder will request the processor and the socket, we only care about
+        # the processor, so it does not matter what the resource given to the
         # zmq.socket.foo resource dependency.
         self.resource_manager.register('pipeline.pipeline_name', provider)
         self.resource_manager.register('zmq.socket.socket_name', provider)
 
-        pipeliner = providers.ZMQPipelineFeeder(stub_poller, pipeline_name='pipeline_name', socket_name='socket_name')
-        pipeliner.configure(self.runtime_environment)
+        feeder = providers.ZMQProcessorFeeder(stub_poller, processor_config='pipeline.pipeline_name', socket_name='socket_name')
+        feeder.configure(self.runtime_environment)
 
 
         self.dependency_manager.resolve_initial_states()
 
-        self.assertIn(pipeliner, registered) # it should initially register itself, since all deps are ready
+        self.assertIn(feeder, registered) # it should initially register itself, since all deps are ready
 
         del registered[:] # clear the list
 
         expected_processed = ['foo', 'bar', 'baz']
         message_batch = ['foo', 'bar', 'baz']
-        yield pipeliner.handle_messages(message_batch)
+        yield feeder.handle_messages(message_batch)
 
         # the batons should get processed
         self.assertEquals(processed, expected_processed)
-        # and the pipeliner should re-register itself
-        self.assertIn(pipeliner, registered)
+        # and the feeder should re-register itself
+        self.assertIn(feeder, registered)
 
     @defer.inlineCallbacks
-    def test_using_pipeline_with_a_failure(self):
+    def test_using_processor_with_a_failure(self):
         # swallow the exception caused by our forcibly raised exception.
         mocked_log = self.mocker.replace(log)
         mocked_log.log_traceback(mocker.ARGS, mocker.KWARGS)
@@ -305,44 +295,42 @@ class ZMQPipelineFeederTest(unittest.TestCase):
 
         processed_ok = list()
         processed_all = list()
-        # we set the pipeline up to throw an exception on the second baton it receives
+        # we set the processor up to throw an exception on the second baton it receives
         def consider_adding_to_processed(baton):
             processed_all.append(baton)
             if len(processed_all) == 2:
                 raise Exception('forcibly raised')
             processed_ok.append(baton)
 
-        pipeline = StubPipelineEvaluator(consider_adding_to_processed)
-
         registered = list()
-        stub_poller = TestSocketPoller(lambda pipeliner, socket: registered.append(pipeliner))
+        stub_poller = StubSocketPoller(lambda feeder, socket: registered.append(feeder))
         # we don't configure this poller, so it doesn't request any dependencies
 
         class Provider:
             def add_consumer(self, resource_dependency):
-                resource_dependency.on_resource_ready(pipeline)
+                resource_dependency.on_resource_ready(consider_adding_to_processed)
         provider = Provider()
 
-        # the pipeliner will request the pipeline and the socket, we only care about
-        # the pipeline, so it does not matter what the resource given to the
+        # the feeder will request the processor and the socket, we only care about
+        # the processor, so it does not matter what the resource given to the
         # zmq.socket.foo resource dependency.
         self.resource_manager.register('pipeline.pipeline_name', provider)
         self.resource_manager.register('zmq.socket.socket_name', provider)
 
-        pipeliner = providers.ZMQPipelineFeeder(stub_poller, pipeline_name='pipeline_name', socket_name='socket_name')
-        pipeliner.configure(self.runtime_environment)
+        feeder = providers.ZMQProcessorFeeder(stub_poller, processor_config='pipeline.pipeline_name', socket_name='socket_name')
+        feeder.configure(self.runtime_environment)
 
         self.dependency_manager.resolve_initial_states()
 
-        self.assertIn(pipeliner, registered) # it should initially register itself, since all deps are ready
+        self.assertIn(feeder, registered) # it should initially register itself, since all deps are ready
 
         del registered[:] # clear the list
 
         expected_processed = ['foo', 'baz']
         message_batch = ['foo', 'bar', 'baz']
-        yield pipeliner.handle_messages(message_batch)
+        yield feeder.handle_messages(message_batch)
 
         # the batons should get processed
         self.assertEquals(processed_ok, expected_processed)
-        # and the pipeliner should re-register itself
-        self.assertIn(pipeliner, registered)
+        # and the feeder should re-register itself
+        self.assertIn(feeder, registered)

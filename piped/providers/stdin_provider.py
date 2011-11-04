@@ -18,7 +18,7 @@ class StdinProvider(object, service.MultiService):
         stdin: # defaults
             delimiter: "\n"
             max_length: 16384
-            pipeline: a_pipeline_name
+            processor: processor_name
 
     The batons are on the format ``dict(line=received_line)``.
     
@@ -44,12 +44,13 @@ class StdinProvider(object, service.MultiService):
         if not stdin_config.pop('enabled', True):
             return
 
-        self.pipeline_name = stdin_config.pop('pipeline')
+        processor = stdin_config.pop('processor')
+        self.processor = dict(provider=processor) if isinstance(processor, basestring) else processor
 
         self.protocol = StdinProtocol(self.deferred_queue, **stdin_config)
         self.factory = StandardIO(self.protocol)
 
-        self.puller = util.PullFromQueueAndProcessInPipeline(self.deferred_queue, self.pipeline_name)
+        self.puller = util.PullFromQueueAndProcessWithDependency(self.deferred_queue, self.processor)
         self.puller.setName('stdin.lines')
         self.puller.configure(runtime_environment)
         self.puller.setServiceParent(self)

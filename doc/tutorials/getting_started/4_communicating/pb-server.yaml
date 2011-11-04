@@ -6,7 +6,7 @@ pb:
             # tell it to listen for incoming tcp connections on port 8789
             listen: tcp:8789
             # all messages should be handled by the pb-server pipeline
-            pipeline: pb-server
+            processor: pipeline.pb-server
 
 
 pipelines:

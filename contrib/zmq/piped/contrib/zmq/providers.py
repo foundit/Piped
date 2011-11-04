@@ -198,8 +198,8 @@ class ZMQSocketProvider(object):
             event(socket)
 
 
-class ZMQPipelineFeederProvider(object):
-    """ I create ZMQPipelineFeeders for zmq queues with pipelines.
+class ZMQProcessorFeederProvider(object):
+    """ I create ZMQProcessorFeeders for zmq queues with processors.
 
     Example configuration::
 
@@ -207,7 +207,7 @@ class ZMQPipelineFeederProvider(object):
             poll_timeout: 100 # poll timeout in milliseconds
             queues:
                 queue_name:
-                    pipeline: pipeline_name
+                    processor: processor_name
     """
     interface.classProvides(resource.IResourceProvider)
 
@@ -225,13 +225,13 @@ class ZMQPipelineFeederProvider(object):
         #self._bind_events_on_state_machine_changes()
 
         for queue_name, queue_configuration in self.queues.items():
-            if 'pipeline' not in queue_configuration:
-                # We only care about queues that should feed a pipeline.
+            if 'processor' not in queue_configuration:
+                # We only care about queues that should feed a processor.
                 continue
 
-            pipeline_name = queue_configuration['pipeline']
+            processor_config = queue_configuration['processor']
 
-            feeder = ZMQPipelineFeeder(self._get_or_create_socket_poller(), pipeline_name, queue_name)
+            feeder = ZMQProcessorFeeder(self._get_or_create_socket_poller(), processor_config, queue_name)
             feeder.configure(self.runtime_environment)
 
     def _get_or_create_socket_poller(self):
@@ -243,21 +243,20 @@ class ZMQPipelineFeederProvider(object):
         return self._socket_poller
 
 
-class ZMQPipelineFeeder(object):
+class ZMQProcessorFeeder(object):
     """
     This class takes care of registering itself in a ZMQSocketPoller
-    in order to process incoming messages as batons in a pipeline.
+    in order to process incoming messages as batons in a processor.
     """
-    def __init__(self, socket_poller, pipeline_name, socket_name):
+    def __init__(self, socket_poller, processor_config, socket_name):
         self.socket_poller = socket_poller
-        self.pipeline_name = pipeline_name
+        self.processor_config = dict(provider=processor_config) if isinstance(processor_config, basestring) else processor_config
         self.socket_name = socket_name
 
     def configure(self, runtime_environment):
         self.dependency_manager = runtime_environment.dependency_manager
 
-        self.pipeline_dependency = dependencies.ResourceDependency(provider='pipeline.%s'%self.pipeline_name)
-        self.dependency_manager.add_dependency(self, self.pipeline_dependency)
+        self.processor_dependency = self.dependency_manager.add_dependency(self, self.processor_config)
 
         # I need the zmq socket to operate
         self.socket_dependency = dependencies.ResourceDependency(provider='zmq.socket.%s'%self.socket_name)
@@ -281,14 +280,13 @@ class ZMQPipelineFeeder(object):
         try:
             for message in message_batch:
                 try:
-                    pipeline = yield self.pipeline_dependency.wait_for_resource()
+                    processor = yield self.processor_dependency.wait_for_resource()
                     # TODO: We ought to have a cooperator somewhere
-                    # else, for all the pipelines regardless of where
+                    # else, for all the processors regardless of where
                     # the batons come from.
-                    cooperative = task.cooperate(iter([pipeline.process(message).addErrback(self._log_process_error)]))
+                    cooperative = task.cooperate(iter([defer.maybeDeferred(processor, message).addErrback(self._log_process_error)]))
                     yield cooperative.whenDone()
-                except:
-                    util.reraise_if_should_exit()
+                except Exception:
                     log.error()
         finally:
             self._register_in_poller()
@@ -304,7 +302,7 @@ class ZMQSocketPoller(service.Service):
           ensure that the queues fill to the high watermark, so ZMQ
           stops accepting more messages.
 
-        * providing batches of messages to the `ZMQPipelineFeeder`s.
+        * providing batches of messages to the `ZMQProcessorFeeder`s.
 
     These indirections are to ensure that the reactor is not swamped
     when lots of messages are received --- and to avoid a thread per socket.

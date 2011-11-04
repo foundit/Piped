@@ -19,7 +19,7 @@ twitter:
 
 system-events:
     startup:
-        startup: startup
+        startup: pipeline.startup
 
 pipelines:
     startup:

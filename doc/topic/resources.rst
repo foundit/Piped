@@ -51,7 +51,7 @@ Here is an example processor that depends on a pipeline as a resource:
             pipeline = yield self.pipeline_resource.wait_for_resource()
 
             # process the baton in the pipeline, and wait until the processing is done
-            yield pipeline.process(baton)
+            yield pipeline(baton)
 
             defer.returnValue(baton)
 
