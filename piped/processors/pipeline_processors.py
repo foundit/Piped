@@ -62,7 +62,7 @@ class ScatterGatherer(base.Processor):
 
             input_baton = self.preprocess_baton(self._maybe_copy(input_baton))
 
-            d = defer.maybeDeferred(pipeline.process, input_baton)
+            d = defer.maybeDeferred(pipeline, input_baton)
             d.addCallback(lambda _, resulting_baton=input_baton, output_path=output_path: util.dict_set_path(baton, output_path, resulting_baton))
 
             ds.append(d)
@@ -202,7 +202,7 @@ class PipelineRunner(base.InputOutputProcessor):
             results, trace = yield pipeline.traced_process(input)
             util.dict_set_path(baton, self.trace_path, trace)
         else:
-            results = yield pipeline.process(input)
+            results = yield pipeline(input)
 
         if hasattr(results, '__getitem__') and self.only_last_result:
             results = results[-1]
@@ -376,7 +376,7 @@ class ForEach(base.InputOutputProcessor):
         for sub_baton in input:
 
             try:
-                result = yield pipeline.process(sub_baton)
+                result = yield pipeline(sub_baton)
                 results.append(self.result_processor(result))
             except Exception:
                 if self.fail_on_error:
@@ -403,7 +403,7 @@ class ForEach(base.InputOutputProcessor):
 
         # Prepare running all pipelines in parallel.
         for sub_baton in input:
-            d = defer.maybeDeferred(pipeline.process, sub_baton)
+            d = defer.maybeDeferred(pipeline, sub_baton)
             # ... the result must be processed as usual.
             d.addCallback(lambda result: self.result_processor(result))
             ds.append(d)

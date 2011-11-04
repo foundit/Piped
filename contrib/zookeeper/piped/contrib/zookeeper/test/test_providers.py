@@ -54,7 +54,7 @@ class TestClientProvider(unittest.TestCase):
             dict(
                 servers = 'localhost:2181/foo,localhost:2182/bar',
                 events = dict(
-                    starting = 'pipeline_name'
+                    starting = 'processor_name'
                 )
             )
         )
@@ -79,7 +79,7 @@ class TestClient(unittest.TestCase):
 
         self.assertRaises(exceptions.ConfigurationError, client.configure, self.runtime_environment)
 
-    def test_pipelines_depended_on(self):
+    def test_processors_depended_on(self):
         events = dict(
             zip(providers.PipedZookeeperClient.possible_events, providers.PipedZookeeperClient.possible_events)
         )
@@ -96,12 +96,10 @@ class TestClient(unittest.TestCase):
         for dependency in dependencies:
             dependency_by_provider_name[dependency.provider] = dependency
 
-        # all the events should have a pipeline
+        # all the events should have a processor
         for event in events.keys():
-            pipeline_name = 'pipeline.{0}'.format(event)
-            self.assertIn(pipeline_name, dependency_by_provider_name)
-
-            dependency_by_provider_name.pop(pipeline_name)
+            self.assertIn(event, dependency_by_provider_name)
+            dependency_by_provider_name.pop(event)
 
         self.assertEquals(dependency_by_provider_name, dict())
 

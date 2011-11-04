@@ -13,22 +13,22 @@ class ReporterCreator(base.Processor):
     """ Create a reporter for statustests.
 
     A reporter is responsible for handling the results of test runs. The default reporter
-    supports passing test results to a separate pipeline, gathering the test results for
+    supports passing test results to a separate processor, gathering the test results for
     inspection after the test suites have been run and optionally printing the results to the
     console.
     """
     interface.classProvides(processing.IProcessor)
     name = 'create-statustest-reporter'
 
-    def __init__(self, reporter='piped.contrib.status_testing.statustest.PipelineReporter', pipeline=None, arguments=None, output_path='reporter', **kw):
+    def __init__(self, reporter='piped.contrib.status_testing.statustest.ProcessorReporter', result_processor=None, arguments=None, output_path='reporter', **kw):
         """
 
         :param reporter: The fully qualified name of the reporter class to instantiate. This
             should be a subclass of :class:`~piped.contrib.status_testing.statustest.PipelineReporter`.
 
-        :param pipeline: The name of a pipeline that will be used. The resulting dependency
+        :param result_processor: The name of a processor that will be used. The resulting dependency
             object is passed to the reporter as the first argument. If set to ``None`` the dependency
-            will also be ``None``, and no pipeline will be used.
+            will also be ``None``, and no processor will be used.
 
         :param arguments: A class:`dict` that contains additional arguments that are passed
             to the reporter during instantiation. Arguments with the suffix ``_path`` are
@@ -39,7 +39,7 @@ class ReporterCreator(base.Processor):
         """
         super(ReporterCreator, self).__init__(**kw)
 
-        self.pipeline_name = pipeline
+        self.processor_config = dict(provider=result_processor) if isinstance(result_processor, basestring) else result_processor
         self.reporter_name = reporter
 
         self.output_path = output_path
@@ -52,10 +52,10 @@ class ReporterCreator(base.Processor):
 
         self.reporter_class = reflect.namedAny(self.reporter_name)
 
-        if self.pipeline_name:
-            self.pipeline_dependency = dependency_manager.add_dependency(self, dict(provider='pipeline.%s'%self.pipeline_name))
+        if self.processor_config:
+            self.processor_dependency = dependency_manager.add_dependency(self, self.processor_config)
         else:
-            self.pipeline_dependency = None
+            self.processor_dependency = None
 
     def process(self, baton):
         reporter_arguments = dict()
@@ -67,7 +67,7 @@ class ReporterCreator(base.Processor):
 
             reporter_arguments[key] = value
         
-        reporter = self.reporter_class(self.pipeline_dependency, **reporter_arguments)
+        reporter = self.reporter_class(self.processor_dependency, **reporter_arguments)
 
         if self.output_path == '':
             return reporter
@@ -77,7 +77,7 @@ class ReporterCreator(base.Processor):
 
 
 class WaitForReporterProcessing(base.Processor):
-    """ Wait for the pipeline that processes reporter results to finish processing.
+    """ Wait for the processor that processes reporter results to finish processing.
 
     Since the reporter processing may be asynchronous, this processor may be used
     to wait until all the currently queued reporter processing is completed.
@@ -127,7 +127,7 @@ class StatusTestProcessor(base.Processor):
                 def statustest_foobar(self):
                     pipeline = yield self.pipeline_dependency.wait_for_resource()
 
-                    results = yield pipeline.process(dict(foo='foo'))
+                    results = yield pipeline(dict(foo='foo'))
 
                     # perform any required asserts
                     self.assertEquals(results, [dict(...)])

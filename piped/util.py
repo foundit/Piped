@@ -509,33 +509,33 @@ class BatonJSONEncoder(PipedJSONEncoder):
             return repr(obj)
 
 
-class PullFromQueueAndProcessInPipeline(service.Service):
+class PullFromQueueAndProcessWithDependency(service.Service):
     _waiting_on_queue = None
-    _waiting_on_pipeline = None
+    _waiting_on_processor = None
 
-    def __init__(self, deferred_queue, pipeline_name):
+    def __init__(self, deferred_queue, dependency_config):
         self.deferred_queue = deferred_queue
-        self.pipeline_name = pipeline_name
+        self.dependency_config = dict(provider=dependency_config) if isinstance(dependency_config, basestring) else dependency_config
 
     def configure(self, runtime_environment):
+        self.runtime_environment = runtime_environment
         dependency_manager = runtime_environment.dependency_manager
 
-        self._pipeline_dependency = dependency_manager.as_dependency(dict(provider='pipeline.%s'%self.pipeline_name))
-        dependency_manager.add_dependency(self, self._pipeline_dependency)
+        self._processor_dependency = dependency_manager.add_dependency(self, self.dependency_config)
 
     def startService(self):
         service.Service.startService(self)
 
-        if self._waiting_on_pipeline:
+        if self._waiting_on_processor:
             # We've been started, stopped, started again, and there's
-            # pipeline-processing going on. The process-loop will find
+            # processing going on. The process-loop will find
             # self.running to be true, so let it continue instead of
             # having multiple processing loops.
             return
 
         self._process_input()
 
-        log.info('Starting pulling: %s into %s.'%(self.name, self.pipeline_name))
+        log.info('Starting pulling: %s using %s.'%(self.name, self.dependency_config['provider']))
 
     def stopService(self):
         service.Service.stopService(self)
@@ -558,16 +558,16 @@ class PullFromQueueAndProcessInPipeline(service.Service):
                 self._waiting_on_queue = None
 
             try:
-                self._waiting_on_pipeline = self._pipeline_dependency.wait_for_resource()
-                pipeline = yield self._waiting_on_pipeline
-                self._waiting_on_pipeline = pipeline.process(baton)
-                yield self._waiting_on_pipeline
+                self._waiting_on_processor = self._processor_dependency.wait_for_resource()
+                processor = yield self._waiting_on_processor
+                self._waiting_on_processor = processor(baton)
+                yield self._waiting_on_processor
             except Exception:
                 # An exception occurred while processing the baton, and we don't have anyone to inform
                 # so just log the exception and continue
                 log.error()
             finally:
-                self._waiting_on_pipeline = None
+                self._waiting_on_processor = None
 
 
 class NonCleaningFailure(failure.Failure):

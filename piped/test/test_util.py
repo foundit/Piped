@@ -313,7 +313,7 @@ class TestEnsureDate(unittest.TestCase):
         self.assertEqual(date, util.ensure_date(i))
 
 
-class TestPullFromQueueAndProcessInPipeline(unittest.TestCase):
+class TestPullFromQueueAndProcessWithDependency(unittest.TestCase):
 
     def setUp(self):
         self.runtime_environment = processing.RuntimeEnvironment()
@@ -321,8 +321,8 @@ class TestPullFromQueueAndProcessInPipeline(unittest.TestCase):
         self.queue = defer.DeferredQueue()
         self.processed = defer.DeferredQueue()
 
-        pipeline = util.AttributeDict(wait_for_resource=lambda: defer.succeed(util.AttributeDict(process=self.collector)))
-        stub_dependency_manager = util.AttributeDict(as_dependency=lambda x: pipeline, add_dependency=lambda x,y: None)
+        pipeline_dependency = util.AttributeDict(wait_for_resource=lambda: defer.succeed(self.collector))
+        stub_dependency_manager = util.AttributeDict(add_dependency=lambda x,y: pipeline_dependency)
         self.runtime_environment.dependency_manager = stub_dependency_manager
 
     def collector(self, baton):
@@ -330,7 +330,7 @@ class TestPullFromQueueAndProcessInPipeline(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_simple_processing(self):
-        puller = util.PullFromQueueAndProcessInPipeline(self.queue, 'a_pipeline_name')
+        puller = util.PullFromQueueAndProcessWithDependency(self.queue, 'pipeline.a_pipeline_name')
         puller.configure(self.runtime_environment)
 
         puller.startService()
@@ -342,7 +342,7 @@ class TestPullFromQueueAndProcessInPipeline(unittest.TestCase):
         puller.stopService()
 
     def test_restart_without_duplicates_during_waiting_for_queue(self):
-        puller = util.PullFromQueueAndProcessInPipeline(self.queue, 'a_pipeline_name')
+        puller = util.PullFromQueueAndProcessWithDependency(self.queue, 'pipeline.a_pipeline_name')
 
         @defer.inlineCallbacks
         def collector(baton):
@@ -369,7 +369,7 @@ class TestPullFromQueueAndProcessInPipeline(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_restart_without_duplicates_during_processing(self):
-        puller = util.PullFromQueueAndProcessInPipeline(self.queue, 'a_pipeline_name')
+        puller = util.PullFromQueueAndProcessWithDependency(self.queue, 'pipeline.a_pipeline_name')
 
         @defer.inlineCallbacks
         def collector(baton):

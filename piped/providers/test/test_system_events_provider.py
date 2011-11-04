@@ -9,10 +9,10 @@ from piped.providers import system_events_provider
 
 class StubPipelineProvider(object):
     def __init__(self, collector):
-        self.process = collector
+        self.processor = collector
 
     def add_consumer(self, resource_dependency):
-        resource_dependency.on_resource_ready(self)
+        resource_dependency.on_resource_ready(self.processor)
 
 
 class SystemEventsProviderTest(unittest.TestCase):
@@ -32,7 +32,7 @@ class SystemEventsProviderTest(unittest.TestCase):
         configuration_manager = self.runtime_environment.configuration_manager
 
         for event_type in 'startup', 'shutdown':
-            configuration_manager.set('system-events.%s.name' % event_type, 'test_pipeline')
+            configuration_manager.set('system-events.%s.name' % event_type, 'pipeline.test_pipeline')
 
         provider.configure(self.runtime_environment)
 
@@ -43,6 +43,6 @@ class SystemEventsProviderTest(unittest.TestCase):
         self.assertEquals(batons, [dict(event_type='startup')])
         batons[:] = list()
 
-        # trigger the shutdown event, which should give our pipeline a baton
+        # trigger the shutdown event, which should give our processor a baton
         reactor.fireSystemEvent('shutdown')
         self.assertEquals(batons, [dict(event_type='shutdown')])

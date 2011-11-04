@@ -3,6 +3,7 @@
 """
 This module contains base implementations and managers for the resource system.
 """
+import copy
 import networkx
 from twisted.internet import defer
 from twisted.python import failure, components
@@ -281,7 +282,10 @@ class DictResourceDependencyAdapter(ResourceDependency):
             detail = 'A resource configuration must at least contain the key "provider". The adapter was provided: %r.' % resource_configuration
             raise exceptions.ResourceError(e_msg, detail)
 
+        # copy the resource configuration since we're going to edit it:
+        resource_configuration = copy.copy(resource_configuration)
         provider = resource_configuration.pop('provider')
+
         super(DictResourceDependencyAdapter, self).__init__(provider, resource_configuration, *a, **kw)
 
 

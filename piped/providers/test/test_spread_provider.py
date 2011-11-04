@@ -14,13 +14,13 @@ from piped import processing, dependencies, util, exceptions
 from piped.providers import spread_provider, pipeline_provider
 
 
-class FakePipeline(object):
+class FakeProcessor(object):
 
     def __init__(self):
         self.batons = defer.DeferredQueue()
         self.i = 0
 
-    def process(self, baton):
+    def __call__(self, baton):
         self.batons.put(baton)
         self.i += 1
         return [self.i]
@@ -53,8 +53,8 @@ class PBTestBase(unittest.TestCase):
 
         listen = 'tcp:%i:interface=localhost'%self.port
         kwargs['listen'] = listen
-        kwargs.setdefault('pipeline', 'test_pipeline')
-        kwargs.setdefault('wait_for_pipeline', False)
+        kwargs.setdefault('processor', 'pipeline.test_pipeline')
+        kwargs.setdefault('wait_for_processor', False)
 
         self.server = spread_provider.PipedPBService(**kwargs)
         self.server.setServiceParent(self.application)
@@ -66,9 +66,9 @@ class PBServerTest(PBTestBase):
     def setUp(self):
         super(PBServerTest, self).setUp()
 
-        self.pipeline = FakePipeline()
-        self.pipeline_dependency = dependencies.InstanceDependency(self.pipeline)
-        self.pipeline_dependency.is_ready = True
+        self.processor = FakeProcessor()
+        self.processor_dependency = dependencies.InstanceDependency(self.processor)
+        self.processor_dependency.is_ready = True
 
         # replace twisted.python.log.err in these tests since pb uses log.err to
         # print failure messages on the server side if the exception does not subclass
@@ -84,7 +84,7 @@ class PBServerTest(PBTestBase):
         self.application.startService()
         self.addCleanup(self.application.stopService)
 
-        self.server.pipeline_dependency = self.pipeline_dependency
+        self.server.processor_dependency = self.processor_dependency
 
         # connect to the server
         client = pb.PBClientFactory()
@@ -97,7 +97,7 @@ class PBServerTest(PBTestBase):
         adding = root.callRemote('add', 42, b=93)
 
         # assert that the baton is on the expected form
-        baton = yield self.pipeline.batons.get()
+        baton = yield self.processor.batons.get()
         self.assertEquals(baton['message'], 'add')
         self.assertEquals(baton['args'], (42,))
         self.assertEquals(baton['kwargs'], dict(b=93))
@@ -111,14 +111,14 @@ class PBServerTest(PBTestBase):
 
     @defer.inlineCallbacks
     def test_waiting_for(self):
-        pipeline_dependency = dependencies.ResourceDependency(provider='pipeline.any')
+        processor_dependency = dependencies.ResourceDependency(provider='pipeline.any')
 
         self.create_pb_server()
 
         self.application.startService()
         self.addCleanup(self.application.stopService)
 
-        self.server.pipeline_dependency = pipeline_dependency
+        self.server.processor_dependency = processor_dependency
 
         # connect to the server
         client = pb.PBClientFactory()
@@ -128,7 +128,7 @@ class PBServerTest(PBTestBase):
         root = yield client.getRootObject()
         self.addCleanup(root.broker.transport.loseConnection)
 
-        # call a remote function without waiting for the pipeline:
+        # call a remote function without waiting for the processor:
         try:
             yield root.callRemote('add', 42, b=93)
         except spread_provider.RemoteError as e:
@@ -136,14 +136,14 @@ class PBServerTest(PBTestBase):
         else:
             self.fail('UnprovidedResourceError not raised.')
 
-        # call a method when waiting for the pipeline
-        self.server.wait_for_pipeline = True
+        # call a method when waiting for the processor
+        self.server.wait_for_processor = True
         adding = root.callRemote('add', 42, b=93)
 
-        pipeline_dependency.on_resource_ready(self.pipeline)
-        pipeline_dependency.fire_on_ready()
+        processor_dependency.on_resource_ready(self.processor)
+        processor_dependency.fire_on_ready()
 
-        baton = yield self.pipeline.batons.get()
+        baton = yield self.processor.batons.get()
 
         # the call must be completed before we complete the test:
         baton['deferred'].callback(42+93)
@@ -156,7 +156,7 @@ class PBServerTest(PBTestBase):
         self.application.startService()
         self.addCleanup(self.application.stopService)
 
-        self.server.pipeline_dependency = self.pipeline_dependency
+        self.server.processor_dependency = self.processor_dependency
 
         # connect to the server
         client = pb.PBClientFactory()
@@ -169,7 +169,7 @@ class PBServerTest(PBTestBase):
         adding = root.callRemote('add', 42, b=93)
 
         # assert that the baton is on the expected form
-        baton = yield self.pipeline.batons.get()
+        baton = yield self.processor.batons.get()
         self.assertEquals(baton['message'], 'add')
         self.assertEquals(baton['args'], (42,))
         self.assertEquals(baton['kwargs'], dict(b=93))
@@ -191,7 +191,7 @@ class PBServerTest(PBTestBase):
         adding = root.callRemote('add', 42, b=93)
 
         # we avoid keeping a reference to this baton in order to trigger the default
-        yield self.pipeline.batons.get()
+        yield self.processor.batons.get()
 
         # wait for the result to come in, which should be our default callback
         result = yield adding
@@ -204,7 +204,7 @@ class PBServerTest(PBTestBase):
         self.application.startService()
         self.addCleanup(self.application.stopService)
 
-        self.server.pipeline_dependency = self.pipeline_dependency
+        self.server.processor_dependency = self.processor_dependency
 
         # connect to the server
         client = pb.PBClientFactory()
@@ -219,7 +219,7 @@ class PBServerTest(PBTestBase):
         # we raise an exception and collect it in a failure because it causes
         # f_locals to be reachable
         # make sure the baton is reachable from the failure frames:
-        baton = yield self.pipeline.batons.get()
+        baton = yield self.processor.batons.get()
         try:
             raise Exception()
         except Exception as e:
@@ -253,7 +253,7 @@ class PBServerTest(PBTestBase):
         self.application.startService()
         self.addCleanup(self.application.stopService)
 
-        self.server.pipeline_dependency = self.pipeline_dependency
+        self.server.processor_dependency = self.processor_dependency
 
         # connect to the server
         client = pb.PBClientFactory()
@@ -289,7 +289,7 @@ class PBServerTest(PBTestBase):
         adding = perspective.callRemote('add', 42, b=93)
 
         # assert that the baton is on the expected form
-        baton = yield self.pipeline.batons.get()
+        baton = yield self.processor.batons.get()
         self.assertEquals(baton['message'], 'add')
         self.assertEquals(baton['args'], (42,))
         self.assertEquals(baton['kwargs'], dict(b=93))
@@ -490,7 +490,7 @@ class PBServerProviderTest(unittest.TestCase):
     def test_server_is_provided(self):
         cm = self.runtime_environment.configuration_manager
         cm.set('pb.servers.test_server', dict(
-            pipeline = 'test_pipeline',
+            processor = 'pipeline.test_pipeline',
             listen = 'tcp:0'
         ))
 
@@ -501,5 +501,5 @@ class PBServerProviderTest(unittest.TestCase):
         provider.add_consumer(dep)
 
         server = dep.get_resource()
-        # the server instance should depend on the pipeline resource
-        self.assertEquals(server.pipeline_dependency.provider, 'pipeline.test_pipeline')
+        # the server instance should depend on the processor resource
+        self.assertEquals(server.processor_dependency.provider, 'pipeline.test_pipeline')

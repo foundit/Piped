@@ -225,7 +225,7 @@ class WebSite(object, service.MultiService):
         my_site:
             port: 8080
             log_exceptions: DEBUG # a piped.log debug level, or null. (default: null)
-            debug: # configure debugging of the pipelines
+            debug: # configure debugging of the processors
                 reap_interval: 60 # seconds
                 max_inactive_time: 300 # seconds
                 allow: # list of hostnames or ip addresses that are allowed to debug
@@ -419,21 +419,21 @@ class WebResource(resource.Resource):
         my_site:
             routing:
                 __config__:
-                    pipeline: pipeline_name # name of pipeline to run. the pipeline receives a baton with the request
+                    processor: processor_name # name of processor to run. the processor receives a baton containig the request
                 nested:
                     __config__:
                         debug:
-                            allow: [] # disables debugging of this pipeline, overriding the site-wide configuration
-                        pipeline: a_nested_pipeline_name
+                            allow: [] # disables debugging of this processor, overriding the site-wide configuration
+                        oricessir: another_processor_name
                 sparse:
                     __config__:
-                        no_resource_pipeline: sparse_pipeline
+                        no_resource_processor: sparse_processor
                 js:
                     __config__:
                         static: ~/js
                     foo:
                         __config__:
-                            pipeline: foo_pipeline
+                            processor: foo_processor
                             static:
                                 path: ~/js/foo
                                 namespace:
@@ -446,21 +446,21 @@ class WebResource(resource.Resource):
 
     The __config__ may contain the following keys:
 
-    pipeline
-        Makes a pipeline available at this resource. Accessing this resource directly causes the request
-        object to be passed into the specified pipeline. The baton is on the form:
+    processor
+        Makes a processor available at this resource. Accessing this resource directly causes the request
+        object to be passed into the specified processor. The baton is on the form:
 
         .. code-block:: python
 
             baton = dict(request=request_object)
 
-        The pipeline is expected to call .finish() on the request when the processing is complete. If the
+        The processor is expected to call .finish() on the request when the processing is complete. If the
         processing raises an Exception, the request will be closed automatically and debugging will
         become available if debugging is enabled and the client is allowed to debug.
 
-    no_resource_pipeline
-        Works similar to the ``pipeline`` configuration key, but is used when another resource was not found for
-        request for either this path or any children. If this pipeline is used to handle child paths without
+    no_resource_processor
+        Works similar to the ``processor`` configuration key, but is used when another resource was not found for
+        request for either this path or any children. If this processor is used to handle child paths without
         any explicit resources, the request instance will contain a non-empty ``postpath`` instance variable, which
         is a list of child path elements, relative to its location in the routing.
 
@@ -489,23 +489,23 @@ class WebResource(resource.Resource):
             content_type: text/javascript
 
     debug
-        Overrides the site-wide debug option for this pipeline. Only applies if a pipeline is specified.
+        Overrides the site-wide debug option for this processor. Only applies if a processor is specified.
 
     Accessing the following resources with the above configuration gives:
 
-    - http://hostname:port/ will put a baton into the pipeline ``pipeline_name``.
-    - http://hostname:port/nested/ will put a baton into the pipeline ``a_nested_pipeline_name``.
-    - http://hostname:port/sparse/ will put a baton into the pipeline ``sparse_pipeline``.
-    - http://hostname:port/sparse/some/path will put a baton into the pipeline ``sparse_pipeline``.
+    - http://hostname:port/ will put a invoke the processor ``processor_name``.
+    - http://hostname:port/nested/ will put a invoke the processor ``another_processor``.
+    - http://hostname:port/sparse/ will put a invoke the processor ``sparse_processor``.
+    - http://hostname:port/sparse/some/path will put a invoke the processor ``sparse_processor``.
     - http://hostname:port/js/ will show a directory listing of ``~/js``
-    - http://hostname:port/js/foo will put a baton into the pipeline ``foo_pipeline``
+    - http://hostname:port/js/foo will put a invoke the processor ``foo_processor``
 
     """
     no_resource = resource.NoResource()
     static_resource = None
     debug_handler = None
-    pipeline_dependency = None
-    no_resource_pipeline_dependency = None
+    processor_dependency = None
+    no_resource_processor_dependency = None
 
     def __init__(self, site, routing):
         resource.Resource.__init__(self)
@@ -530,15 +530,15 @@ class WebResource(resource.Resource):
 
             self.putChild(child_path, child)
 
-    def _configure_resource(self, runtime_environment, pipeline=None, no_resource_pipeline=None, debug=None, static=None, concatenated=None):
+    def _configure_resource(self, runtime_environment, processor=None, no_resource_processor=None, debug=None, static=None, concatenated=None):
         dependency_manager = runtime_environment.dependency_manager
 
         debug_configuration = dict(self.site.debug_configuration)
         debug_overrides = debug or dict()
         debug_configuration.update(debug_overrides)
 
-        # add ourselves to the dependency-graph if we have any dependent pipelines:
-        if pipeline or no_resource_pipeline:
+        # add ourselves to the dependency-graph if we have any dependent processors:
+        if processor or no_resource_processor:
             if debug_configuration:
                 self.debug_handler = WebDebugHandler(self.site, **debug_configuration)
                 self.debug_handler.setServiceParent(self.site)
@@ -546,16 +546,16 @@ class WebResource(resource.Resource):
 
             dependency_manager.add_dependency(self, self.site)
 
-        if pipeline:
+        if processor:
             self.putChild('', self)
-            self.pipeline_dependency = dependency_manager.add_dependency(self, dict(provider='pipeline.%s' % pipeline))
+            self.processor_dependency = dependency_manager.add_dependency(self, dict(provider=processor) if isinstance(processor, basestring) else processor)
 
-        if no_resource_pipeline:
-            # if the same pipeline handles both the regular rendering and the "no resource" rendering, we reuse the dependency:
-            if no_resource_pipeline == pipeline:
-                self.no_resource_pipeline_dependency = self.pipeline_dependency
+        if no_resource_processor:
+            # if the same processor handles both the regular rendering and the "no resource" rendering, we reuse the dependency:
+            if no_resource_processor == processor:
+                self.no_resource_processor_dependency = self.processor_dependency
             else:
-                self.no_resource_pipeline_dependency = dependency_manager.add_dependency(self, dict(provider='pipeline.%s' % no_resource_pipeline))
+                self.no_resource_processor_dependency = dependency_manager.add_dependency(self, dict(provider=no_resource_processor) if isinstance(no_resource_processor, basestring) else no_resource_processor)
 
         if static is not None:
             if not isinstance(static, dict):
@@ -577,8 +577,9 @@ class WebResource(resource.Resource):
         if 'static' in config and 'concatenated' in config:
             raise exceptions.ConfigurationError('Both static and concatenated specified')
 
-    def _process_baton_in_pipeline(self, baton, pipeline_dependency):
-        return pipeline_dependency.get_resource().process(baton)
+    def _process_baton_with_processor(self, baton, processor_dependency):
+        processor = processor_dependency.get_resource()
+        return processor(baton)
 
     def getChild(self, path, request):
         # this function is only called after the static routing is finished
@@ -591,8 +592,8 @@ class WebResource(resource.Resource):
         # try to find a child resource
         child_resource = resource.Resource.getChildWithDefault(self, path, request)
 
-        # if we do not have any "no resource" pipeline, we cannot handle request
-        if not self.no_resource_pipeline_dependency:
+        # if we do not have any "no resource" processor, we cannot handle request
+        if not self.no_resource_processor_dependency:
             return child_resource
 
         # we set the relative postpath on the request instance since our caller
@@ -619,8 +620,8 @@ class WebResource(resource.Resource):
             if not isinstance(child_resource, WebResource):
                 return child_resource
 
-            # if the child resource has any pipelines at all, it can render the request:
-            if child_resource.pipeline_dependency or child_resource.no_resource_pipeline_dependency:
+            # if the child resource has any processors at all, it can render the request:
+            if child_resource.processor_dependency or child_resource.no_resource_processor_dependency:
                 return child_resource
 
         # otherwise, we have exhausted all options of finding a resource for this request, and
@@ -629,27 +630,27 @@ class WebResource(resource.Resource):
         return self
 
     def render(self, request):
-        """ Runs the request through the provided pipeline or returns 404
-        if this resource has no configured pipeline.
+        """ Runs the request through the provided processor or returns 404
+        if this resource has no configured processor.
         """
         # restore the relative postpath of the request if we have any:
         request.postpath = getattr(request, 'relative_postpath', request.postpath)
 
-        # We send a proxy of the request into the pipelines in order to be able to
+        # We send a proxy of the request into the processor in order to be able to
         # see if the request proxy gets garbage collected before the request is
         # finished.
         request_proxy = get_request_proxy(request)
-        pipeline_dependency = self._get_pipeline_dependency_for_request(request)
+        processor_dependency = self._get_processor_dependency_for_request(request)
         
-        if not pipeline_dependency:
-            # If we don't have a pipeline to render, see if we have a static_resource to render
+        if not processor_dependency:
+            # If we don't have a processor to render, see if we have a static_resource to render
             if self.static_resource:
                 return self.static_resource.render(request)
-            # No pipeline or static_resource for this resource, so consider it non-existing.
+            # No processor or static_resource for this resource, so consider it non-existing.
             return self.no_resource.render(request)
 
         baton = dict(request=request_proxy)
-        d = defer.maybeDeferred(self._process_baton_in_pipeline, baton, pipeline_dependency)
+        d = defer.maybeDeferred(self._process_baton_with_processor, baton, processor_dependency)
         d.addErrback(self._delayed_errback, request=request_proxy)
         d.addErrback(log.error)
         # The end result of this deferred cannot contain a reference to the request_proxy in any
@@ -710,15 +711,15 @@ class WebResource(resource.Resource):
         if not deferred.called:
             deferred.cancel()
 
-    def _get_pipeline_dependency_for_request(self, request):
+    def _get_processor_dependency_for_request(self, request):
         # if there are non-empty elements left in request.postpath, we're handling the request on behalf of
         # a resource that is missing.
         if '/'.join(request.postpath):
-            return self.no_resource_pipeline_dependency
+            return self.no_resource_processor_dependency
 
-        # if we do not have a pipeline dependency, we consider ourselves to be a "no resource" and
-        # render ourselves with the no_resource pipeline.
-        if not self.pipeline_dependency:
-            return self.no_resource_pipeline_dependency
+        # if we do not have a processor dependency, we consider ourselves to be a "no resource" and
+        # render ourselves with the no_resource processor.
+        if not self.processor_dependency:
+            return self.no_resource_processor_dependency
 
-        return self.pipeline_dependency
+        return self.processor_dependency

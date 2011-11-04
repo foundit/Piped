@@ -22,13 +22,13 @@ class TestESMTPSenderFactory(smtp.ESMTPSenderFactory):
         return protocol
 
 
-class FakePipeline(object):
+class FakeProcessor(object):
 
     def __init__(self):
         self.batons = list()
         self.i = 0
 
-    def process(self, baton):
+    def __call__(self, baton):
         self.batons.append(baton)
         self.i += 1
         return [self.i]
@@ -52,7 +52,7 @@ class SMTPServerTestBase(unittest.TestCase):
         self.port = self.get_free_port()
 
         listen = kwargs.pop('listen', 'tcp:%i:interface=localhost')%self.port
-        kwargs.setdefault('pipeline', 'test_pipeline')
+        kwargs.setdefault('processor', 'pipeline.test_pipeline')
         kwargs.setdefault('validate_to', 'protocol, user: str(user.dest)=="bar@bar.com"')
         kwargs.setdefault('validate_from', 'protocol, helo, origin: str(origin)=="foo@foo.com"')
 
@@ -66,9 +66,9 @@ class SMTPServerTest(SMTPServerTestBase):
     def setUp(self):
         super(SMTPServerTest, self).setUp()
 
-        self.pipeline = FakePipeline()
-        self.pipeline_dependency = dependencies.InstanceDependency(self.pipeline)
-        self.pipeline_dependency.is_ready = True
+        self.processor = FakeProcessor()
+        self.processor_dependency = dependencies.InstanceDependency(self.processor)
+        self.processor_dependency.is_ready = True
 
     def assertSMTPErrorCode(self, code, func, *args, **kwargs):
         exc = self.assertRaises(smtplib.SMTPResponseException, func, *args, **kwargs)
@@ -82,7 +82,7 @@ class SMTPServerTest(SMTPServerTestBase):
         self.application.startService()
         self.addCleanup(self.application.stopService)
 
-        self.server.pipeline_dependency = self.pipeline_dependency
+        self.server.processor_dependency = self.processor_dependency
 
         def do_test():
             smtp = smtplib.SMTP('localhost', self.port, timeout=1)
@@ -97,9 +97,9 @@ class SMTPServerTest(SMTPServerTestBase):
 
         yield threads.deferToThread(do_test)
 
-        self.assertEquals(len(self.pipeline.batons), 1)
+        self.assertEquals(len(self.processor.batons), 1)
 
-        baton = self.pipeline.batons[0]
+        baton = self.processor.batons[0]
         self.assertEquals(baton['from_addr'], 'foo@foo.com')
         self.assertEquals(baton['to_addr'], 'bar@bar.com')
 
@@ -115,20 +115,20 @@ class SMTPServerTest(SMTPServerTestBase):
         self.application.startService()
         self.addCleanup(self.application.stopService)
 
-        self.server.pipeline_dependency = self.pipeline_dependency
+        self.server.processor_dependency = self.processor_dependency
 
         yield smtp_provider.send_mail('foo@foo.com', 'bar@bar.com', 'Test message', port=self.port)
 
         # we should have processed 1 baton, which contains an email message with our custom received header:
-        self.assertEquals(len(self.pipeline.batons), 1)
-        baton = self.pipeline.batons[0]
+        self.assertEquals(len(self.processor.batons), 1)
+        baton = self.processor.batons[0]
         self.assertEquals(baton['message']['Received'], 'by test_custom_header.local')
 
     @defer.inlineCallbacks
     def test_authentication_required_without_tls(self):
-        pipeline = FakePipeline()
-        pipeline_dependency = dependencies.InstanceDependency(pipeline)
-        pipeline_dependency.is_ready = True
+        processor = FakeProcessor()
+        processor_dependency = dependencies.InstanceDependency(processor)
+        processor_dependency.is_ready = True
 
         self.runtime_environment.configure()
         self.create_smtp_server(checker=dict(
@@ -141,7 +141,7 @@ class SMTPServerTest(SMTPServerTestBase):
         self.application.startService()
         self.addCleanup(self.application.stopService)
 
-        self.server.pipeline_dependency = self.pipeline_dependency
+        self.server.processor_dependency = self.processor_dependency
 
         def do_test_without_tls():
             smtp = smtplib.SMTP('localhost', self.port, timeout=1)
@@ -160,9 +160,9 @@ class SMTPServerTest(SMTPServerTestBase):
 
     @defer.inlineCallbacks
     def test_authentication_required_with_tls(self):
-        pipeline = FakePipeline()
-        pipeline_dependency = dependencies.InstanceDependency(pipeline)
-        pipeline_dependency.is_ready = True
+        processor = FakeProcessor()
+        processor_dependency = dependencies.InstanceDependency(processor)
+        processor_dependency.is_ready = True
 
         self.runtime_environment.configure()
 
@@ -183,7 +183,7 @@ class SMTPServerTest(SMTPServerTestBase):
         self.application.startService()
         self.addCleanup(self.application.stopService)
 
-        self.server.pipeline_dependency = self.pipeline_dependency
+        self.server.processor_dependency = self.processor_dependency
 
         def do_test_with_tls():
             smtp = smtplib.SMTP('localhost', self.port, timeout=1)
@@ -213,9 +213,9 @@ class SMTPServerTest(SMTPServerTestBase):
         yield threads.deferToThread(do_test_with_tls)
 
         # a mail should have arrived
-        self.assertEquals(len(self.pipeline.batons), 1)
+        self.assertEquals(len(self.processor.batons), 1)
 
-        baton = self.pipeline.batons[0]
+        baton = self.processor.batons[0]
         self.assertEquals(baton['from_addr'], 'foo@foo.com')
         self.assertEquals(baton['to_addr'], 'bar@bar.com')
 
@@ -224,9 +224,9 @@ class SMTPServerTest(SMTPServerTestBase):
 
     @defer.inlineCallbacks
     def test_simple_send_using_ssl(self):
-        pipeline = FakePipeline()
-        pipeline_dependency = dependencies.InstanceDependency(pipeline)
-        pipeline_dependency.is_ready = True
+        processor = FakeProcessor()
+        processor_dependency = dependencies.InstanceDependency(processor)
+        processor_dependency.is_ready = True
 
         self.runtime_environment.configure()
 
@@ -247,7 +247,7 @@ class SMTPServerTest(SMTPServerTestBase):
         self.application.startService()
         self.addCleanup(self.application.stopService)
 
-        self.server.pipeline_dependency = self.pipeline_dependency
+        self.server.processor_dependency = self.processor_dependency
 
         # sending an email without authorizing should not work
         sending = smtp_provider.send_mail(
@@ -270,9 +270,9 @@ class SMTPServerTest(SMTPServerTestBase):
         )
 
         # the email should have arrived
-        self.assertEquals(len(self.pipeline.batons), 1)
+        self.assertEquals(len(self.processor.batons), 1)
 
-        baton = self.pipeline.batons[0]
+        baton = self.processor.batons[0]
         self.assertEquals(baton['from_addr'], 'foo@foo.com')
         self.assertEquals(baton['to_addr'], 'bar@bar.com')
 
@@ -285,9 +285,9 @@ class SMTPServerTest(SMTPServerTestBase):
     
     @defer.inlineCallbacks
     def test_implicit_anonymous_authentication(self):
-        pipeline = FakePipeline()
-        pipeline_dependency = dependencies.InstanceDependency(pipeline)
-        pipeline_dependency.is_ready = True
+        processor = FakeProcessor()
+        processor_dependency = dependencies.InstanceDependency(processor)
+        processor_dependency.is_ready = True
 
         self.runtime_environment.configure()
         self.create_smtp_server(checker=dict(
@@ -297,7 +297,7 @@ class SMTPServerTest(SMTPServerTestBase):
         self.application.startService()
         self.addCleanup(self.application.stopService)
 
-        self.server.pipeline_dependency = self.pipeline_dependency
+        self.server.processor_dependency = self.processor_dependency
 
         def do_test_without_tls():
             smtp = smtplib.SMTP('localhost', self.port, timeout=1)
@@ -314,9 +314,9 @@ class SMTPServerTest(SMTPServerTestBase):
 
         yield threads.deferToThread(do_test_without_tls)
 
-        self.assertEquals(len(self.pipeline.batons), 1)
+        self.assertEquals(len(self.processor.batons), 1)
 
-        baton = self.pipeline.batons[0]
+        baton = self.processor.batons[0]
         self.assertEquals(baton['from_addr'], 'foo@foo.com')
         self.assertEquals(baton['to_addr'], 'bar@bar.com')
 
@@ -334,8 +334,8 @@ class SMTPProviderTest(unittest.TestCase):
     def test_servers_created(self):
         self.runtime_environment.configure()
         self.cm.set('smtp', dict(
-            one = dict(listen='tcp:0', pipeline='one'),
-            two = dict(listen='tcp:0', pipeline='two'),
+            one = dict(listen='tcp:0', processor='pipeline.one'),
+            two = dict(listen='tcp:0', processor='pipeline.two'),
         ))
 
         provider = smtp_provider.SMTPProvider()
@@ -346,6 +346,6 @@ class SMTPProviderTest(unittest.TestCase):
         requested_pipelines = list()
 
         for service in provider.services:
-            requested_pipelines.append(service.pipeline_dependency.provider)
+            requested_pipelines.append(service.processor_dependency.provider)
 
         self.assertEquals(sorted(requested_pipelines), ['pipeline.one', 'pipeline.two'])

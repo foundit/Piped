@@ -466,6 +466,9 @@ class TwistedProcessorGraphEvaluator(object):
 
         defer.returnValue(results)
 
+    # Calling the evaluator directly should be the same as starting to process a baton in a pipeline:
+    __call__ = process
+
     @defer.inlineCallbacks
     def traced_process(self, *a, **kw):
         """ Traces and processes a baton asynchronously through a processor graph.

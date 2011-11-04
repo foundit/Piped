@@ -114,8 +114,8 @@ class SMTPProvider(object, service.MultiService):
                 # a strport or a list of strports to listen to
                 listen: tcp:10025
 
-                # the pipeline that will handle the messages
-                pipeline: pipeline_name
+                # the processor that will handle the messages
+                processor: processor_name
 
                 # to enable STARTTLS, specify the following:
                 tls:
@@ -151,7 +151,7 @@ class SMTPProvider(object, service.MultiService):
                         username: password
 
 
-    The pipeline will receive batons that are :class:`dict`\s with the following keys:
+    The processor will be invoked with a :class:`dict`\s containing the following keys:
 
     message
         An :class:`email.message.Message` instance.
@@ -181,14 +181,14 @@ class SMTPProvider(object, service.MultiService):
             service.setServiceParent(self)
 
 
-class PipelineMessage(object):
+class ProcessorMessage(object):
     interface.implements(smtp.IMessage)
 
     avatar_id = Ellipsis
 
     def __init__(self, server, from_addr, to_addr):
         self.parser = parser.FeedParser()
-        self.pipeline_dependency = server.pipeline_dependency
+        self.processor_dependency = server.processor_dependency
 
         self.from_addr = from_addr
         self.to_addr = to_addr
@@ -201,14 +201,14 @@ class PipelineMessage(object):
         message = self.parser.close()
         self.parser = parser.FeedParser()
 
-        pipeline = yield self.pipeline_dependency.wait_for_resource()
+        processor = yield self.processor_dependency.wait_for_resource()
 
         baton = dict(message=message, from_addr=self.from_addr, to_addr=self.to_addr)
         # if we have an avatar_id, add it to the baton before processing:
         if self.avatar_id is not Ellipsis:
             baton['avatar_id'] = self.avatar_id
 
-        yield pipeline.process(baton)
+        yield processor(baton)
 
         defer.returnValue(None)
 
@@ -268,7 +268,7 @@ class PipedESMTP(smtp.ESMTP):
         
         validated = yield self.server.validate_to(self, user)
         if validated:
-            message = PipelineMessage(self.server, self.from_addr, to_addr=str(user.dest))
+            message = ProcessorMessage(self.server, self.from_addr, to_addr=str(user.dest))
 
             # if the delivery exists, we use its avatar_id
             if self.delivery:
@@ -326,7 +326,7 @@ class PipedSMTPServerFactory(smtp.SMTPFactory):
 
 class PipedSMTPServer(service.MultiService):
 
-    def __init__(self, listen, pipeline, namespace=None,
+    def __init__(self, listen, processor, namespace=None,
                  validate_to='protocol, user: False',
                  validate_from='protocol, helo, origin: False',
                  received_header='protocol, helo, origin, recipients: ' + \
@@ -351,7 +351,7 @@ class PipedSMTPServer(service.MultiService):
         self.validate_from = util.create_lambda_function(validate_from, **self.namespace)
         self.received_header = util.create_lambda_function(received_header, **self.namespace)
 
-        self.pipeline_name = pipeline
+        self.processor_config = dict(provider=processor) if isinstance(processor, basestring) else processor
 
         self.protocols = set()
 
@@ -359,7 +359,7 @@ class PipedSMTPServer(service.MultiService):
         self.runtime_environment = runtime_environment
 
         dependency_manager = runtime_environment.dependency_manager
-        self.pipeline_dependency = dependency_manager.add_dependency(self, dict(provider='pipeline.%s'%self.pipeline_name))
+        self.processor_dependency = dependency_manager.add_dependency(self, self.processor_config)
 
         smtp_portal = None
         if self.checker:

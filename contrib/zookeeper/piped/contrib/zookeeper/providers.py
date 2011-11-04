@@ -23,7 +23,7 @@ class ZookeeperClientProvider(object, service.MultiService):
                 my_client:
                     servers: localhost:2181
                     events:
-                        starting: my_pipeline
+                        starting: my_processor
 
     Available keys for events are: 'starting', 'stopping', 'connected', 'reconnecting', 'reconnected', 'expired'
     """
@@ -43,7 +43,7 @@ class ZookeeperClientProvider(object, service.MultiService):
 
         for client_name, client_configuration in self.clients.items():
             resource_manager.register('zookeeper.client.%s' % client_name, provider=self)
-            # create the client if we have any event pipelines
+            # create the client if we have any event processors
             if client_configuration.get('events', None):
                 self._get_or_create_client(client_name)
 
@@ -98,7 +98,7 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
                 detail = 'Use one of the possible events: {0}'.format(self.possible_events)
                 raise exceptions.ConfigurationError(e_msg, detail)
 
-            self.events[key] = dict(provider='pipeline.{0}'.format(value))
+            self.events[key] = dict(provider=value) if isinstance(value, basestring) else value
         
         self.dependencies = runtime_environment.create_dependency_map(self, **self.events)
 
@@ -112,10 +112,10 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
         baton = dict(event=event_name, client=self)
 
         try:
-            pipeline = yield self.dependencies.wait_for_resource(event_name)
-            yield pipeline.process(baton)
+            processor = yield self.dependencies.wait_for_resource(event_name)
+            yield processor(baton)
         except KeyError as ae:
-            # we have no pipeline for this event
+            # we have no processor for this event
             pass
 
     @defer.inlineCallbacks

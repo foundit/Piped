@@ -37,14 +37,14 @@ class TickProcessorTest(unittest.TestCase):
         self.runtime_environment.application.stopService()
 
     def add_consumer(self, resource_dependency):
-        resource_dependency.on_resource_ready(self)
+        resource_dependency.on_resource_ready(self.process)
 
     def process(self, baton):
         return self.ticks.put(baton)
 
     @defer.inlineCallbacks
     def test_starting_an_interval(self):
-        self.intervals['test_interval'] = dict(interval=0, auto_start=False, pipeline='test_pipeline')
+        self.intervals['test_interval'] = dict(interval=0, auto_start=False, processor='pipeline.test_pipeline')
 
         self.provider.configure(self.runtime_environment)
         self.start_processor.configure(self.runtime_environment)
@@ -60,7 +60,7 @@ class TickProcessorTest(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_stopping_an_interval(self):
-        self.intervals['test_interval'] = dict(interval=0, pipeline='test_pipeline')
+        self.intervals['test_interval'] = dict(interval=0, processor='pipeline.test_pipeline')
 
         self.provider.configure(self.runtime_environment)
         self.stop_processor.configure(self.runtime_environment)
@@ -77,7 +77,7 @@ class TickProcessorTest(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_restarting_an_interval(self):
-        self.intervals['test_interval'] = dict(interval=0, auto_start=False, pipeline='test_pipeline')
+        self.intervals['test_interval'] = dict(interval=0, auto_start=False, processor='pipeline.test_pipeline')
 
         self.provider.configure(self.runtime_environment)
         self.start_processor.configure(self.runtime_environment)

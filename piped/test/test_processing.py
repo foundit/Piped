@@ -2040,8 +2040,8 @@ class TwistedEvaluatorTest(ProcessorGraphTest):
             def __init__(self, evaluator):
                 self.evaluator = evaluator
 
-            def process(self, baton):
-                return self.evaluator.process(baton)
+            def __call__(self, baton):
+                return self.evaluator(baton)
 
         nested_evaluator_proxy = EvaluatorProxy(nested_evaluator)
 

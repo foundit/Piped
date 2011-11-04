@@ -340,17 +340,17 @@ class EchoToStdout(DefaultInput):
 
 class DefaultOutput(basic.LineReceiver):
     """ This protocol creates a baton for each line and processes it
-    in the configured pipeline.
+    with the configured processor.
 
     The baton is a dictionary with the key *line* holding the value of
     line received.
     """
     interface.implements(IProcessOutputProtocol)
 
-    def __init__(self, process_protocol, type, pipeline=None, delimiter='\n', max_length=None):
+    def __init__(self, process_protocol, type, processor=None, delimiter='\n', max_length=None):
         self.process_protocol = process_protocol
         self.type = type
-        self.pipeline_name = pipeline
+        self.processor_config = dict(provider=processor) if isinstance(processor, basestring) else processor
 
         self.delimiter = delimiter
         if max_length != None:
@@ -359,12 +359,12 @@ class DefaultOutput(basic.LineReceiver):
         self.deferred_queue = defer.DeferredQueue()
 
     def configure(self, runtime_environment):
-        if not self.pipeline_name:
+        if not self.processor_config:
             return
 
         dependency_manager = runtime_environment.dependency_manager
 
-        self.puller = util.PullFromQueueAndProcessInPipeline(self.deferred_queue, self.pipeline_name)
+        self.puller = util.PullFromQueueAndProcessWithDependency(self.deferred_queue, self.processor_config)
         self.puller.configure(runtime_environment)
 
         self.puller.setName('puller.%s.%s'%(self.process_protocol.process_name, self.type))
@@ -378,8 +378,8 @@ class DefaultOutput(basic.LineReceiver):
 
     def lineReceived(self, line):
         baton = dict(line=line)
-        if not self.pipeline_name:
-            log.debug('Output from process %s on %s ignored because no pipeline were configured. Output was: %s.'%(self.process_protocol.process_name, self.type, line))
+        if not self.processor_config:
+            log.debug('Output from process %s on %s ignored because no processor were configured. Output was: %s.'%(self.process_protocol.process_name, self.type, line))
         else:
             self.deferred_queue.put(baton)
 
