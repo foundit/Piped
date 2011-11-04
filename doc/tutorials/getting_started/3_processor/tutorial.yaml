@@ -4,7 +4,7 @@ web:
         routing:
             __config__:
                 # use the hello pipeline to render the requests to this resource
-                pipeline: hello
+                processor: pipeline.hello
 
 plugins:
     bundles:

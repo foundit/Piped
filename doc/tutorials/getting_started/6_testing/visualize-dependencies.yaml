@@ -3,7 +3,7 @@ web:
         routing:
             dependencies:
                 __config__:
-                    pipeline: web.dependencies
+                    processor: pipeline.web.dependencies
 
 pipelines:
     web:

@@ -3,7 +3,7 @@ ticks:
         reaper:
             # create a baton every second and process it in the reap-pending-batons pipeline:
             interval: 1
-            pipeline: reap-pending-batons
+            processor: pipeline.reap-pending-batons
 
 pipelines:
     reap-pending-batons:

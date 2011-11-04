@@ -8,7 +8,7 @@ includes:
 # system-testing.start pipeline once when the process starts
 system-events:
     startup:
-        test: system-testing.start
+        test: pipeline.system-testing.start
 
 pipelines:
     system-testing:

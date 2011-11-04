@@ -191,11 +191,11 @@ the following configuration format for the streams:
 
     twitter:
         <logical-account-name>:
-            # OPTIONAL streams that are processed in a pipeline
+            # OPTIONAL streams that are processed using a processor
             streams:
                 <logical-stream-name>:
                     method: <stream-method>
-                    pipeline: <pipeline-name>
+                    processor: <processor-name>
                     # OPTIONAL keyword arguments to use when creating the stream, for example:
                     track:
                         - new

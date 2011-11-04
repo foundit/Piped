@@ -21,7 +21,7 @@ twitter:
         streams:
             track_happy:
                 method: filter
-                pipeline: status.tracked
+                processor: pipeline.status.tracked
                 
                 track:
                     - happy
@@ -37,7 +37,7 @@ web:
             # when a user visits /generate, we will generate a tweet
             generate:
                 __config__:
-                    pipeline: web.generate
+                    processor: pipeline.web.generate
 
 
 pipelines:

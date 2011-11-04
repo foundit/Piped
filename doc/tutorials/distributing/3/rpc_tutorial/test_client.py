@@ -20,14 +20,14 @@ class TestClientProcessor(processors.StatusTestProcessor):
         @defer.inlineCallbacks
         def statustest_simple_sum(self):
             input = json.dumps(dict(numbers=[1,2,3]))
-            results = yield self.sum_pipeline.process(input)
+            results = yield self.sum_pipeline(input)
             output = json.loads(results[0])
             self.assertEquals(output['sum'], 14)
 
         @defer.inlineCallbacks
         def statustest_simple_square(self):
             input = json.dumps(dict(numbers=[1,2,3]))
-            results = yield self.square_pipeline.process(input)
+            results = yield self.square_pipeline(input)
             output = json.loads(results[0])
             self.assertEquals(output['square'], 36)
 

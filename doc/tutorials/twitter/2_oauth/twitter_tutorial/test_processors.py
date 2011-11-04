@@ -14,7 +14,7 @@ class TestTwitterProcessor(processors.StatusTestProcessor):
     name = 'test-twitter'
 
     class TestTwitter(statustest.StatusTestCase):
-        timeout = 2
+        timeout = 4
 
         def setUp(self, auth):
             # if the auth is overridden in our test configuration, pass it on to the process.
@@ -29,17 +29,17 @@ class TestTwitterProcessor(processors.StatusTestProcessor):
         
         @defer.inlineCallbacks
         def statustest_basic_auth(self):
-            output = yield utils.getProcessOutput('piped', args=['-nc', 'twitter.yaml'] + self.auth_override, env=os.environ)
+            output = yield utils.getProcessOutput('piped', args=['-nc', 'twitter.yaml', '-p', 'basic.pid'] + self.auth_override, env=os.environ)
             self.assertIn('Current rate limit status:', output)
 
         @defer.inlineCallbacks
         def statustest_oauth(self):
-            output = yield utils.getProcessOutput('piped', args=['-nc', 'twitter.yaml'] + self.oauth_override, env=os.environ)
+            output = yield utils.getProcessOutput('piped', args=['-nc', 'twitter.yaml', '-p', 'oauth.pid'] + self.oauth_override, env=os.environ)
             self.assertIn('Current rate limit status:', output)
 
         @defer.inlineCallbacks
         def statustest_oauth_dance(self):
-            sub = subprocess.Popen(args=['piped', '-nc', 'twitter.yaml']+self.oauth_without_access_override, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.PIPE)
+            sub = subprocess.Popen(args=['piped', '-nc', 'twitter.yaml', '-p', 'oauth_dance.pid']+self.oauth_without_access_override, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.PIPE)
 
             while True:
                 line = sub.stdout.readline()

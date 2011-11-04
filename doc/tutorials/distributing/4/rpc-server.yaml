@@ -5,9 +5,9 @@ includes:
 zmq:
     queues:
         server_sum_in:
-            pipeline: zmq.partial_response
+            processor: pipeline.zmq.partial_response
         server_square_in:
-            pipeline: zmq.partial_response
+            processor: pipeline.zmq.partial_response
 web:
     site:
         port: 8080
@@ -16,7 +16,7 @@ web:
                 - localhost
         routing:
             __config__:
-                pipeline: web.compute
+                processor: pipeline.web.compute
 
 # We use a shared context (that starts out as an empty dictionary) to
 # store requests that haven't been completed yet.

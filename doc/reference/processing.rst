@@ -5,7 +5,7 @@ Processing
 .. module:: piped.processing
 
 
-The ``piped.processing`` module is contains some core classes that are used in the
+The ``piped.processing`` module contains core classes that are used in the
 pipeline processing.
 
 

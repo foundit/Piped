@@ -22,7 +22,7 @@ class TestTwitterProcessor(processors.StatusTestProcessor):
         def statustest_status_generated(self):
             test_text = 'this is a tweet'
             fake_status_baton = dict(status=dict(text=test_text), screen_name='test', followers_count='0')
-            yield self.tracked_pipeline.process(fake_status_baton)
+            yield self.tracked_pipeline(fake_status_baton)
 
             page = yield client.getPage('http://localhost:8080/generate')
 

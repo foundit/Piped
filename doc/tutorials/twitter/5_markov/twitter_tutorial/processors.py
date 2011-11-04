@@ -73,6 +73,10 @@ class MarkovTrainer(base.Processor):
         markov = self.context_dependency.get_resource()
         input = util.dict_get_path(baton, self.input_path)
 
+        # normalize to utf-8:
+        if isinstance(input, unicode):
+            input = input.encode('utf-8')
+
         # word_1 and _2 is two previous words. We use None as sentence start/stop markers.
         word_1, word_2 = None, None
 

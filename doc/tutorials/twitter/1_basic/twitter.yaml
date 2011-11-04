@@ -15,7 +15,7 @@ twitter:
 # use the startup event to run the "startup" pipeline once
 system-events:
     startup:
-        tutorial: startup
+        tutorial: pipeline.startup
 
 pipelines:
     startup:

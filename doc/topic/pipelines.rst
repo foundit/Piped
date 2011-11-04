@@ -306,19 +306,8 @@ A :class:`dict` with a single key, the processor name, may be used to pass optio
             foo: bar
 
 
-Using a dict containing the key ``processor``
-"""""""""""""""""""""""""""""""""""""""""""""
-
-A dictionary with the ``processor`` key set to the processor name::
-
-    my_pipeline:
-        - processor: processor_name
-          foo: bar
-
-
-
-Special keys used in processor definitions
-""""""""""""""""""""""""""""""""""""""""""
+Reserved keys used in processor definitions
+"""""""""""""""""""""""""""""""""""""""""""
 
 id:
     Used to give processors an unique id within a processor graph.
@@ -334,7 +323,8 @@ error_consumers:
     Same as consumers, but used when the processor or one of its consumers
     raises an exception.
 
-
+__processor__:
+    Reserved for internal rewriting of processor graphs.
 
 
 .. note:: Depending on how the processor is used within a processor graph, the
