@@ -117,12 +117,13 @@ class TestRPC(unittest.TestCase):
         self.assertIsInstance(rpc_client._consuming, defer.Deferred)
 
         with patch.object(rpc_client, 'process_response') as mocked_response:
-            message_queue.put((mocked_channel, mock.Mock(name='method'), mock.Mock(name='properties'), 'test message body'))
+            mocked_method, mocked_properties = mock.Mock(name='method'), mock.Mock(name='properties')
+            message_queue.put((mocked_channel, mocked_method, mocked_properties, 'test message body'))
 
             args = mocked_response.call_args[0]
             self.assertEquals(args[0], mocked_channel)
-            self.assertEquals(args[1]._name, 'method')
-            self.assertEquals(args[2]._name, 'properties')
+            self.assertEquals(args[1], mocked_method)
+            self.assertEquals(args[2], mocked_properties)
             self.assertEquals(args[3], 'test message body')
 
         # when the connection becomes lost, the rpc client should
