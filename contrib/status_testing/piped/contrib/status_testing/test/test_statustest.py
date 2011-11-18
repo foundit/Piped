@@ -23,9 +23,24 @@ class StatusTestTest(unittest.TestCase):
 
     def get_globals_and_locals_from_frame_in_result(self, result, frame=-1):
         _, failure = result
+
+        # try to find the locals and globals in the failure instance
         last_frame = failure.frames[frame]
-        locals = dict((last_frame[-2]))
-        globals = dict((last_frame[-1]))
+        locals = dict(last_frame[-2])
+        globals = dict(last_frame[-1])
+
+        if not locals and not globals and failure.tb:
+            # but they might not have been captured, so we have to check the traceback
+            tracebacks = [failure.tb]
+
+            while tracebacks[-1] and tracebacks[-1].tb_next:
+                tracebacks.append(tracebacks[-1].tb_next)
+
+            tb = tracebacks[frame]
+
+            locals = tb.tb_frame.f_locals
+            globals = tb.tb_frame.f_globals
+
         return globals, locals
 
     def get_reporter_with_suite_run(self):
@@ -117,13 +132,9 @@ class StatusTestTest(unittest.TestCase):
         """ Test that our inlineCallbacks works as expected. """
         reporter = yield self.get_reporter_with_suite_run()
 
-        local_value_for_test = dict(
-            statustest_inlinecallbacks='None', # because it gets repr()-d
-            statustest_inlinecallbacks_util=None
-        )
-        for test_name, expected_value in local_value_for_test.items():
-            result = self.get_result_by_test_name(reporter.errors, test_name)
-            self.assertLocalsEqual(result, dict(_=expected_value))
+        self.assertLocalsEqual(self.get_result_by_test_name(reporter.errors, 'statustest_inlinecallbacks_util'), dict(_=None))
+        # but locals are lost when using the default @defer.inlineCallbacks:
+        self.assertLocalsEqual(self.get_result_by_test_name(reporter.errors, 'statustest_inlinecallbacks'), dict())
 
     @defer.inlineCallbacks
     def test_should_skip(self):

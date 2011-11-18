@@ -10,7 +10,7 @@ from twisted.python import filepath
 from twisted.cred import checkers
 from twisted.mail import smtp
 
-from piped import processing, dependencies
+from piped import processing, dependencies, util
 from piped.providers import smtp_provider
 
 
@@ -245,6 +245,9 @@ class SMTPServerTest(SMTPServerTestBase):
         )
 
         self.application.startService()
+        # give the ssl mail service two reactor iterations to stop:
+        self.addCleanup(util.wait, 0)
+        self.addCleanup(util.wait, 0)
         self.addCleanup(self.application.stopService)
 
         self.server.processor_dependency = self.processor_dependency

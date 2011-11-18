@@ -11,6 +11,7 @@ import xmlrpclib
 import copy
 import json
 
+import twisted
 from twisted.internet import defer, reactor
 from twisted.application import service
 from twisted.python import failure, filepath, reflect
@@ -572,6 +573,15 @@ class PullFromQueueAndProcessWithDependency(service.Service):
 
 class NonCleaningFailure(failure.Failure):
     """ A Failure subclass that doesn't replace its traceback with repr'd objects. """
+
+    def __init__(self, *a, **kw):
+        # default to capturing vars (locals/globals) in frames when using this class, since
+        # the user most likely isn't worried about the additional cost. this is the default
+        # in twisted <= 11.0
+        if (twisted.version.major, twisted.version.minor) > (11, 0):
+            kw.setdefault('captureVars', True)
+
+        failure.Failure.__init__(self, *a, **kw)
 
     def cleanFailure(self):
         pass

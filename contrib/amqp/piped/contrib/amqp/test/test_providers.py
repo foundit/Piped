@@ -435,15 +435,16 @@ class TestConsumer(unittest.TestCase):
         self.assertEquals(mocked_processor.call_count, 0)
 
         # but putting message into the queue should result in the processor being invoked
-        message_queue.put((mocked_channel, mock.Mock(name='method'), mock.Mock(name='properties'), 'test message body'))
+        mocked_method, mocked_properties = mock.Mock(name='method'), mock.Mock(name='properties')
+        message_queue.put((mocked_channel, mocked_method, mocked_properties, 'test message body'))
         self.assertEquals(mocked_processor.call_count, 1)
 
         # call_args_list is a list of (args, kwargs) tuples, and the baton is the first element in the argument
         baton = mocked_processor.call_args_list[0][0][0]
 
         self.assertEquals(baton['channel'], mocked_channel)
-        self.assertEquals(baton['method']._name, 'method')
-        self.assertEquals(baton['properties']._name, 'properties')
+        self.assertEquals(baton['method'], mocked_method)
+        self.assertEquals(baton['properties'], mocked_properties)
         self.assertEquals(baton['body'], 'test message body')
 
         # since the processing worked, the message should have been acked
