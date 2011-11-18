@@ -342,7 +342,7 @@ class WebProviderTest(unittest.TestCase):
         try:
             raise Exception()
         except Exception as e:
-            f = failure.Failure()
+            f = util.NonCleaningFailure()
 
         web_debugger = web_provider.WebDebugger(f)
 

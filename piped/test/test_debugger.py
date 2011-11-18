@@ -3,7 +3,7 @@
 from twisted.python import failure
 from twisted.trial import unittest
 
-from piped import debugger
+from piped import debugger, util
 
 
 class TestDebugger(unittest.TestCase):
@@ -16,7 +16,7 @@ class TestDebugger(unittest.TestCase):
         try:
             raiser()
         except:
-            f = failure.Failure()
+            f = util.NonCleaningFailure()
         self.debugger = debugger.Debugger(f)
 
     def assertDebuggerHistoryEndsWith(self, should_end_with):
