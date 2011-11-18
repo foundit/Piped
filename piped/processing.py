@@ -496,9 +496,13 @@ class TwistedProcessorGraphEvaluator(object):
     def traced_process(self, *a, **kw):
         """ Traces and processes a baton asynchronously through a processor graph.
 
+        .. warn:: The act of tracing introduces a new variable in the locals of
+            all the traced frames on the form ``trace_token_UUID4``.
+
         .. seealso:: :class:`_ProcessTracer` and :meth:`process`.
         """
         tracer = _ProcessTracer()
+        # add the token to the current locals, so _refresh_trace_token may find it
         locals()[tracer.token_name] = tracer.token_value
 
         try:
