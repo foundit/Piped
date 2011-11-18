@@ -571,7 +571,11 @@ class PullFromQueueAndProcessWithDependency(service.Service):
                 self._waiting_on_processor = None
 
 
-class NonCleaningFailure(failure.Failure):
+# we store a reference to the superclass of NonCleaningFailure here because it may change
+# due to the monkey-patching performed when piped is started with the -D argument
+NonCleaningFailureSuperClass = failure.Failure
+
+class NonCleaningFailure(NonCleaningFailureSuperClass):
     """ A Failure subclass that doesn't replace its traceback with repr'd objects. """
 
     def __init__(self, *a, **kw):
@@ -581,7 +585,7 @@ class NonCleaningFailure(failure.Failure):
         if (twisted.version.major, twisted.version.minor) > (11, 0):
             kw.setdefault('captureVars', True)
 
-        failure.Failure.__init__(self, *a, **kw)
+        NonCleaningFailureSuperClass.__init__(self, *a, **kw)
 
     def cleanFailure(self):
         pass
