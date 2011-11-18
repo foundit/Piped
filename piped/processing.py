@@ -294,22 +294,28 @@ class _ProcessTracer(object):
     
     """
 
-    def __init__(self, token_value):
+    def __init__(self):
         self.traced = list()
-        self.token_value = token_value
-        self.token_name = 'trace_token'
+        self.token_value = uuid.uuid4().get_hex()
+        self.token_name = 'trace_token_'+self.token_value
 
         self.sentinel = object()
         self.encoder = util.BatonJSONEncoder()
 
-    def find_trace_token(self, frame):
-        """ Returns the value of the trace token if it is in the current stack of frames. """
-        if self._is_the_trace_token_in_the_current_stack(frame):
+    def refresh_trace_token(self, frame):
+        """ Attempt to find and refresh the trace token in the given stack of frames.
+
+        :return: The value of the trace token value if it is found.
+        """
+        if self._refresh_trace_token_if_found_in_the_current_stack(frame):
             return self.token_value
 
     def add_trace_entry(self, frame, kind, **state):
-        """ Add an entry to the trace if the correct trace token is in the current stack of frames. """
-        if not self._is_the_trace_token_in_the_current_stack(frame):
+        """ Add an entry to the trace if the correct trace token is in the current stack of frames.
+
+        :return: The state added to the trace.
+        """
+        if not self._refresh_trace_token_if_found_in_the_current_stack(frame):
             return
 
         if state['source'] is None:
@@ -324,18 +330,16 @@ class _ProcessTracer(object):
         elif kind in ('process_source_raised', '_process_consumer_raised', '_process_error_consumer', '_process_error_consumer_raised'):
             state['failure'] = self._get_trace_failure()
 
-            if kind == 'process_source_raised':
-                state['destination'] = self._find_nearest_possible_source(frame)
-
         self._append_to_trace(**state)
+
+        return state
 
     def _find_nearest_possible_source(self, frame):
         """ Returns the first 'self' variable in a stack of frames that is not part of piped.processing """
         while frame:
             possible_source = frame.f_locals.get('self', None)
-            if possible_source and not isinstance(possible_source, (TwistedProcessorGraphEvaluator, failure.Failure)):
+            if possible_source and not isinstance(possible_source, (TwistedProcessorGraphEvaluator, failure.Failure, defer.Deferred)):
                 return possible_source
-
             frame = frame.f_back
 
     def _get_trace_failure(self):
@@ -347,14 +351,25 @@ class _ProcessTracer(object):
             traceback = reason.getTraceback(elideFrameworkCode=True, detail='brief')
         )
 
-    def _is_the_trace_token_in_the_current_stack(self, frame):
-        """ Looks for the trace token in a stack of frames. """
-        # Look for the sentinel in the stack.
+    def _refresh_trace_token_if_found_in_the_current_stack(self, frame):
+        """ Looks for the trace token in a stack of frames and copies it to all frames
+        leading from the frame the token was found in to the given frame.
+
+        :return: True if the token was found, False otherwise.
+        """
+
+        frames_visited = list()
+
         while frame:
             # It may be in the locals of the current frame
             if frame.f_locals.get(self.token_name, self.sentinel) == self.token_value:
+                # if it is found, add it to the locals of the intermediary frames
+                for visited_frame in frames_visited:
+                    visited_frame.f_locals[self.token_name] = self.token_value
+
                 return True
 
+            frames_visited.append(frame)
             frame = frame.f_back
 
         return False
@@ -386,23 +401,29 @@ class TwistedProcessorGraphEvaluator(object):
     def _add_trace_entry(cls, *a, **kw):
         for tracer in cls.tracers:
             frame = sys._getframe(1)
-            tracer.add_trace_entry(frame, *a, **kw)
+            entry = tracer.add_trace_entry(frame, *a, **kw)
+            if entry:
+                return entry
+
 
     @classmethod
-    def _find_trace_token(cls):
+    def _refresh_trace_token(cls):
         for tracer in cls.tracers:
             frame = sys._getframe(1)
-            token = tracer.find_trace_token(frame)
+            token = tracer.refresh_trace_token(frame)
             if token:
                 return token
+            else:
+                pass
 
     @defer.inlineCallbacks
     def _process(self, processor, baton, results):
-        # Get a copy of the trace token so that it is easier to find by the tracer.
+        # Refresh the trace token, which will copy the trace token as far down the stack
+        # as possible, so that it is easier to find by the tracer.
         # This fixes a corner case where a processor performs some deep magic that would
         # change the stack, making it hard (or even impossible) to locate the original
         # trace token location.
-        trace_token = self._find_trace_token()
+        self._refresh_trace_token()
 
         try:
             # Profile the time each processor spends.
@@ -457,11 +478,13 @@ class TwistedProcessorGraphEvaluator(object):
         results = list()
 
         for source_processor in self.processor_graph.sources:
+            # store the trace entry before processing in order to use it as a destination if the processing raises an Exception
+            entry = self._add_trace_entry('process_source', source=None, destination=source_processor, baton=baton)
             try:
-                self._add_trace_entry('process_source', source=None, destination=source_processor, baton=baton)
                 yield self._process(source_processor, baton, results)
             except Exception as e:
-                self._add_trace_entry('process_source_raised', source=source_processor, destination=None, baton=baton)
+                source = entry['source'] if entry else None
+                self._add_trace_entry('process_source_raised', source=source_processor, destination=source, baton=baton)
                 raise
 
         defer.returnValue(results)
@@ -475,8 +498,9 @@ class TwistedProcessorGraphEvaluator(object):
 
         .. seealso:: :class:`_ProcessTracer` and :meth:`process`.
         """
-        trace_token = uuid.uuid4().get_hex()
-        tracer = _ProcessTracer(token_value=trace_token)
+        tracer = _ProcessTracer()
+        locals()[tracer.token_name] = tracer.token_value
+
         try:
             self.tracers.append(tracer)
             results = yield self.process(*a, **kw)
@@ -485,7 +509,6 @@ class TwistedProcessorGraphEvaluator(object):
         finally:
             self.tracers.remove(tracer)
         defer.returnValue((results, tracer.traced))
-
 
     def configure_processors(self, runtime_environment):
         # give the processor a reference to its evaluator
