@@ -8,10 +8,10 @@ import warnings
 from mock import patch
 from twisted.internet import reactor, defer
 from twisted.trial import unittest
-from twisted.python import failure
+from twisted.python import failure, reflect
 from zope import interface
 
-from piped import exceptions, processing
+from piped import exceptions, processing, util
 from piped.processors import base, util_processors, pipeline_processors
 
 
@@ -105,6 +105,17 @@ class IncrementingProcessor(StubProcessor):
     def process(self, baton):
         baton['n'] += 1
         return baton
+
+
+class DelayedErrbackProcessor(StubProcessor):
+    def __init__(self, delay=0, *a, **kw):
+        super(DelayedErrbackProcessor, self).__init__(*a, **kw)
+        self.delay = delay
+
+    @defer.inlineCallbacks
+    def process(self, baton):
+        yield util.wait(self.delay)
+        raise StubException
 
 
 class ProcessorGraphTest(unittest.TestCase):
@@ -2021,6 +2032,51 @@ class TwistedEvaluatorTest(ProcessorGraphTest):
             dict(source=run_pipeline, destination=nested_incrementing, baton=dict(n=1)),
             dict(source=nested_incrementing, destination=None, baton=dict(n=2)),
             dict(source=run_pipeline, destination=None, baton=dict(n=2)),
+        ])
+
+    @defer.inlineCallbacks
+    def test_tracing_across_pipelines_with_delayed_failures(self):
+        """ If a target pipeline raises an exception asynchronously, much of the stack is
+        lost, but tracing should still work. """
+        runtime_environment = processing.RuntimeEnvironment()
+        runtime_environment.configure()
+
+        nested_pg = processing.ProcessorGraph()
+        nested_raiser = DelayedErrbackProcessor()
+        nested_pg.get_builder().add_processor(nested_raiser)
+        nested_evaluator = processing.TwistedProcessorGraphEvaluator(nested_pg, name='test_pipeline2')
+
+        pg = processing.ProcessorGraph()
+        builder = pg.get_builder()
+
+        passthrough = util_processors.Passthrough()
+        incrementing = IncrementingProcessor()
+        for_each = pipeline_processors.ForEach(pipeline='test_pipeline2', input_path='for_each_input', output_path=None)
+
+        builder.add_processor(passthrough).add_processor(incrementing).add_processor(for_each)
+        evaluator = processing.TwistedProcessorGraphEvaluator(pg, name='test_pipeline')
+
+        evaluator.configure_processors(runtime_environment)
+        for_each.pipeline_dependency.is_ready = True
+        for_each.pipeline_dependency.on_resource_ready(nested_evaluator)
+
+        results, trace = yield evaluator.traced_process(dict(n=0, for_each_input=[1,2]))
+
+        self.assertEquals(results, [dict(n=1, for_each_input=[1,2])])
+        self.assertTraceEquals(trace, [
+            dict(source=self, destination=passthrough, baton=dict(n=0, for_each_input=[1,2])),
+            dict(source=passthrough, destination=incrementing, baton=dict(n=0, for_each_input=[1,2])),
+            dict(source=incrementing, destination=for_each, baton=dict(n=1, for_each_input=[1,2])),
+
+            # for_each -> to the nested pipeline
+            dict(source=for_each, destination=nested_raiser, baton=1),
+            dict(source=nested_raiser, destination=for_each, baton=1, failure=dict(type=StubException, args=())),
+
+            # the for_each processor ignores the error and processes the second baton:
+            dict(source=for_each, destination=nested_raiser, baton=2),
+            dict(source=nested_raiser, destination=for_each, baton=2, failure=dict(type=StubException, args=())),
+
+            dict(source=for_each, destination=None, baton=dict(n=1, for_each_input=[1,2])),
         ])
 
     @defer.inlineCallbacks

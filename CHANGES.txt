@@ -47,6 +47,10 @@ Backward-incompatible changes:
 
          instead.
 
+Bug fixes:
+    - #21: When tracing, if a processor asynchronously raised an exception,
+      the trace token could be lost, causing the trace to be incomplete.
+
 ========================== Release 0.2.0 2011-10-17 ==========================
 
 Features:
