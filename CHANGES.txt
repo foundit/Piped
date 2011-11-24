@@ -51,6 +51,9 @@ Bug fixes:
     - #21: When tracing, if a processor asynchronously raised an exception,
       the trace token could be lost, causing the trace to be incomplete.
 
+    - #18: Twisted 11.1 changed some default behaviour, causing debug-mode
+       and tracing to break.
+
 ========================== Release 0.2.0 2011-10-17 ==========================
 
 Features:
