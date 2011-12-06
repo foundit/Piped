@@ -542,7 +542,7 @@ Contrib processors
 Status testing processors
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. currentmodule:: piped.contrib.status_testing.processors
+.. currentmodule:: piped_status_testing.processors
 
 
 .. _create-statustest-reporter:
@@ -570,7 +570,7 @@ Validation processors
 
 validate-with-formencode
 """"""""""""""""""""""""
-.. autoclass:: piped.contrib.validation.processors.FormEncodeValidator
+.. autoclass:: piped_validation.processors.FormEncodeValidator
 
 
 
@@ -583,21 +583,21 @@ ZMQ processors
 
 parse-as-mongrel-request
 """"""""""""""""""""""""
-.. autoclass:: piped.contrib.zmq.mongrel2_processors.MongrelRequestToBatonParser
+.. autoclass:: piped_zmq.mongrel2_processors.MongrelRequestToBatonParser
 
 
 .. _send-zmq-message:
 
 send-zmq-message
 """"""""""""""""""""""""
-.. autoclass:: piped.contrib.zmq.processors.MessageSender
+.. autoclass:: piped_zmq.processors.MessageSender
 
 
 .. _send-mongrel-reply:
 
 send-mongrel-reply
 """"""""""""""""""""""""
-.. autoclass:: piped.contrib.zmq.mongrel2_processors.MongrelReplySender
+.. autoclass:: piped_zmq.mongrel2_processors.MongrelReplySender
 
 
 
@@ -610,32 +610,32 @@ ZooKeeper processors
 
 create-zookeeper-node
 """""""""""""""""""""
-.. autoclass:: piped.contrib.zookeeper.processors.CreateZooKeeperNode
+.. autoclass:: piped_zookeeper.processors.CreateZooKeeperNode
 
 
 .. _get-zookeeper-children:
 
 get-zookeeper-children
 """"""""""""""""""""""
-.. autoclass:: piped.contrib.zookeeper.processors.GetZooKeeperChildren
+.. autoclass:: piped_zookeeper.processors.GetZooKeeperChildren
 
 
 .. _get-zookeeper-data:
 
 get-zookeeper-data
 """"""""""""""""""
-.. autoclass:: piped.contrib.zookeeper.processors.GetZooKeeperData
+.. autoclass:: piped_zookeeper.processors.GetZooKeeperData
 
 
 .. _set-zookeeper-data:
 
 set-zookeeper-data
 """"""""""""""""""
-.. autoclass:: piped.contrib.zookeeper.processors.SetZooKeeperData
+.. autoclass:: piped_zookeeper.processors.SetZooKeeperData
 
 
 .. _zookeeper-node-exists:
 
 zookeeper-node-exists
 """""""""""""""""""""
-.. autoclass:: piped.contrib.zookeeper.processors.ZooKeeperNodeExists
+.. autoclass:: piped_zookeeper.processors.ZooKeeperNodeExists

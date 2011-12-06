@@ -1,7 +1,7 @@
 Testing Piped Services
 ======================
 
-.. currentmodule:: piped.contrib.status_testing
+.. currentmodule:: piped_status_testing
 
 
 A "status test" is a variant of unit tests that are run inside a live process.
@@ -20,7 +20,7 @@ A basic example::
 
     from zope import interface
 
-    from piped.contrib.status_testing import statustest, processors
+    from piped_status_testing import statustest, processors
     from piped import processing
 
     class TestNothing(processors.StatusTestProcessor):
