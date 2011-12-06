@@ -73,15 +73,15 @@ def run_piped():
 class VersionAction(argparse.Action):
     """ We provide our own argparse.Action in order to provide our own formatting. """
 
-    def _find_contrib_versions(self):
+    def _find_plugin_versions(self):
         from twisted.python import modules
 
         versions = dict()
 
-        contrib_module = modules.getModule('piped.contrib')
-        contrib_module.load()
+        plugin_module = modules.getModule('piped.plugins')
+        plugin_module.load()
 
-        for module in contrib_module.iterModules():
+        for module in plugin_module.iterModules():
             versions[module.name] = getattr(module.load(), 'version', 'unknown version')
 
         return versions
@@ -91,7 +91,7 @@ class VersionAction(argparse.Action):
         message.append('piped (the Piped process daemon) %s, %s' % (piped.version, twisted.version))
         message.append('')
         message.append('Contrib packages:')
-        for name, version in sorted(self._find_contrib_versions().items()):
+        for name, version in sorted(self._find_plugin_versions().items()):
             message.append('\t%s: %s' % (name, version))
         message.append('')
         message.append('Python version: %s' % sys.version.replace('\n', ''))
