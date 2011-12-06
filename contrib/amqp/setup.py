@@ -10,20 +10,19 @@ here = os.path.abspath(os.path.dirname(__file__))
 
 # add ourselves to the package path so we can get the version from the source tree
 sys.path.insert(0, here)
-import piped.contrib.amqp
+import piped_amqp
 
 setup(
-    name = 'piped.contrib.amqp',
+    name = 'piped-amqp',
     license = 'MIT',
 
     author = 'Piped Project Contributors',
     author_email = 'piped@librelist.com',
     url = 'http://piped.io',
 
-    packages = find_packages(where=here),
-    namespace_packages = ['piped', 'piped.contrib'],
+    packages = find_packages(where=here) + ['piped.plugins'],
 
-    version = str(piped.contrib.amqp.version),
+    version = str(piped_amqp.version),
     classifiers = [
         'Development Status :: 4 - Beta',
         'Environment :: Plugins',

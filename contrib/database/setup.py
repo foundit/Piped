@@ -10,20 +10,19 @@ here = os.path.abspath(os.path.dirname(__file__))
 
 # add ourselves to the package path so we can get the version from the source tree
 sys.path.insert(0, here)
-import piped.contrib.database
+import piped_database
 
 setup(
-    name = 'piped.contrib.database',
+    name = 'piped_database',
     license = 'MIT',
 
     author = 'Piped Project Contributors',
     author_email = 'piped@librelist.com',
     url = 'http://piped.io',
 
-    packages = find_packages(where=here),
-    namespace_packages = ['piped', 'piped.contrib'],
+    packages = find_packages(where=here) + ['piped.plugins'],
 
-    version = str(piped.contrib.database.version),
+    version = str(piped_database.version),
     classifiers = [
         'Development Status :: 3 - Alpha',
         'Environment :: Plugins',

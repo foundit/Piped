@@ -10,20 +10,19 @@ here = os.path.abspath(os.path.dirname(__file__))
 
 # add ourselves to the package path so we can get the version from the source tree
 sys.path.insert(0, here)
-import piped.contrib.status_testing
+import piped_status_testing
 
 setup(
-    name = 'piped.contrib.status_testing',
+    name = 'piped_status_testing',
     license = 'MIT',
 
     author = 'Piped Project Contributors',
     author_email = 'piped@librelist.com',
     url = 'http://piped.io',
 
-    packages = find_packages(where=here),
-    namespace_packages = ['piped', 'piped.contrib'],
+    packages = find_packages(where=here) + ['piped.plugins'],
 
-    version = str(piped.contrib.status_testing.version),
+    version = str(piped_status_testing.version),
     classifiers = [
         'Development Status :: 4 - Beta',
         'Environment :: Plugins',
