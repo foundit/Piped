@@ -2,18 +2,14 @@
 # See LICENSE for details.
 import datetime
 import json
-import urlparse
-import urllib
-import urllib2
 
 from twisted.web import http
-from twisted.internet import reactor, defer
-from twisted.web import proxy
+from twisted.internet import defer
+from twisted.web import client
 from zope import interface
 
-from piped import util, exceptions, processing
+from piped import util, exceptions, processing, yamlutil
 from piped.processors import base
-from piped.providers import web_provider
 
 
 class HttpRequestProcessor(base.Processor):
@@ -268,190 +264,74 @@ class ExtractRequestArguments(base.MappingProcessor):
         return input
 
 
-class ProxyForward(HttpRequestProcessor):
-    """ Forwards requests to another server.
-
-    When proxying requests, this processor will append the remaining segments in ``request.postpath``
-    to the destination url.
-
-    Redirects that are children of the destination url are rewritten to use the current url as a prefix. It
-    accomplishes this by calculating a base url based on the incoming request, and replacing the configured
-    url (if found in the new location header) with its own base url.
-
-    For example, given the following processor configuration:
-
-    .. code-block:: yaml
-
-        url: http://proxied:81
-
-    If the url used to access this processor is ``http://proxy`` and the destination server responds with a
-    redirect response code and the location header set to: "http://proxied:81/bar/", this proxy will send the
-    same response code with the location header set to ``http://proxy/bar/`` instead. If this processor gets
-    a redirect from the remote server, it will forward this redirect to the incoming request and try to stop
-    further processing of the request by not using any consumer processors.
-
-    .. note:: The proxied url cannot currently be a HTTPS url.
-
-    .. warning:: This processor buffers the entire response from the proxied server.
-    """
-
+class ClientGetPage(base.Processor):
+    """ A simple web client agent for simple HTTP requests. """
     interface.classProvides(processing.IProcessor)
-    name = 'proxy-forward'
-    proxy_client_factory = proxy.ProxyClientFactory
+    name = 'web-client-get-page'
 
-    def __init__(self, url, noisy=False, proxied_request_path='proxied_request', rewrite_redirects=True, stop_if_redirected=True, *a, **kw):
+    def __init__(self, base_url=None, url=yamlutil.BatonPath('url'), method='GET', headers=None, agent=None, timeout=0, cookies=None,
+                 follow_redirect=True, redirect_limit=20, after_found_get=False, output_path='page', postdata=None, *a, **kw):
         """
-        :param url: The destination url to forward the request to
-        :param noisy: Whether the proxy protocol should be noisy or not. Defaults to false.
-        :param proxied_request_path: Path to where the proxied request object should stored.
-        :param rewrite_redirects: Whether to rewrite redirects.
-        :param stop_if_redirected: Attempt to stop processing on this baton if the proxied request was redirected.
-        """
-        super(ProxyForward, self).__init__(*a, **kw)
+        If any of the following arguments resolve to a callable, it is called without any arguments and the return value is used.
 
-        self.url = url
-        self.noisy = noisy
-        self.proxied_request_path = proxied_request_path
-        self.rewrite_redirects = rewrite_redirects
-        self.stop_if_redirected = stop_if_redirected
+        :param base_url: A string that is prepended to the given url.
+        :param url: If url is a list, it is flattened to a string by joining with '/'
+        :param method: The HTTP method to use in the request.
+        :param headers: Dict of headers.
+        :param agent: Client agent string.
+        :param timeout: Set a max
+        :param cookies: Dict of cookies
+        :param follow_redirect: Whether to follow redirects.
+        :param redirect_limit: The maximum number of HTTP redirects that can occur before it is assumed that the redirection is endless
+        :param after_found_get: Deviate from the HTTP 1.1 RFC by handling redirects the same way as most web browsers; if the request
+            method is POST and a 302 status is encountered, the redirect is followed with a GET method
+        :param postdata: Data to post. If it is a buffer (has a callable .read(), postdata.read() is called and the result is used.
+        :param output_path: Path to use for the page.
+        :return:
+        """
+        super(ClientGetPage, self).__init__(*a, **kw)
+
+        self.base_url = base_url
+
+        self.kwargs = dict(
+            url = url,
+            method = method,
+            headers = headers,
+            agent = agent,
+            timeout = timeout,
+            cookies = cookies,
+            followRedirect = follow_redirect,
+            redirectLimit = redirect_limit,
+            afterFoundGet = after_found_get,
+            postdata = postdata
+        )
+
+        self.output_path = output_path
 
     @defer.inlineCallbacks
-    def process_request(self, request, baton):
-        proxy_url = self.get_input(baton, self.url)
-        remaining_path = '/'.join(urllib2.quote(segment, safe='') for segment in request.postpath)
-        base_url_here = self._construct_base_url_here(request, proxy_url, remaining_path)
-        proxied_url_parsed = urlparse.urlparse(proxy_url)
+    def process(self, baton):
+        kwargs = self.kwargs.copy()
 
-        proxied_path = self._create_proxied_request_path(proxied_url_parsed, remaining_path)
-        proxied_query_string = self._create_query_string(request)
+        for key, value in kwargs.items():
+            value = self.get_input(baton, value)
+            if hasattr(value, '__call__'):
+                value = yield value()
+            kwargs[key] = yield value
 
-        rest = proxied_path + proxied_query_string
+        postdata = kwargs['postdata']
+        if hasattr(postdata, 'read') and hasattr(postdata.read, '__call__'):
+            kwargs['postdata'] = yield postdata.read()
 
-        # TODO: support for streaming large files etc.
-        # create the proxied request object and add it to the baton
-        proxied_request = web_provider.DummyRequest(request.postpath)
-        util.dict_set_path(baton, self.proxied_request_path, proxied_request)
+        # prepend the base url and ensure flatten the url argument in case the url argument is a list (i.e !path request.postpath)
+        base_url = self.get_input(baton, self.base_url) or ''
+        kwargs['url'] = base_url + self._flatten(kwargs['url'])
 
-        # rewind the original requests content buffer before reading the data from it, since another processor
-        # might have read its contents.
-        request.content.seek(0, 0)
-        data = request.content.read()
+        response = yield client.getPage(**kwargs)
 
-        headers = request.getAllHeaders()
-        # we need to set the 'host' header, as our host can differ from the proxied host
-        headers['host'] = proxied_url_parsed.netloc
-
-        clientFactory = self.proxy_client_factory(request.method, rest, request.clientproto, headers, data, proxied_request)
-        clientFactory.noisy = self.noisy
-
-        reactor.connectTCP(proxied_url_parsed.hostname, proxied_url_parsed.port or 80, factory=clientFactory)
-
-        # wait until the proxied request is finished:
-        if not proxied_request.finished:
-            yield proxied_request.notifyFinish()
-
-        # We attempt to rewrite redirects coming from the proxied server in order to try to get the redirected request
-        # to use this proxy too.
-        if proxied_request.code in (301, 302, 303, 307):
-            if self.rewrite_redirects:
-                location = proxied_request.responseHeaders.getRawHeaders('location')[-1]
-                proxied_request.responseHeaders.setRawHeaders('location', [location.replace(self.url, base_url_here)])
-
-            if self.stop_if_redirected:
-                for key, values in proxied_request.responseHeaders.getAllRawHeaders():
-                    request.responseHeaders.setRawHeaders(key, values)
-
-                request.setResponseCode(proxied_request.code, proxied_request.code_message)
-                defer.returnValue(Ellipsis)
-
+        baton = self.get_resulting_baton(baton, self.output_path, response)
         defer.returnValue(baton)
 
-    def get_consumers(self, baton):
-        if baton is Ellipsis:
-            return list()
-
-        return super(ProxyForward, self).get_consumers(baton)
-
-    def _create_query_string(self, request):
-        if request.args:
-            return '?'+urllib.urlencode(request.args, doseq=True)
-        return ''
-
-    def _construct_base_url_here(self, request, proxy_url, remaining_path):
-        """ Construct the url used to create the given request. """
-        scheme = 'http'
-        if request.isSecure():
-            scheme = 'https'
-
-        current_host = request.getHeader('host')
-        # the request might have remaining path elements, and these should be stripped
-        # off the path when constructing the base url
-        uri = urlparse.urlparse(request.uri).path # parse the request.uri as it may or may not contain some host/port information in addition to the path
-        current_path = uri[:len(uri)-len(remaining_path)]
-
-        # make sure the proxy url and the current path has the same number of
-        if current_path.endswith('/') and not proxy_url.endswith('/'):
-            current_path = current_path[:-1]
-
-        # we don't care about params, the query string or fragments in the base url
-        base_url = urlparse.urlunparse((scheme, current_host, current_path, '', '', ''))
-        return base_url
-
-    def _create_proxied_request_path(self, proxied_url_parsed, remaining_path):
-        path = proxied_url_parsed.path
-
-        # the path must start with a forward slash since we are using it in the http request
-        if not path.startswith('/'):
-            path = '/' + path
-
-        # use the default path if we have nothing to append
-        if not remaining_path:
-            return path
-
-        # if we have something to append, make sure that we don't get double slashes:
-        if not path.endswith('/'):
-            return path + '/' + remaining_path
-
-        return path + remaining_path
-
-
-class RequestChainer(base.Processor):
-    """ Chains two web requests together.
-
-    The headers, response code, message and currently written data (if available) are copied.
-    """
-    interface.classProvides(processing.IProcessor)
-    name = 'chain-web-requests'
-
-    def __init__(self, from_request='proxied_request', to_request='request', finish=True, *a, **kw):
-        """
-        :param from_request: The request to copy from.
-        :param to_request: The request to copy to.
-        :param finish: Whether to finish the to_request if the from_request is finished.
-        """
-        super(RequestChainer, self).__init__(*a, **kw)
-
-        self.to_request = to_request
-        self.from_request = from_request
-        self.finish = finish
-
-    def process(self, baton):
-        to_request = util.dict_get_path(baton, self.to_request)
-        from_request = util.dict_get_path(baton, self.from_request)
-
-        # write the headers
-        for key, values in from_request.responseHeaders.getAllRawHeaders():
-            to_request.responseHeaders.setRawHeaders(key, values)
-
-        # copy the response code
-        to_request.setResponseCode(from_request.code, from_request.code_message)
-
-        # copy the written data if they're available
-        if hasattr(from_request, 'written'):
-            for data in from_request.written:
-                to_request.write(data)
-
-        if self.finish and from_request.finished:
-            to_request.finish()
-
-        return baton
+    def _flatten(self, string_or_list, separator='/'):
+        if isinstance(string_or_list, list):
+            return separator.join(string_or_list)
+        return string_or_list

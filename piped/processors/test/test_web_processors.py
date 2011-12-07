@@ -2,17 +2,15 @@
 # Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
 import datetime
-import urlparse
 from StringIO import StringIO
 
 import mock
 from twisted.trial import unittest
 from twisted.internet import defer
-from twisted.web import http
 
 from piped import exceptions
 from piped.processors import web_processors
-from piped.providers import web_provider
+from piped.providers.test import test_web_provider
 
 
 class StubRequest(object):
@@ -193,7 +191,7 @@ class TestExtractRequestArguments(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_simple_extract(self):
-        request = web_provider.DummyRequest([])
+        request = test_web_provider.DummyRequest([])
         request.addArg('foo', 42)
         request.args['bar'] = [1, 2] # a multivalued argument
 
@@ -206,7 +204,7 @@ class TestExtractRequestArguments(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_get_all_arguments(self):
-        request = web_provider.DummyRequest([])
+        request = test_web_provider.DummyRequest([])
         request.addArg('foo', 42)
         request.args['bar'] = [1, 2] # a multivalued argument
 
@@ -219,7 +217,7 @@ class TestExtractRequestArguments(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_nonexistent(self):
-        request = web_provider.DummyRequest([])
+        request = test_web_provider.DummyRequest([])
         request.addArg('foo', 42)
 
         baton = dict(request=request)
@@ -231,7 +229,7 @@ class TestExtractRequestArguments(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_nonexistent_without_skipping(self):
-        request = web_provider.DummyRequest([])
+        request = test_web_provider.DummyRequest([])
         request.addArg('foo', 42)
 
         baton = dict(request=request)
@@ -243,7 +241,7 @@ class TestExtractRequestArguments(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_nonexistent_with_fallback(self):
-        request = web_provider.DummyRequest([])
+        request = test_web_provider.DummyRequest([])
         request.addArg('foo', 42)
 
         baton = dict(request=request)
@@ -255,7 +253,7 @@ class TestExtractRequestArguments(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_loading_json(self):
-        request = web_provider.DummyRequest([])
+        request = test_web_provider.DummyRequest([])
         request.addArg('foo', 42)
         request.args['bar'] = ['{"loaded": 42}', '{"loaded": 93}'] # a multivalued argument containing json
 
@@ -267,7 +265,7 @@ class TestExtractRequestArguments(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_loading_invalid_json(self):
-        request = web_provider.DummyRequest([])
+        request = test_web_provider.DummyRequest([])
         request.addArg('foo', '')
 
         baton = dict(request=request)
@@ -281,294 +279,37 @@ class TestExtractRequestArguments(unittest.TestCase):
             self.assertEquals(e.args, ('No JSON object could be decoded',))
 
 
-class TestProxyForward(unittest.TestCase):
+class TestClientGetPage(unittest.TestCase):
 
     def _create_processor(self, **config):
-        processor = web_processors.ProxyForward(**config)
+        processor = web_processors.ClientGetPage(**config)
         return processor
 
-    @defer.inlineCallbacks
-    def test_simple_forward(self):
-        request = web_provider.DummyRequest([''])
-        request.requestHeaders.setRawHeaders('foo', ['foo-header'])
-        processor = self._create_processor(url='http://proxied:81')
+    def test_arguments(self):
+        processor = self._create_processor(base_url='http://example.com/', timeout=lambda: defer.succeed(80),
+            postdata=StringIO('my data'), headers=lambda: dict(foo='bar'), cookies=defer.succeed(dict(cookies='yum')))
 
-        with mock.patch('twisted.internet.reactor.connectTCP') as mocked_connect:
-            def verify(host, port, factory):
-                try:
-                    self.assertEquals(host, 'proxied')
-                    self.assertEquals(port, 81)
-                    # we do not want the processor to automatically forward the data received from the
-                    # remote server because we might want to post-process the response before responding
-                    # to our incoming request:
-                    self.assertNotEquals(factory.father, request)
-                    self.assertEquals(factory.rest, '/')
-                    self.assertEquals(factory.headers, dict(foo='foo-header', host='proxied:81'))
-                finally:
-                    factory.father.finish()
-            mocked_connect.side_effect = verify
+        with mock.patch.object(web_processors, 'client') as mocked_client:
+            mocked_client.getPage.return_value = 'mocked page'
 
-            baton = yield processor.process(dict(request=request))
-            self.assertIsInstance(baton['proxied_request'], web_provider.DummyRequest)
-            self.assertEquals(mocked_connect.call_count, 1)
+            baton = yield processor.process(dict(url=['foo', 'bar', 'baz']))
 
-    @defer.inlineCallbacks
-    def test_forward_post_with_data(self):
-        request = web_provider.DummyRequest([''])
-        request.method = 'POST'
-        request.set_content('this is some post data')
-        processor = self._create_processor(url='http://proxied:81')
+            self.assertEquals(mocked_client.getPage.call_count, 1)
 
-        with mock.patch('twisted.internet.reactor.connectTCP') as mocked_connect:
-            def verify(host, port, factory):
-                try:
-                    transport = StringIO()
-                    proto = factory.buildProtocol(None)
-                    proto.transport = transport
-                    proto.connectionMade()
+            args, kwargs = mocked_client.getPage.call_args_list[0]
 
-                    transport.seek(0)
+            # we avoid using positional arguments
+            self.assertEquals(args, ())
+            # the base url was used, and the url was flattened
+            self.assertEquals(kwargs['url'], 'http://example.com/foo/bar/baz')
+            # the postdata was extracted from a buffer
+            self.assertEquals(kwargs['postdata'], 'my data')
+            # headers were retrieved from a callable
+            self.assertEquals(kwargs['headers'], dict(foo='bar'))
+            # the timeout comes from an async function
+            self.assertEquals(kwargs['timeout'], 80)
+            # cookies comes from a deferred
+            self.assertEquals(kwargs['cookies'], dict(cookies='yum'))
 
-                    expected_sent = [
-                        'POST / HTTP/1.0',
-                        'host: proxied:81',
-                        'connection: close',
-                        '',
-                        'this is some post data'
-                    ]
-                    self.assertEquals(transport.read().split('\r\n'), expected_sent)
-
-                finally:
-                    factory.father.finish()
-            mocked_connect.side_effect = verify
-
-            baton = yield processor.process(dict(request=request))
-            self.assertIsInstance(baton['proxied_request'], web_provider.DummyRequest)
-            self.assertEquals(mocked_connect.call_count, 1)
-
-    @defer.inlineCallbacks
-    def test_forward_with_query_string(self):
-        request = web_provider.DummyRequest([''])
-        request.args['foo_q'] = ['one', 'two']
-        request.args['bar_q'] = ['1']
-        request.args['empty'] = ['']
-        processor = self._create_processor(url='http://proxied:81')
-
-        with mock.patch('twisted.internet.reactor.connectTCP') as mocked_connect:
-            def verify(host, port, factory):
-                try:
-                    self.assertEquals(host, 'proxied')
-                    self.assertEquals(port, 81)
-                    self.assertNotEquals(factory.father, request)
-
-                    parsed = http.parse_qs(urlparse.urlparse(factory.rest).query, keep_blank_values=True)
-                    self.assertEquals(parsed, dict(
-                        foo_q = ['one', 'two'],
-                        bar_q = ['1'],
-                        empty = ['']
-                    ))
-                    self.assertEquals(factory.rest, '/?foo_q=one&foo_q=two&bar_q=1&empty=')
-                finally:
-                    factory.father.finish()
-            mocked_connect.side_effect = verify
-
-            baton = yield processor.process(dict(request=request))
-            self.assertIsInstance(baton['proxied_request'], web_provider.DummyRequest)
-            self.assertEquals(mocked_connect.call_count, 1)
-
-    @defer.inlineCallbacks
-    def test_headers_and_response_code_set(self):
-        request = web_provider.DummyRequest(['bar', 'baz'])
-        request.uri = '/foo/bar/baz'
-        request.requestHeaders.setRawHeaders('host', ['proxy:80'])
-
-        processor = self._create_processor(url='http://proxied:81/foo')
-
-        with mock.patch('twisted.internet.reactor.connectTCP') as mocked_connect:
-            def verify(host, port, factory):
-                proto = factory.buildProtocol(None)
-                self.assertEquals(factory.rest, '/foo/bar/baz')
-                lines = [
-                    'HTTP/1.1 200 OK',
-                    'my-header: this is a header',
-                    '',
-                    'some result'
-                ]
-                for line in lines:
-                    proto.dataReceived(line+'\r\n')
-
-                factory.father.finish()
-
-            mocked_connect.side_effect = verify
-
-            baton = yield processor.process(dict(request=request))
-            proxied_request = baton['proxied_request']
-            self.assertEquals(proxied_request.responseHeaders.getRawHeaders('my-header'), ['this is a header'])
-            self.assertEquals(proxied_request.written, ['some result'+'\r\n'])
-            self.assertEquals(proxied_request.code, 200)
-            self.assertEquals(proxied_request.code_message, 'OK')
-
-            self.assertEquals(mocked_connect.call_count, 1)
-
-    @defer.inlineCallbacks
-    def test_remaining_path_elements_used(self):
-        request = web_provider.DummyRequest(['bar', 'baz'])
-        processor = self._create_processor(url='http://proxied:81/foo')
-
-        with mock.patch('twisted.internet.reactor.connectTCP') as mocked_connect:
-            def verify(host, port, factory):
-                try:
-                    self.assertEquals(factory.rest, '/foo/bar/baz')
-                finally:
-                    factory.father.finish()
-            mocked_connect.side_effect = verify
-
-            baton = yield processor.process(dict(request=request))
-            self.assertIsInstance(baton['proxied_request'], web_provider.DummyRequest)
-
-            self.assertEquals(mocked_connect.call_count, 1)
-
-    @defer.inlineCallbacks
-    def test_redirect_with_location_rewriting(self):
-        request = web_provider.DummyRequest(['bar', 'baz'])
-        request.uri = '/foo/bar/baz'
-        request.requestHeaders.setRawHeaders('host', ['proxy:80'])
-
-        processor = self._create_processor(url='http://proxied:81/foo')
-        processor.consumers.append('foo')
-
-        with mock.patch('twisted.internet.reactor.connectTCP') as mocked_connect:
-            def verify(host, port, factory):
-                proto = factory.buildProtocol(None)
-                self.assertEquals(factory.rest, '/foo/bar/baz')
-                lines = [
-                    'HTTP/1.1 302 Moved Temporarily',
-                    'Location: http://proxied:81/foo/',
-                    '',
-                ]
-                for line in lines:
-                    proto.dataReceived(line+'\r\n')
-
-                factory.father.finish()
-
-            mocked_connect.side_effect = verify
-
-            baton = yield processor.process(dict(request=request))
-            self.assertEquals(baton, Ellipsis)
-            self.assertEquals(request.responseHeaders.getRawHeaders('location'), ['http://proxy:80/foo/'])
-
-            # the original request should have received the redirect
-            self.assertEquals(request.code, 302)
-            self.assertEquals(request.code_message, 'Moved Temporarily')
-
-            # after a redirect, the processor should try to stop further processing on the baton
-            self.assertEquals(processor.get_consumers(baton), list())
-
-            self.assertEquals(mocked_connect.call_count, 1)
-
-    @defer.inlineCallbacks
-    def test_redirect_outside_proxy_without_stopping(self):
-        """ Redirects to outside of this proxy should not be rewritten. """
-        request = web_provider.DummyRequest(['bar', 'baz'])
-        request.uri = '/foo/bar/baz'
-        request.requestHeaders.setRawHeaders('host', ['proxy:80'])
-
-        processor = self._create_processor(url='http://proxied:81/foo', stop_if_redirected=False)
-        processor.consumers.append('foo')
-
-        with mock.patch('twisted.internet.reactor.connectTCP') as mocked_connect:
-            def verify(host, port, factory):
-                proto = factory.buildProtocol(None)
-                self.assertEquals(factory.rest, '/foo/bar/baz')
-                lines = [
-                    'HTTP/1.1 302 Moved Temporarily',
-                    'Location: http://proxied:81/another',
-                    '',
-                ]
-                for line in lines:
-                    proto.dataReceived(line+'\r\n')
-
-                factory.father.finish()
-
-            mocked_connect.side_effect = verify
-
-            baton = yield processor.process(dict(request=request))
-
-            # since the proxied server responded with a redirect outside the processors scope, it should not have been rewritten:
-            self.assertEquals(baton['proxied_request'].responseHeaders.getRawHeaders('location'), ['http://proxied:81/another'])
-
-            # since we created the processor with stop_if_redirected=False, the processor should not attempt to
-            # stop further processing after the rewriting:
-            self.assertEquals(processor.get_consumers(baton), ['foo'])
-
-            self.assertEquals(mocked_connect.call_count, 1)
-
-    @defer.inlineCallbacks
-    def test_disabled_redirect_rewriting(self):
-        request = web_provider.DummyRequest(['bar', 'baz'])
-        request.uri = '/foo/bar/baz'
-        request.requestHeaders.setRawHeaders('host', ['proxy:80'])
-
-        processor = self._create_processor(url='http://proxied:81/foo', rewrite_redirects=False)
-        processor.consumers.append('foo')
-
-        with mock.patch('twisted.internet.reactor.connectTCP') as mocked_connect:
-            def verify(host, port, factory):
-                proto = factory.buildProtocol(None)
-                self.assertEquals(factory.rest, '/foo/bar/baz')
-                lines = [
-                    'HTTP/1.1 302 Moved Temporarily',
-                    'Location: http://proxied:81/foo/',
-                    '',
-                ]
-                for line in lines:
-                    proto.dataReceived(line+'\r\n')
-
-                factory.father.finish()
-
-            mocked_connect.side_effect = verify
-
-            baton = yield processor.process(dict(request=request))
-
-            # the original request should have gotten the redirect the server sent
-            self.assertEquals(request.code, 302)
-            self.assertEquals(request.code_message, 'Moved Temporarily')
-            self.assertEquals(request.responseHeaders.getRawHeaders('location'), ['http://proxied:81/foo/'])
-
-            self.assertEquals(mocked_connect.call_count, 1)
-
-
-class TestRequestChainer(unittest.TestCase):
-
-    def _create_processor(self, **config):
-        processor = web_processors.RequestChainer(**config)
-        return processor
-
-    def test_chaining(self):
-        from_request = web_provider.DummyRequest([''])
-        from_request.setResponseCode(123, 'response message')
-        from_request.setHeader('foo-header', 'foo-header-value')
-        from_request.write('this is some data')
-        from_request.finish()
-
-        to_request = web_provider.DummyRequest([''])
-
-        processor = self._create_processor()
-        processor.process(dict(request=to_request, proxied_request=from_request))
-
-        self.assertEquals(to_request.code, 123)
-        self.assertEquals(to_request.code_message, 'response message')
-        self.assertEquals(to_request.responseHeaders.getRawHeaders('foo-header'), ['foo-header-value'])
-        self.assertEquals(to_request.written, ['this is some data'])
-        self.assertTrue(to_request.finished)
-
-    def test_finishing(self):
-        from_request = web_provider.DummyRequest([''])
-        from_request.finish()
-
-        to_request = web_provider.DummyRequest([''])
-
-        processor = self._create_processor(finish=False)
-        processor.process(dict(request=to_request, proxied_request=from_request))
-
-        self.assertFalse(to_request.finished)
+            # the resulting page is set in the baton
+            self.assertEquals(baton['page'], 'mocked page')
