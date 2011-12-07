@@ -484,13 +484,6 @@ extract-web-request-arguments
 .. autoclass:: ExtractRequestArguments
 
 
-.. _web-client-get-page:
-
-web-client-get-page
-^^^^^^^^^^^^^
-.. autoclass:: ClientGetPage
-
-
 .. _set-http-expires:
 
 set-http-expires
@@ -503,6 +496,13 @@ set-http-expires
 set-http-headers
 ^^^^^^^^^^^^^^^^
 .. autoclass:: SetHttpHeaders
+
+
+.. _web-client-get-page:
+
+web-client-get-page
+^^^^^^^^^^^^^
+.. autoclass:: ClientGetPage
 
 
 .. _write-web-response:
