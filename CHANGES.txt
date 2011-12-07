@@ -28,6 +28,11 @@ Internal changes:
     - piped.processing now uses stores the processor name under the
         '__processor__' key instead of 'processor', enabling processors to
         take 'processor' as a keyword argument.
+    - piped and contrib plugins no longer use namespace packages, but uses the
+        same scheme as twisted for loading external plugins. This means that
+        plugins (both processors and providers) are automatically found if they
+        are available in a module or package under the folder "piped/plugins"
+        anywhere on sys.path.
 
 Backward-incompatible changes:
     - The syntax for creating processors in the YAML configuration has changed.
@@ -53,6 +58,9 @@ Bug fixes:
 
     - #18: Twisted 11.1 changed some default behaviour, causing debug-mode
        and tracing to break.
+
+    - #12: pip may now be used to install/uninstall both piped and contrib
+        packages.
 
 ========================== Release 0.2.0 2011-10-17 ==========================
 
