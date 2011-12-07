@@ -159,5 +159,10 @@ def _run_twistd_with_config(twistd_config):
         from piped import util
         failure._OriginalFailure = failure.Failure
         failure.Failure = util.NonCleaningFailure
+
+        # and enable debugging on deferreds, so we can properly inspect post-mortem
+        from twisted.internet import defer
+        defer.setDebugging(True)
+
     sys.argv[0] = 'twistd' # pretend to be twistd, so that piped.log doesn't decide to bootstrap the logging system
     twistd.runApp(twistd_config)
