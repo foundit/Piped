@@ -1,15 +1,45 @@
 # Copyright (c) 2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
 import json
+from StringIO import StringIO
 
 from twisted.application import service
 from twisted.internet import defer, address
 from twisted.python import filepath, failure
 from twisted.trial import unittest
-from twisted.web import resource
+from twisted.web import resource, server, http_headers
+from twisted.web.test import test_web
 
 from piped import exceptions, util, processing, dependencies
 from piped.providers import web_provider
+
+
+class DummyRequest(test_web.DummyRequest, server.Request):
+    channel = Ellipsis
+
+    def __init__(self, *a, **kw):
+        test_web.DummyRequest.__init__(self, *a, **kw)
+        self.requestHeaders = http_headers.Headers()
+        self.content = StringIO()
+
+    def getHeader(self, key):
+        return server.Request.getHeader(self, key)
+
+    def setHeader(self, name, value):
+        return server.Request.setHeader(self, name, value)
+
+    def set_content(self, content):
+        if not hasattr(content, 'read'):
+            self.content = StringIO(content)
+        else:
+            self.content = content
+
+    def setResponseCode(self, code, message=None):
+        server.Request.setResponseCode(self, code, message)
+
+    @property
+    def written_as_string(self):
+        return ''.join(self.written)
 
 
 class WebProviderTest(unittest.TestCase):
@@ -49,7 +79,7 @@ class WebProviderTest(unittest.TestCase):
 
     def getResourceForFakeRequest(self, site, post_path=None, request=None):
         if not request:
-            request = web_provider.DummyRequest(post_path)
+            request = DummyRequest(post_path)
         return site.factory.getResourceFor(request)
 
     def getConfiguredWebSite(self, config):
@@ -185,7 +215,7 @@ class WebProviderTest(unittest.TestCase):
             (['bar', 'baz', 'nested', ''], ['nested', '']),
             (['bar', 'baz', 'nested', 'deeply'], ['nested', 'deeply'])):
 
-            assertRequestRenderedWithPostPath(web_site, batons, web_provider.DummyRequest(request_path), expected_postpath)
+            assertRequestRenderedWithPostPath(web_site, batons, DummyRequest(request_path), expected_postpath)
 
     def test_static_preprocessors(self):
         current_file = filepath.FilePath(__file__)
@@ -206,7 +236,7 @@ class WebProviderTest(unittest.TestCase):
         web_site = self.getConfiguredWebSite(config)
 
         # send a request for this file:
-        request = web_provider.DummyRequest([current_file.basename()])
+        request = DummyRequest([current_file.basename()])
         resource = web_site.factory.getResourceFor(request)
         resource.render(request)
 
@@ -252,7 +282,7 @@ class WebProviderTest(unittest.TestCase):
     def test_web_resource_simple_request_processing(self):
         web_resource = self._create_configured_web_resource(dict(__config__=dict(processor='pipeline.a_pipeline')))
 
-        request = web_provider.DummyRequest([''])
+        request = DummyRequest([''])
 
         batons = list()
         web_resource.processor_dependency.on_resource_ready(batons.append)
@@ -264,7 +294,7 @@ class WebProviderTest(unittest.TestCase):
     def test_web_resource_processing_handles_exceptions(self):
         web_resource = self._create_configured_web_resource(dict(__config__=dict(processor='pipeline.a_pipeline')))
 
-        request = web_provider.DummyRequest([''])
+        request = DummyRequest([''])
 
         def raiser(baton):
             raise Exception()
@@ -282,7 +312,7 @@ class WebProviderTest(unittest.TestCase):
         site_config = dict(debug=dict(allow=['localhost']))
         web_resource = self._create_configured_web_resource(routing, site_config)
 
-        request = web_provider.DummyRequest([''])
+        request = DummyRequest([''])
         request.client = address.IPv4Address('TCP', 'localhost', 1234)
 
         def raiser(baton):
@@ -324,7 +354,7 @@ class WebProviderTest(unittest.TestCase):
         f = failure.Failure(Exception())
         path = debug_handler.register_failure(f)
 
-        request = web_provider.DummyRequest([path])
+        request = DummyRequest([path])
 
         # localhost is not allowed to debug:
         request.client = address.IPv4Address('TCP', 'localhost', 1234)
@@ -346,7 +376,7 @@ class WebProviderTest(unittest.TestCase):
 
         web_debugger = web_provider.WebDebugger(f)
 
-        request = web_provider.DummyRequest([])
+        request = DummyRequest([])
         request.addArg('expr', 'foo')
         result = web_debugger.render(request)
 
@@ -369,7 +399,7 @@ class WebProviderTest(unittest.TestCase):
         web_resource.processor_dependency = dependencies.InstanceDependency(batons.append)
         web_resource.processor_dependency.is_ready = True
 
-        request = web_provider.DummyRequest([])
+        request = DummyRequest([])
         web_resource.render(request)
 
         # the processor should have been asked to process a baton
@@ -392,7 +422,7 @@ class TestConcatenatedFile(unittest.TestCase):
         file_paths = [test_data_path.child('foo'), test_data_path.child('bar')]
         cf = web_provider.ConcatenatedFile('text/plain', file_paths)
 
-        request = web_provider.DummyRequest([''])
+        request = DummyRequest([''])
         text = cf.render_GET(request)
 
         self.assertEquals(text, 'foo\nbar\n')
@@ -402,7 +432,7 @@ class TestConcatenatedFile(unittest.TestCase):
         file_paths = [test_data_path.child('bar'), test_data_path.child('foo')]
         cf = web_provider.ConcatenatedFile('text/plain', file_paths)
 
-        request = web_provider.DummyRequest([''])
+        request = DummyRequest([''])
         text = cf.render_GET(request)
 
         self.assertEquals(text, 'bar\nfoo\n')
@@ -412,7 +442,7 @@ class TestConcatenatedFile(unittest.TestCase):
         file_paths = [test_data_path.child('foo')]
         cf = web_provider.ConcatenatedFile('text/plain', file_paths)
 
-        request = web_provider.DummyRequest([''])
+        request = DummyRequest([''])
         text = cf.render_GET(request)
 
         self.assertEquals(text, 'foo\n')
@@ -421,7 +451,7 @@ class TestConcatenatedFile(unittest.TestCase):
         file_paths = []
         cf = web_provider.ConcatenatedFile('text/plain', file_paths)
 
-        request = web_provider.DummyRequest([''])
+        request = DummyRequest([''])
         text = cf.render_GET(request)
 
         self.assertEquals(text, '')
@@ -430,7 +460,7 @@ class TestConcatenatedFile(unittest.TestCase):
         file_paths = []
         cf = web_provider.ConcatenatedFile('text/plain', file_paths)
 
-        request = web_provider.DummyRequest([''])
+        request = DummyRequest([''])
         cf.render_GET(request)
 
         self.assertEquals(request.responseHeaders.getRawHeaders('content-type'), ['text/plain'])

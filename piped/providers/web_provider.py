@@ -156,34 +156,6 @@ def get_request_proxy(request):
     return instance
 
 
-class DummyRequest(test_web.DummyRequest, server.Request):
-    channel = Ellipsis
-
-    def __init__(self, *a, **kw):
-        test_web.DummyRequest.__init__(self, *a, **kw)
-        self.requestHeaders = http_headers.Headers()
-        self.content = StringIO()
-
-    def getHeader(self, key):
-        return server.Request.getHeader(self, key)
-
-    def setHeader(self, name, value):
-        return server.Request.setHeader(self, name, value)
-
-    def set_content(self, content):
-        if not hasattr(content, 'read'):
-            self.content = StringIO(content)
-        else:
-            self.content = content
-
-    def setResponseCode(self, code, message=None):
-        server.Request.setResponseCode(self, code, message)
-
-    @property
-    def written_as_string(self):
-        return ''.join(self.written)
-
-
 class WebResourceProvider(object, service.MultiService):
     """ Provides HTTP interfaces.
 
