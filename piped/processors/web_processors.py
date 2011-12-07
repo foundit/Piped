@@ -280,7 +280,7 @@ class ClientGetPage(base.Processor):
         :param headers: Dict of headers.
         :param agent: Client agent string.
         :param timeout: Set a max
-        :param cookies: Dict of vookies
+        :param cookies: Dict of cookies
         :param follow_redirect: Whether to follow redirects.
         :param redirect_limit: The maximum number of HTTP redirects that can occur before it is assumed that the redirection is endless
         :param after_found_get: Deviate from the HTTP 1.1 RFC by handling redirects the same way as most web browsers; if the request
