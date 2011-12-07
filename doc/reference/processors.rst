@@ -470,13 +470,6 @@ Web processors
 .. currentmodule:: piped.processors.web_processors
 
 
-.. _chain-web-requests:
-
-chain-web-requests
-^^^^^^^^^^^^^^^^^^
-.. autoclass:: RequestChainer
-
-
 .. _determine-ip:
 
 determine-ip
@@ -491,11 +484,11 @@ extract-web-request-arguments
 .. autoclass:: ExtractRequestArguments
 
 
-.. _proxy-forward:
+.. _web-client-get-page:
 
-proxy-forward
+web-client-get-page
 ^^^^^^^^^^^^^
-.. autoclass:: ProxyForward
+.. autoclass:: ClientGetPage
 
 
 .. _set-http-expires:
