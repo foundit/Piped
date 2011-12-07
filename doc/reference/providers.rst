@@ -190,7 +190,7 @@ amqp
 Connecting
 """"""""""
 
-.. currentmodule:: piped.contrib.amqp.providers
+.. currentmodule:: piped_amqp.providers
 
 .. autoclass:: AMQPConnectionProvider
     :members:
@@ -205,7 +205,7 @@ Connecting
 Consuming
 """""""""
 
-.. currentmodule:: piped.contrib.amqp.providers
+.. currentmodule:: piped_amqp.providers
 
 .. autoclass:: AMQPConsumerProvider
     :members:
@@ -216,7 +216,7 @@ Consuming
 RPC helpers
 """""""""""
 
-.. currentmodule:: piped.contrib.amqp.rpc
+.. currentmodule:: piped_amqp.rpc
 
 .. autoclass:: RPCClientProvider
     :members:
@@ -228,26 +228,26 @@ RPC helpers
 database
 ^^^^^^^^
 
-.. automodule:: piped.contrib.database.providers
+.. automodule:: piped_database.providers
     :members:
 
 
 manholes
 ^^^^^^^^
 
-.. automodule:: piped.contrib.manhole.providers
+.. automodule:: piped_manhole.providers
     :members: ManholeProvider
 
 
 zmq
 ^^^
 
-.. automodule:: piped.contrib.zmq.providers
+.. automodule:: piped_zmq.providers
     :members: ZMQSocketProvider, ZMQProcessorFeederProvider
 
 
 zookeeper
 ^^^^^^^^^
 
-.. automodule:: piped.contrib.zookeeper.providers
+.. automodule:: piped_zookeeper.providers
     :members: ZookeeperClientProvider

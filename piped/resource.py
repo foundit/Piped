@@ -6,7 +6,7 @@ This module contains base implementations and managers for the resource system.
 from twisted.plugin import IPlugin
 from zope import interface
 
-from piped import plugin, exceptions, providers as piped_providers, contrib
+from piped import plugin, exceptions, providers as piped_providers, plugins
 
 
 class IResourceProvider(IPlugin):
@@ -181,7 +181,7 @@ class ResourceManager(object):
 
 
 class ProviderPluginManager(plugin.PluginManager):
-    plugin_packages = [piped_providers, contrib]
+    plugin_packages = [piped_providers, plugins]
     plugin_interface = IResourceProvider
 
     def __init__(self):

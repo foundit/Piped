@@ -6,7 +6,7 @@ from zope import interface
 from twisted.internet import defer, utils
 from twisted.web import client
 
-from piped.contrib.status_testing import statustest, processors
+from piped.plugins.status_testing import statustest, processors
 from piped import processing, util
 
 

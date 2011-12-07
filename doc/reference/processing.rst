@@ -72,7 +72,7 @@ Status test processors
 ^^^^^^^^^^^^^^^^^^^^^^^
 
 
-.. autoclass:: piped.contrib.status_testing.processors.StatusTestProcessor
+.. autoclass:: piped_status_testing.processors.StatusTestProcessor
     :members:
 
 

@@ -35,7 +35,7 @@ Immutable batons
 ^^^^^^^^^^^^^^^^
 
 Python objects that are immutable, such as :class:`str`\s may be used by some providers such as the
-:mod:`zmq provider <piped.contrib.zmq.provider>`.
+:mod:`zmq provider <piped_zmq.provider>`.
 
 
 Processor interdependencies

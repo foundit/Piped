@@ -52,7 +52,6 @@ setup(
 
     packages = packages,
     package_data = package_data,
-    namespace_packages = ['piped', 'piped.contrib'],
     zip_safe = False,
 
     version = str(piped.version),

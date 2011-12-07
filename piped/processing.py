@@ -21,7 +21,7 @@ from twisted.plugin import IPlugin
 from twisted.python import failure
 from zope import interface
 
-from piped import exceptions, graph, log, util, conf, contrib, plugin, resource, dependencies, processors as piped_processors
+from piped import exceptions, graph, log, util, conf, resource, dependencies, processors as piped_processors, plugin, plugins
 
 
 class IProcessor(IPlugin):
@@ -1234,6 +1234,6 @@ class RuntimeEnvironment(object):
 
 
 class ProcessorPluginManager(plugin.PluginManager):
-    plugin_packages = [piped_processors, contrib]
+    plugin_packages = [piped_processors, plugins]
     plugin_interface = IProcessor
     plugin_configuration_name = 'processors'

@@ -418,7 +418,7 @@ Testing
 
 In this section we will learn how to test pipelines.
 
-This section uses :doc:`status tests </topic/testing>`, which is part of the ``piped.contrib.status_testing`` package,
+This section uses :doc:`status tests </topic/testing>`, which is part of the ``piped_status_testing`` package,
 which must be installed before this section can be completed.
 
 These tests are not to the same as unit tests. You would use unit tests to test Python code, such as custom
@@ -440,7 +440,7 @@ the framework, simply try to import it:
 .. code-block:: bash
 
     # if you're using buildout, use piped-python instead of python:
-    $ python -c "import piped.contrib.status_testing"
+    $ python -c "import piped_status_testing"
     Traceback (most recent call last):
       (...)
     ImportError: No module named status_testing
@@ -450,7 +450,7 @@ using ``easy_install``:
 
 .. code-block:: bash
 
-   $ easy_install piped.contrib.status_testing
+   $ easy_install piped_status_testing
 
 
 Writing a test processor
@@ -460,9 +460,9 @@ A test processor is a custom processor that runs one or more status tests as par
 test is a type of unit test that runs inside an already running process. The status tests are given full access
 to all parts of the process.
 
-The easiest way to create a test processor is to subclass :class:`~piped.contrib.status_testing.processors.StatusTestProcessor`,
+The easiest way to create a test processor is to subclass :class:`~piped_status_testing.processors.StatusTestProcessor`,
 which takes care of building and running a test suite consisting of all the **nested classes** that are subclasses of
-:class:`piped.contrib.status_testing.statustest.StatusTestCase`.
+:class:`piped_status_testing.statustest.StatusTestCase`.
 
 Simply create the following test processor in ``tutorial_bundle/test_processors.py``:
 
