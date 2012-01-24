@@ -412,4 +412,48 @@ class TestBatonJSONEncoder(unittest.TestCase):
         self.assertEquals(encoded, '{"foo": [1, 2, 3], "object": "%r"}' % obj)
 
 
+class TestFailAfterDelay(unittest.TestCase):
+
+    @defer.inlineCallbacks
+    def test_fail_after_delay(self):
+        e = Exception()
+        d = util.fail_after_delay(0, e)
+        self.assertFalse(d.called)
+        yield util.wait(0)
+        self.assertTrue(d.called)
+
+        try:
+            yield d
+            self.fail('expected errback')
+        except Exception, actual_exception:
+            self.assertTrue(actual_exception is e)
+
+
+class TestWaitForFirst(unittest.TestCase):
+
+    @defer.inlineCallbacks
+    def test_wait_for_first(self):
+        result = yield util.wait_for_first([defer.Deferred(), defer.succeed(42)])
+        self.assertEquals(result, 42)
+
+    @defer.inlineCallbacks
+    def test_handling_failure(self):
+        e = Exception()
+        try:
+            yield util.wait_for_first([defer.Deferred(), defer.fail(e)])
+            self.fail('expected failure')
+        except defer.FirstError, fe:
+            self.assertTrue(fe.subFailure.value is e)
+
+    @defer.inlineCallbacks
+    def test_first_of_already_callbacked_deferreds(self):
+        result = yield util.wait_for_first([defer.succeed(42), defer.fail(Exception())])
+        self.assertEquals(result, 42)
+        try:
+            yield util.wait_for_first([defer.fail(Exception()), defer.succeed(42)])
+            self.fail('expected failure')
+        except defer.FirstError:
+            pass
+
+
 __doctests__ = [util]

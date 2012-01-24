@@ -632,3 +632,17 @@ def create_deferred_state_watcher(obj, attribute_name='_currently'):
         return retval
 
     return wrapper
+
+
+def fail_after_delay(delay, exception):
+    """ Returns a Deferred that will errback with `exception` after `delay`. """
+    d = defer.Deferred()
+    reactor.callLater(delay, d.errback, exception)
+    return d
+
+
+def wait_for_first(ds):
+    """ Returns a deferred that is callbacked/errbacked with whatever deferred in `ds` fires first. """
+    d = defer.DeferredList(ds, fireOnOneCallback=True, fireOnOneErrback=True, consumeErrors=True)
+    d.addCallback(operator.itemgetter(0))
+    return d
