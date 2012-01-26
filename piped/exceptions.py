@@ -180,3 +180,7 @@ class AllPipelinesFailedError(PipedError):
     def __init__(self, e_msg, failures, **kw):
         super(AllPipelinesFailedError, self).__init__(e_msg, **kw)
         self.failures = failures
+
+
+class TimeoutError(PipedError):
+    """ Something timed out. """
