@@ -107,6 +107,8 @@ Bug fixes:
     - #19: DummyRequest are now only used in the tests, in order to avoid using
         code from the twisted test suite in production.
 
+    - dict_set_path did not deal with dict-lookups causing AttributeErrors.
+
 
 ========================== Release 0.2.0 2011-10-17 ==========================
 

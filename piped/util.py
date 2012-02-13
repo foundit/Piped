@@ -157,7 +157,7 @@ def dict_set_path(dict_like, path_or_list, value, separator='.'):
     key = keys[-1]
     try:
         dict_like[key] = value
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, AttributeError):
         # Not a dict, so try setting an attribute. If that fails, give up.
         if hasattr(dict_like, key):
             setattr(dict_like, key, value)
