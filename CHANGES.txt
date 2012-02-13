@@ -91,6 +91,9 @@ Backward-incompatible changes:
     - "piped.dependencies.DependencyMap.__in__" has been removed. Use
       ".is_available" instead.
 
+    - trap-failure now sets the Failure-object instead of just the exception-type.
+
+
 Bug fixes:
     - #21: When tracing, if a processor asynchronously raised an exception,
       the trace token could be lost, causing the trace to be incomplete.

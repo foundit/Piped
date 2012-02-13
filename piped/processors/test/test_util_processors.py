@@ -233,7 +233,7 @@ class TestTrapFailure(unittest.TestCase):
             raise FakeError('test')
         except FakeError as fe:
             baton = processor.process(dict())
-            self.assertEquals(baton['trapped'], FakeError)
+            self.assertEquals(baton['trapped'].value, fe)
 
     def test_not_trapping_unexpected_exceptions(self):
         processor = self._create_processor(error_types=reflect.fullyQualifiedName(FakeError))
@@ -263,7 +263,7 @@ class TestTrapFailure(unittest.TestCase):
                 raise error_type('test')
             except error_type as fe:
                 baton = processor.process(dict())
-                self.assertEquals(baton['trapped'], error_type)
+                self.assertEquals(baton['trapped'].value, fe)
 
 
 class TestFlattenDictionaryList(unittest.TestCase):

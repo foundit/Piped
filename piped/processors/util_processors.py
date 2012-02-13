@@ -308,7 +308,7 @@ class TrapFailure(base.Processor):
     def process(self, baton):
         f = failure.Failure()
         trapped = f.trap(*self.error_types)
-        baton = self.get_resulting_baton(baton, self.output_path, trapped)
+        baton = self.get_resulting_baton(baton, self.output_path, f)
         return baton
 
 
