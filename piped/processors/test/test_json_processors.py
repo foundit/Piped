@@ -63,6 +63,14 @@ class JsonEncoderTest(unittest.TestCase):
         baton = yield processor.process(dict(foo=42))
         self.assertEquals(baton, expected_result)
 
+    @defer.inlineCallbacks
+    def test_pretty_encoding(self):
+        expected_result = json.dumps(dict(foo=42), indent=4)
+        processor = json_processors.JsonEncoder(indent=4)
+        baton = yield processor.process(dict(foo=42))
+        self.assertEquals(baton, expected_result)
+
+
 
 class JSONPEncoderTest(unittest.TestCase):
 

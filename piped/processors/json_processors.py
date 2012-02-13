@@ -39,15 +39,21 @@ class JsonEncoder(base.InputOutputProcessor):
     name = 'encode-json'
     interface.classProvides(processing.IProcessor)
 
-    def __init__(self, encoder='piped.util.PipedJSONEncoder', **kw):
+    def __init__(self, encoder='piped.util.PipedJSONEncoder', indent=None, **kw):
         """
-        :param encoder: A fully qualified name of the :class:`json.JSONEncoder`. 
+        :param encoder: A fully qualified name of the :class:`json.JSONEncoder`.
+
+        :param indent: If ``indent`` is a non-negative integer, then
+            JSON array elements and object members will be pretty-printed
+            with that indent level. An indent level of 0 will only insert
+            newlines. ``None`` is the most compact representation.
         """
         super(JsonEncoder, self).__init__(**kw)
         self.json_encoder = reflect.namedAny(encoder)
+        self.indent = indent
 
     def process_input(self, input, baton):
-        return json.dumps(input, cls=self.json_encoder)
+        return json.dumps(input, cls=self.json_encoder, indent=self.indent)
 
 
 class JSONPEncoder(JsonEncoder):

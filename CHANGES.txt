@@ -41,6 +41,9 @@ Features:
       ".wait_for_resource()". If the resource is not available before the timeout
       is reached, a "piped.exceptions.TimeoutError" is raised.
 
+    - encode-json now passes the `indent`-option to `json.dumps`.
+
+
 New processors:
     - get-zookeeper-children: Get a list of children for a ZooKeeper node.
     - get-zookeeper-data: Get the data of a ZooKeeper node.
