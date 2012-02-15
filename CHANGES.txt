@@ -17,6 +17,17 @@ Features:
         This makes it easier for one provider to call a function on another
         provider.
 
+    - Different twisted reactors can now be selected by using the
+      "-r/--reactor" arguments to the "piped" script. See "--help-reactors"
+      for a description of the available reactors.
+
+    - The web-provider now supports "listen" as a an optional parameter
+      instead of "port". The new "listen" parameter is a "strport", which
+      enables listening to single interface / configuring SSL sites etc.
+      For more information about strports, see
+      http://twistedmatrix.com/documents/current/api/twisted.application.strports.html
+
+
 New processors:
     - get-zookeeper-children: Get a list of children for a ZooKeeper node.
     - get-zookeeper-data: Get the data of a ZooKeeper node.
@@ -24,6 +35,7 @@ New processors:
     - set-zookeeper-data: Set the contents of a ZooKeeper node.
     - create-zookeeper-node: Create a ZooKeeper node.
     - web-client-get-page: Getting a web page.
+
 
 Internal changes:
     - piped.processing now uses stores the processor name under the
