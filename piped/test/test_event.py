@@ -73,5 +73,21 @@ class TestEvent(unittest.TestCase):
         except exceptions.TimeoutError as te:
             pass
 
+    @defer.inlineCallbacks
+    def test_delayed_call_is_cancelled(self):
+        e = event.Event()
+
+        d = e.wait_until_fired(timeout=1)
+
+        e('foo')
+
+        foo = yield d
+        self.assertEquals(foo, (('foo',), {}))
+
+        # since we called wait_until_fired with a timeout, a timeout was created, but the event
+        # was fired before the timeout was reached. In this case, the timeout delayed call should
+        # have been cancelled. If it is not cancelled, this test will fail with a
+        # DirtyReactorAggregateError.
+
 
 __doctests__ = [event]
