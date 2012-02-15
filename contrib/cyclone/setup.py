@@ -46,6 +46,19 @@ here = os.path.abspath(os.path.dirname(__file__))
 sys.path.insert(0, here)
 import piped_cyclone
 
+
+packages = find_packages(where=here) + ['piped.plugins']
+package_data = {
+    'piped_cyclone': ['templates/debugger.html']
+}
+
+# sdist completely ignores package_data, so we generate a MANIFEST.in
+# http://docs.python.org/distutils/sourcedist.html#specifying-the-files-to-distribute
+with open(os.path.join(here, 'MANIFEST.in'), 'w') as manifest:
+    for package, files in package_data.items():
+        for file in files:
+            manifest.write('include %s \n'%os.path.join(package.replace('.', os.path.sep), file))
+
 setup(
     name = 'piped_cyclone',
     license = 'MIT',
@@ -54,12 +67,9 @@ setup(
     author_email = 'piped@librelist.com',
     url = 'http://piped.io',
 
-    packages = find_packages(where=here) + ['piped.plugins'],
-
+    packages = packages,
     include_package_data = True,
-    package_data = {
-        'piped_cyclone': ['templates/debugger.html']
-    },
+    package_data = package_data,
 
     version = str(piped_cyclone.version),
     classifiers = [
