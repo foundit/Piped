@@ -1,3 +1,5 @@
+# Copyright (c) 2012, Found IT A/S and Piped Project Contributors.
+# See LICENSE for details.
 import os
 import json
 

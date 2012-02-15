@@ -1,3 +1,5 @@
+# Copyright (c) 2012, Found IT A/S and Piped Project Contributors.
+# See LICENSE for details.
 from cyclone import web
 from zope import interface
 from twisted.application import strports

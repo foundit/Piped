@@ -1,12 +1,14 @@
+# Copyright (c) 2012, Found IT A/S and Piped Project Contributors.
+# See LICENSE for details.
 import re
 import socket
 
 from cyclone import web, httpclient
 from twisted.application import service
 from twisted.internet import defer
-from twisted.python import filepath, reflect, failure
+from twisted.python import filepath, reflect
 from twisted.trial import unittest
-from piped import processing, util
+from piped import processing
 from piped.dependencies import ResourceDependency
 
 from piped_cyclone import providers, handlers
