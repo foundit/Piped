@@ -1,5 +1,6 @@
 # Copyright (c) 2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
+import zookeeper
 from zope import interface
 from twisted.application import service
 from twisted.python import failure
@@ -7,6 +8,8 @@ from twisted.internet import defer
 from txzookeeper import client
 
 from piped import resource, event, log, exceptions
+
+from piped_zookeeper import log_stream
 
 
 class DisconnectException(exceptions.PipedError):
@@ -16,9 +19,12 @@ class DisconnectException(exceptions.PipedError):
 class ZookeeperClientProvider(object, service.MultiService):
     """ Zookeeper support for Piped services.
 
-    Configuration example::
+    Configuration example:
+
+    .. code-block:: yaml
 
         zookeeper:
+            install_log_stream: true # default. handles the zookeeper log stream with piped.log
             clients:
                 my_client:
                     servers: localhost:2181
@@ -37,6 +43,10 @@ class ZookeeperClientProvider(object, service.MultiService):
         self.setName('zookeeper')
         self.setServiceParent(runtime_environment.application)
         self.runtime_environment = runtime_environment
+
+        install_log_stream = runtime_environment.get_configuration_value('zookeeper.install_log_stream', True)
+        if install_log_stream:
+            log_stream.install()
 
         self.clients = runtime_environment.get_configuration_value('zookeeper.clients', dict())
         resource_manager = runtime_environment.resource_manager
@@ -203,3 +213,28 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
             return d
 
         return wrapper
+
+    @defer.inlineCallbacks
+    def delete_recursive(self, path):
+        """ Tries to recursively delete nodes under *path*.
+
+        If another process is concurrently creating nodes within the sub-tree, this may
+        take a little while to return, as it is *very* persistent about not returning before
+        the tree has been deleted, even if it takes multiple tries.
+        """
+        while True:
+            try:
+                yield self.delete(path)
+            except zookeeper.NoNodeException as nne:
+                break
+            except zookeeper.NotEmptyException as nee:
+                try:
+                    children = yield self.get_children(path)
+                    ds = []
+                    for child in children:
+                        ds.append(self.delete_recursive(path + '/' + child))
+
+                    yield defer.DeferredList(ds)
+
+                except zookeeper.NoNodeException as nne:
+                    continue
