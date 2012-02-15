@@ -911,8 +911,6 @@ class Logger(base.Processor):
         return baton
 
 
-#DEPENDENCY_CALLER_NO_ARGUMENTS = object()
-
 class DependencyCaller(base.Processor):
     """ Calls a method on a dependency.
 
