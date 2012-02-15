@@ -125,6 +125,9 @@ def _make_parser():
                        help=('Script file to use. If this argument is used, any unknown arguments passed to piped '
                              'will remain on sys.argv and can be consumed by the script.'), metavar='config_file.yaml')
 
+    parser.add_argument('-r', '--reactor', help='Which reactor to use, (see --help-reactors for a list of possibilities)')
+    parser.add_argument('--help-reactors', action='store_true', help='Display a list of possibly available reactor names.')
+
     return parser
 
 
@@ -148,6 +151,12 @@ def _create_configuration_for_twistd(args):
 
     twistd_config = twistd.ServerOptions()
     twistd_config.update(config)
+
+    if config['help_reactors']:
+        twistd_config.opt_help_reactors()
+
+    if config['reactor']:
+        twistd_config.opt_reactor(config['reactor'])
 
     return twistd_config
 
