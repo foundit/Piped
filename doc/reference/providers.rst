@@ -225,6 +225,17 @@ RPC helpers
     :members:
 
 
+cyclone
+^^^^^^^
+
+.. automodule:: piped_cyclone.providers
+    :members:
+
+.. automodule:: piped_cyclone.handlers
+    :members:
+
+
+
 database
 ^^^^^^^^
 
