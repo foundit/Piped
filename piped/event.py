@@ -1,6 +1,8 @@
-# Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
+# Copyright (c) 2010-2012, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
-from twisted.internet import defer
+from twisted.internet import defer, reactor
+
+from piped import exceptions
 
 
 class Event(object):
@@ -47,7 +49,7 @@ class Event(object):
         return len(self._callbacks)
 
     @defer.inlineCallbacks
-    def wait_until_fired(self):
+    def wait_until_fired(self, timeout=None):
         """ Returns a defer that fires the next time the event is called.
 
         The Deferred will be callbacked with a two-tuple of ``(args, kwargs)``, where
@@ -56,10 +58,22 @@ class Event(object):
         :rtype: `twisted.internet.defer.Deferred`
         """
         d = defer.Deferred()
+
+        timeout_call = None
+        if timeout is not None:
+            timeout_call = reactor.callLater(timeout, d.errback, exceptions.TimeoutError(''))
+
         on_fired = lambda *a, **kw: d.callback((a, kw))
         self.handle(on_fired)
         try:
             resource = yield d
+        except exceptions.TimeoutError as te:
+            # raise a new TimeoutError to create a proper traceback.
+            raise exceptions.TimeoutError('Timeout [{0}] reached while waiting for event to fire.'.format(timeout))
+
         finally:
             self.unhandle(on_fired)
+            if timeout_call and not timeout_call.called:
+                timeout_call.cancel()
+
         defer.returnValue(resource)

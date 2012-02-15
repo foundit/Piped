@@ -26,6 +26,14 @@ class DependencyManagerTest(unittest.TestCase):
         self.assertRaises(exceptions.UnsatisfiedDependencyError, getattr, dependency_map, 'should_be_unavailable')
         self.assertRaises(AttributeError, getattr, dependency_map, 'nonexisting')
 
+    def test_dependency_map_in(self):
+        consumer = object()
+        resource_dependency = dependencies.ResourceDependency(provider='unavailable', manager=self.dependency_manager)
+        dependency_map = self.dependency_manager.create_dependency_map(consumer, should_be_unavailable=resource_dependency)
+
+        self.assertIn('should_be_unavailable', dependency_map)
+        self.assertNotIn('nonexisting', dependency_map)
+
     def test_accessing_provided_dependency(self):
         # Consumer wants fake_resource, but it's not directly
         # available as an instance. It's provided by a provider which

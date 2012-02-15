@@ -27,6 +27,19 @@ Features:
       For more information about strports, see
       http://twistedmatrix.com/documents/current/api/twisted.application.strports.html
 
+    - It is now possible to check whether a "piped.dependencies.DependencyMap" contains
+      a dependency (which may or may not currently be available) by using the "in"
+      operator.
+
+    - "piped.event.Event.wait_until_fired()" now takes an optional "timeout" argument.
+      If the event has not fired before the timeout is reached, a
+      "piped.exceptions.TimeoutError" is raised. The default timeout of ``None`` means
+      no timeout.
+
+    - "InstanceDependency", "ResourceDependency" and "DependencyMap" in
+      "piped.dependencies" now has support for a timeout keyword argument to
+      ".wait_for_resource()". If the resource is not available before the timeout
+      is reached, a "piped.exceptions.TimeoutError" is raised.
 
 New processors:
     - get-zookeeper-children: Get a list of children for a ZooKeeper node.
@@ -69,10 +82,14 @@ Backward-incompatible changes:
               foo: bar
 
          instead.
+
     - The processors proxy-forward and chain-web-requests were removed because
         they used code from the twisted test suite, which shouldn't be used in
         production. They might come back at a later time, but no time-frame can
         be given at this moment.
+
+    - "piped.dependencies.DependencyMap.__in__" has been removed. Use
+      ".is_available" instead.
 
 Bug fixes:
     - #21: When tracing, if a processor asynchronously raised an exception,

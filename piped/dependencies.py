@@ -1,4 +1,4 @@
-# Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
+# Copyright (c) 2010-2012, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
 """
 This module contains base implementations and managers for the resource system.
@@ -154,17 +154,21 @@ class InstanceDependency(Dependency):
         return self.instance
 
     @defer.inlineCallbacks
-    def wait_for_resource(self):
+    def wait_for_resource(self, timeout=None):
         """ Returns a deferred that fires with the resource when it becomes available.
 
         If this dependency is ready and the resource is available, the returned
-        deferred will already have been with the resource..
+        deferred will already have been callbacked with the resource.
+
+        :param timeout: Time in seconds before a :class:`~piped.exceptions.TimeoutError`
+            should be raised if the resource is not ready. Defaults to ``None``, which
+            means no timeout.
         """
         if self.is_ready:
             defer.returnValue(self.get_resource())
 
         # wait for the next on ready call
-        yield self.on_ready.wait_until_fired()
+        yield self.on_ready.wait_until_fired(timeout=timeout)
         defer.returnValue(self.get_resource())
 
     def __repr__(self):
@@ -232,17 +236,21 @@ class ResourceDependency(Dependency):
         return self._resource
 
     @defer.inlineCallbacks
-    def wait_for_resource(self):
+    def wait_for_resource(self, timeout=None):
         """ Returns a deferred that fires with the resource when it becomes available.
 
         If this dependency is ready and the resource is available, the returned
-        deferred will already have been with the resource..
+        deferred will already have been callbacked with the resource.
+
+        :param timeout: Time in seconds before a :class:`~piped.exceptions.TimeoutError`
+            should be raised if the resource is not ready. Defaults to ``None``, which
+            means no timeout.
         """
         if self.is_ready:
             defer.returnValue(self.get_resource())
 
         # wait for the next on ready call
-        yield self.on_ready.wait_until_fired()
+        yield self.on_ready.wait_until_fired(timeout=timeout)
         defer.returnValue(self.get_resource())
 
     def _fire_on_ready_if_all_dependencies_are_provided(self):
@@ -634,10 +642,15 @@ class DependencyMap(InstanceDependency):
 
         return dependency
 
-    def wait_for_resource(self, key):
+    def wait_for_resource(self, key, timeout=None):
         """ Return a deferred that fires with a resource when it becomes
-        available. """
-        return self._dependency_by_key[key].wait_for_resource()
+        available.
+
+        :param timeout: Time in seconds before a :class:`~piped.exceptions.TimeoutError`
+            should be raised if the resource is not ready. Defaults to ``None``, which
+            means no timeout.
+        """
+        return self._dependency_by_key[key].wait_for_resource(timeout=timeout)
 
     def _dependency_ready(self, dependency):
         key = self._key_by_dependency[dependency]
@@ -669,7 +682,12 @@ class DependencyMap(InstanceDependency):
         """ Returns whether the requested resource is available. """
         return key in self._resource_by_key
 
-    __in__ = is_available
+    def __contains__(self, key):
+        """ Returns whether the requested dependency exists in this map.
+
+        To check whether the resource is available, use :meth:`.is_available`.
+        """
+        return key in self._dependency_by_key
 
     def __repr__(self):
         lost = dict([key, dep] for key, dep in  self._dependency_by_key.items() if key not in self._resource_by_key)
