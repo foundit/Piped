@@ -10,6 +10,9 @@ from piped_cyclone import handlers
 class CycloneProvider(object):
     """ Provides support for running `Cyclone <http://cyclone.io>`_ applications within Piped.
 
+    For more in-depth documentation about Cyclone see: `Cyclone on GitHub <http://github.com/fiorix/cyclone>`_,
+    and the `Tornado documentation <http://www.tornadoweb.org/documentation/index.html>`_.
+
     Configuration example:
 
     .. code-block:: yaml
