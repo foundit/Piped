@@ -8,7 +8,7 @@ from zope import interface
 from twisted.internet import defer, task
 from twisted.web import server, resource, static, util as web_util, http, http_headers
 from twisted.web.test import test_web
-from twisted.application import service, internet
+from twisted.application import service, internet, strports
 
 from piped import exceptions, log, util, debugger
 from piped import resource as piped_resource
@@ -196,6 +196,7 @@ class WebSite(object, service.MultiService):
     
         my_site:
             port: 8080
+            listen: ssl:1234 # overrides the "port" above, see :mod:`twisted.application.strports`
             log_exceptions: DEBUG # a piped.log debug level, or null. (default: null)
             debug: # configure debugging of the processors
                 reap_interval: 60 # seconds
@@ -236,7 +237,8 @@ class WebSite(object, service.MultiService):
         self.factory = server.Site(root_resource)
         self.factory.displayTracebacks = bool(self.debug_configuration)
 
-        self.tcpserver = internet.TCPServer(self.site_configuration.get('port', 8080), self.factory)
+        listen = self.site_configuration.get('listen', str(self.site_configuration.get('port', 8080)))
+        self.tcpserver = strports.service(listen, self.factory)
         self.tcpserver.setServiceParent(self)
 
     def log_exception(self, failure):
