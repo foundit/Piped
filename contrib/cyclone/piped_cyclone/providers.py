@@ -5,8 +5,12 @@ from zope import interface
 from twisted.application import strports
 from twisted.python import reflect, filepath
 
-from piped import resource
+from piped import resource, exceptions
 from piped_cyclone import handlers
+
+
+class InvalidHandlerError(exceptions.PipedError):
+    pass
 
 
 class CycloneProvider(object):
@@ -81,7 +85,7 @@ class CycloneProvider(object):
     In order to enable debugging tracebacks from the web server, configure the cyclone application as in the example
     configuration above and make sure your request handlers subclasses :class:`piped_cyclone.handlers.DebuggableHandler`.
 
-    .. warning:: Enabling debugging enables allowed clients to execute arbitrary code within the Piped process.
+    .. warning:: Enabling debugging enables allowed clients to execute arbitrary code as the user running :program:`piped`.
 
     To make stack traces keep their frame information, use :option:`piped -D <piped -D>` when launching :program:`piped`.
 
@@ -127,7 +131,7 @@ class CycloneProvider(object):
                     application_config[key] = value.path
 
             for i, handler in enumerate(handlers):
-                handlers[i] = self._resolve_urlspec(handler)
+                handlers[i] = self._resolve_urlspec(name, handler)
 
             if 'piped_dependencies' in application_config:
                 for key, value in application_config['piped_dependencies'].items():
@@ -148,17 +152,23 @@ class CycloneProvider(object):
         application = self._applications_by_name[name]
         resource_dependency.on_resource_ready(application)
 
-    def _resolve_urlspec(self, url_spec):
+    def _resolve_urlspec(self, site_name, url_spec):
         if isinstance(url_spec, (list, tuple)):
-            url_spec = dict(zip(['pattern', 'handler_class', 'kwargs', 'name'], url_spec))
+            url_spec = dict(zip(['pattern', 'handler', 'kwargs', 'name'], url_spec))
+
+        if not 'pattern' in url_spec or not 'handler' in url_spec:
+            msg = 'Missing attributes in handler configuration in site [{0}]: [{1}]'.format(site_name, url_spec)
+            hint = 'Both "pattern" and "handler" must be defined.'
+            raise InvalidHandlerError(msg, hint)
 
         # string -> class specification
-        if isinstance(url_spec['handler_class'], basestring):
-            url_spec['handler_class'] = {'class':url_spec['handler_class']}
+        if isinstance(url_spec['handler'], basestring):
+            url_spec['handler'] = {'class':url_spec['handler']}
 
-        if 'provider' in url_spec['handler_class']:
-            provider = url_spec['handler_class']['provider']
-            dependency = self.dependency_manager.add_dependency(self, url_spec['handler_class'])
+        if 'provider' in url_spec['handler']:
+            handler = url_spec.pop('handler')
+            provider = handler['provider']
+            dependency = self.dependency_manager.add_dependency(self, handler)
             url_spec.setdefault('kwargs', dict()).update(dependency=dependency)
 
             if provider.startswith('pipeline.'):
@@ -168,8 +178,10 @@ class CycloneProvider(object):
             url_spec['handler_class'] = handlers.PipedRequestHandlerProxy(dependency)
             return web.url(**url_spec)
 
-        if 'class' in url_spec['handler_class']:
-            cls = reflect.namedAny(url_spec['handler_class']['class'])
+        if 'class' in url_spec['handler']:
+            handler = url_spec.pop('handler')
+
+            cls = reflect.namedAny(handler['class'])
             if id(cls) not in self._configured_handler_factory_ids:
                 self._configured_handler_factory_ids.add(id(cls))
 
@@ -182,7 +194,8 @@ class CycloneProvider(object):
             url_spec['handler_class'] = cls
             return web.url(**url_spec)
 
-        raise Exception('unknown provider...')
+        msg = 'Invalid handler configuration in site [{0}]: [{1}]'.format(site_name, url_spec)
+        raise InvalidHandlerError(msg)
 
     def _resolve_transforms(self, transforms):
         if not transforms:

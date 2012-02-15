@@ -70,6 +70,24 @@ class CycloneProviderTest(unittest.TestCase):
 
         return dependency.get_resource()
 
+    def test_invalid_handlers(self):
+        invalid_handler_configs = [
+            dict(foo='bar'), # missing "handler" and "pattern"
+            dict(handler='bar'), # missing "pattern"
+            dict(pattern='bar'), # missing "handler"
+            dict(handler=set()) # unknown handler type
+        ]
+
+        for invalid_handler_config in invalid_handler_configs:
+            self.assertRaises(providers.InvalidHandlerError, self.get_configured_cyclone,
+                listen=8888,
+                application = dict(
+                    handlers = [
+                        invalid_handler_config
+                    ]
+                )
+            )
+
     @defer.inlineCallbacks
     def test_simple(self):
         port = self.get_free_port()
