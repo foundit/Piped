@@ -27,6 +27,9 @@ Features:
       For more information about strports, see
       http://twistedmatrix.com/documents/current/api/twisted.application.strports.html
 
+    - It is now possible to check whether a "piped.dependencies.DependencyMap" contains
+      a dependency (which may or may not currently be available) by using the "in"
+      operator.
 
 New processors:
     - get-zookeeper-children: Get a list of children for a ZooKeeper node.
@@ -73,6 +76,9 @@ Backward-incompatible changes:
         they used code from the twisted test suite, which shouldn't be used in
         production. They might come back at a later time, but no time-frame can
         be given at this moment.
+
+    - "piped.dependencies.DependencyMap.__in__" has been removed. Use
+      ".is_available" instead.
 
 Bug fixes:
     - #21: When tracing, if a processor asynchronously raised an exception,

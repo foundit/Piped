@@ -1,9 +1,9 @@
-# Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
+# Copyright (c) 2010-2012, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
 from twisted.internet import defer
 from twisted.trial import unittest
 
-from piped import event
+from piped import event, util, exceptions
 
 
 class TestEvent(unittest.TestCase):
@@ -54,6 +54,24 @@ class TestEvent(unittest.TestCase):
         args, kwargs = yield d
         self.assertEquals(args, ('foo',))
         self.assertEquals(kwargs, dict(bar='baz'))
+
+    @defer.inlineCallbacks
+    def test_wait_until_fired_timeout(self):
+        e = event.Event()
+
+        d = e.wait_until_fired(timeout=0)
+        self.assertFalse(d.called)
+
+        # the deferred should be errbacked if the timeout is reached:
+        yield util.wait(0)
+
+        self.assertTrue(d.called)
+
+        try:
+            yield d
+            self.fail('TimeoutError not raised.')
+        except exceptions.TimeoutError as te:
+            pass
 
 
 __doctests__ = [event]
