@@ -141,7 +141,7 @@ a collection of packages that may contain plugins "bundles". To add a bundle to 
 following to our ``tutorial.yaml`` file:
 
 .. literalinclude:: 3_processor/tutorial.yaml
-    :start-after: pipeline: hello
+    :start-after: processor: pipeline.hello
     :end-before: pipelines:
     :language: yaml
 
@@ -418,7 +418,7 @@ Testing
 
 In this section we will learn how to test pipelines.
 
-This section uses :doc:`status tests </topic/testing>`, which is part of the ``piped_status_testing`` package,
+This section uses :doc:`status tests </topic/testing>`, which is part of the ``piped.contrib.status_testing`` package,
 which must be installed before this section can be completed.
 
 These tests are not to the same as unit tests. You would use unit tests to test Python code, such as custom
@@ -446,11 +446,11 @@ the framework, simply try to import it:
     ImportError: No module named status_testing
 
 If you receive the above error message, you should install the status_testing contrib package, for example by
-using ``easy_install``:
+using ``easy_install`` or ``pip``:
 
 .. code-block:: bash
 
-   $ easy_install piped_status_testing
+   $ easy_install piped.contrib.status_testing
 
 
 Writing a test processor

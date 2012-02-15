@@ -47,7 +47,7 @@ sys.path.insert(0, here)
 import piped_validation
 
 setup(
-    name = 'piped_validation',
+    name = 'piped.contrib.validation',
     license = 'MIT',
 
     author = 'Piped Project Contributors',

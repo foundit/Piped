@@ -60,7 +60,7 @@ with open(os.path.join(here, 'MANIFEST.in'), 'w') as manifest:
             manifest.write('include %s \n'%os.path.join(package.replace('.', os.path.sep), file))
 
 setup(
-    name = 'piped_cyclone',
+    name = 'piped.contrib.cyclone',
     license = 'MIT',
 
     author = 'Piped Project Contributors',

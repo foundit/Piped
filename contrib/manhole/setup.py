@@ -47,7 +47,7 @@ sys.path.insert(0, here)
 import piped_manhole
 
 setup(
-    name = 'piped_manhole',
+    name = 'piped.contrib.manhole',
     license = 'MIT',
 
     author = 'Piped Project Contributors',

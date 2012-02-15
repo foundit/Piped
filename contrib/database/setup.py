@@ -47,7 +47,7 @@ sys.path.insert(0, here)
 import piped_database
 
 setup(
-    name = 'piped_database',
+    name = 'piped.contrib.database',
     license = 'MIT',
 
     author = 'Piped Project Contributors',

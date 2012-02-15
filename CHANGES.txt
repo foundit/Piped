@@ -1,5 +1,8 @@
 ================================ Next release ================================
 
+
+========================== Release 0.3.1 2012-02-15 ==========================
+
 Features:
     - ZooKeeper: A ZooKeeper-contrib is now available, for interacting
       with ZooKeeper ensembles. In addition to a ZooKeeper-client

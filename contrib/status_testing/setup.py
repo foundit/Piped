@@ -47,7 +47,7 @@ sys.path.insert(0, here)
 import piped_status_testing
 
 setup(
-    name = 'piped_status_testing',
+    name = 'piped.contrib.status_testing',
     license = 'MIT',
 
     author = 'Piped Project Contributors',

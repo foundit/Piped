@@ -16,7 +16,8 @@ package_data = {
     'piped': ['conf.yml', 'service.tac'],
     'piped.test': [
         'data/bar.txt', 'data/foo.txt', 'data/test_conf.yml',
-        'data/test_includes.yml', 'data/baz/bar.baz', 'data/baz/foo.bar'
+        'data/test_includes.yml', 'data/baz/bar.baz', 'data/baz/foo.bar',
+        'data/test_config_nesting.yml'
     ],
     'piped.providers.test': [
         'data/bar', 'data/foo',

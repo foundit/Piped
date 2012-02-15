@@ -47,7 +47,7 @@ sys.path.insert(0, here)
 import piped_zookeeper
 
 setup(
-    name = 'piped_zookeeper',
+    name = 'piped.contrib.zookeeper',
     license = 'MIT',
 
     author = 'Piped Project Contributors',

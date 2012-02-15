@@ -47,7 +47,7 @@ sys.path.insert(0, here)
 import piped_amqp
 
 setup(
-    name = 'piped-amqp',
+    name = 'piped.contrib.amqp',
     license = 'MIT',
 
     author = 'Piped Project Contributors',

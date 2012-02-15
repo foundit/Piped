@@ -47,7 +47,7 @@ sys.path.insert(0, here)
 import piped_zmq
 
 setup(
-    name = 'piped_zmq',
+    name = 'piped.contrib.zmq',
     license = 'MIT',
 
     author = 'Piped Project Contributors',
