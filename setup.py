@@ -64,7 +64,7 @@ setup(
         'Framework :: Twisted',
         'Topic :: Software Development :: Libraries :: Application Frameworks'
     ],
-    description = 'Pipeline processing framework.',
+    description = 'A framework and application server with pipelines.',
     long_description = """
         See http://piped.io for more details.
     """,
