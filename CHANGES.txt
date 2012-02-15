@@ -43,6 +43,9 @@ Features:
 
     - encode-json now passes the `indent`-option to `json.dumps`.
 
+    - Configuration includes now support including files at a sub-path in the
+      current configuration. See the configuration documentation for more details.
+
 
 New processors:
     - get-zookeeper-children: Get a list of children for a ZooKeeper node.

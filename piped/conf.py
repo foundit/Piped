@@ -5,6 +5,7 @@ import warnings
 from pprint import pformat
 
 import yaml
+from twisted.python import filepath
 
 # We don't use yamlutil directly here, but import it as it registers custom constructors and representers.
 from piped import yamlutil
@@ -115,8 +116,19 @@ class ConfigurationManager(object):
 
     def _load_includes(self, current_config, include_paths, visited_files):
         """ Recursively handles includes of other configuration-files. """
-        for include_path_or_filepath in include_paths:
-            include_path = util.expand_filepath(include_path_or_filepath)
+        flattened_include_paths = list()
+
+        for i, include_path in enumerate(list(include_paths)):
+            if isinstance(include_path, (basestring, filepath.FilePath)):
+                flattened_include_paths.append(dict(prefix='', path=include_path))
+
+            if isinstance(include_path, dict):
+                for key, value in sorted(include_path.items()):
+                    flattened_include_paths.append(dict(prefix=key, path=value))
+
+        for include_item in flattened_include_paths:
+            include_prefix = include_item['prefix']
+            include_path = util.expand_filepath(include_item['path'])
 
             if include_path in visited_files:
                 _warn_because_file_is_loaded_multiple_times(include_path, visited_files)
@@ -128,6 +140,12 @@ class ConfigurationManager(object):
             try:
                 included_config = yaml.load(open(include_path))
                 included_config = self._load_config(included_config, visited_files)
+
+                if include_prefix:
+                    prefixed_included_config = dict()
+                    util.dict_set_path(prefixed_included_config, include_prefix, included_config)
+                    included_config = prefixed_included_config
+
                 current_config = util.merge_dicts(included_config, current_config, replace_primitives=True)
             except exceptions.ConfigurationError:
                 raise

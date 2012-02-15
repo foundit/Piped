@@ -1,0 +1,10 @@
+includes:
+    - foo.bar: !pipedpath test/data/test_conf.yml
+
+foo:
+  baz: 93
+  bar:
+    root_level:
+      added: 42
+      nested:
+        another_leaf: overridden

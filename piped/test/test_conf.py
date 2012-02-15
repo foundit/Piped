@@ -73,6 +73,26 @@ class ConfigurationManagerTest(unittest.TestCase):
 
         self.assertEquals(self.cm.get('root_level'), expected_config)
 
+    def test_loading_nested_includes(self):
+        test_includes_file = filepath.FilePath(__file__).parent().preauthChild(os.path.join('data', 'test_config_nesting.yml'))
+        self.cm.load_from_file(test_includes_file)
+
+        # this should include the test_conf.yml under "foo"
+        expected_config = dict(
+            bar = dict(
+                root_level = dict(
+                    added = 42,
+                    nested = dict(
+                        leaf = 123,
+                        another_leaf = 'overridden'
+                    )
+                )
+            ),
+            baz = 93
+        )
+
+        self.assertEquals(self.cm.get('foo'), expected_config)
+
     def test_loading_nonexistant_include_fails(self):
         fp = filepath.FilePath(__file__).child('does not exist')
         self.assertRaises(exceptions.ConfigurationError, self.cm._load_includes, dict(), [fp], list())

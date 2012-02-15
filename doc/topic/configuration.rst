@@ -149,9 +149,43 @@ Includes are specified under the top level key ``includes`` in the configuration
         - /absolute_path_string
         - ~/using/a/home/folder
         - $VAR/using/an/environment/variable
+        - prefix.path: ./relative_file/to_include
 
 
 Included configuration files may specify their own includes, which are loaded recursively.
+
+If the include is a ``dict``, as in the ``prefix.path`` example above, the key, value pairs
+are interpreted as ``prefix, path`` pairs. When they are resolved, the included configuration
+is not merged with the root of the current configuration, but at the given prefix. For example:
+
+Consider a configuration: ``config.yaml``:
+
+.. code-block:: yaml
+
+    includes:
+        - foo.bar: file.yaml
+
+    foo:
+        bar:
+            question: the question
+        baz: 93
+
+If ``file.yaml`` contains the following:
+
+.. code-block:: yaml
+
+    question: a question
+    answer: 42
+
+Loading ``config.yaml`` would result in the following configuration:
+
+.. code-block:: yaml
+
+    foo:
+        bar:
+            question: the question
+            answer: 42
+        baz: 93
 
 
 Merging
