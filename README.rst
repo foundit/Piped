@@ -1,7 +1,8 @@
-Piped: a pipeline processing framework
-======================================
+Piped: a framework and application server with pipelines
+========================================================
 
-Piped is an `MIT-licensed <https://github.com/foundit/Piped/blob/develop/LICENSE>`_ framework for
+Piped is an `MIT-licensed <https://github.com/foundit/Piped/blob/develop/LICENSE>`_ framework and
+application server with built-in support for
 `flow based programming <http://en.wikipedia.org/wiki/Flow-based_programming>`_ written in Python that focuses on:
 
 * Extendability.
@@ -22,10 +23,10 @@ The documentation is available at http://piped.io.
 Protocols and Extensions
 ------------------------
 
-* HTTP with `twisted.web <http://twistedmatrix.com/trac/wiki/TwistedWeb>`_
+* HTTP/HTTPS with `twisted.web <http://twistedmatrix.com/trac/wiki/TwistedWeb>`_ or `Cyclone <http://cyclone.io>`_ (based on `Tornado <http://tornadoweb.org>`).
 * SMTP with `twisted.mail <http://twistedmatrix.com/trac/wiki/TwistedMail>`_
 * SSH with `twisted.conch <http://twistedmatrix.com/trac/wiki/TwistedConch>`_
-* `ZeroMQ <http://www.zeromq.org/>`_ and `AMQP <http://www.amqp.org/>`_ (especially `RabbitMQ <http://www.rabbitmq.com/>`_)
+* `ZeroMQ <http://www.zeromq.org/>`_ and `AMQP <http://www.amqp.org/>`_ (i.e `RabbitMQ <http://www.rabbitmq.com/>`_)
 * `ZooKeeper <http://zookeeper.apache.org/>`_
 * Database-connectivity (with `SQLAlchemy <http://sqlalchemy.org>`_)
 * Data-validation (with `FormEncode <http://www.formencode.org/>`_)

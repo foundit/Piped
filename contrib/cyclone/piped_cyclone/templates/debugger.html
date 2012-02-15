@@ -1,0 +1,100 @@
+<html>
+    <head>
+        <title>web.Application Traceback (most recent call last)</title>
+            <script type="text/javascript" src="{% block jquery_url %}https://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js{% end %}"></script>
+            <script type="text/javascript">
+$(document).ready(function() {
+    var ajax_endpoint = "{{ ajax_endpoint }}";
+
+    $('.frame,.firstFrame').each(function(i, item) {
+        // Make the location div clickable
+        var location = $(item).find('.location');
+        location.click(function() {
+            location.siblings().toggle();
+            $(item).find('input').focus();
+        });
+        location.css('cursor', 'pointer');
+
+        // create the buffer and input divs
+        var buffer = $('<div class="buffer"></div>');
+        var input = $('<input class="expr monospaced"/>');
+        var input_div = $('<div><span class="prompt monospaced">&#62;&#62;&#62;</span></div>');
+        input_div.css('width', location.width());
+        buffer.css('width', '100%%');
+
+        // variables for the command history
+        var cmd_history = [];
+        var cmd_current = 0;
+
+        input.bind('keydown', function(e) {
+            var key = e.keyCode || e.which;
+            if(key == 13 && input.val()) { // enter
+                var expr = input.val();
+
+                // update the command history
+                cmd_history.push(expr);
+                cmd_current = cmd_history.length;
+                input.val('');
+
+                // execute the expression in the debugger
+                $.ajax({
+                    url: ajax_endpoint,
+                    dataType: 'json',
+                    data: {
+                        frame_no: i,
+                        expr: expr
+                    },
+                    type: 'POST',
+                    success: function(data, textStatus, jqXHR) {
+                        buffer.append($('<div class="monospaced"/>').text('>>> '+expr));
+                        buffer.append($('<div class="monospaced"/>').text(data));
+                        // set the font-family of the new elements.
+                        buffer.find('.monospaced').css('font-family', 'monospace');
+                        input.focus();
+                    },
+                    error: function(jqXHR, textStatus, errorThrown) {
+                        var result_div = $('<div style="background: red"/>')
+                        if(jqXHR.status == 404) {
+                            result_div.text('Got a 404 when performing the ajax request. This either means the debugger \
+                                                was reaped due to inactivity on the server side, or that this page is \
+                                                trying to use the wrong endpoint. If the debugger was reaped, consider \
+                                                adjusting the inactive time.');
+                        } else {
+                            result_div.text('Unknown response from the server: '+jqXHR.status+': '+textStatus);
+                        }
+                        buffer.append(result_div);
+                    }
+                });
+            } else if (key == 38)  { // up arrow fetches the previous command from the history
+                cmd_current = Math.max(0, cmd_current-1);
+                input.val(cmd_history[cmd_current]);
+            } else if (key == 40) { // down arrow fetches the next command from the command history
+                cmd_current = Math.min(cmd_history.length, cmd_current+1);
+                if(cmd_current == cmd_history.length) {
+                    input.val('');
+                } else {
+                    input.val(cmd_history[cmd_current]);
+                }
+            }
+        });
+
+        // add our divs to the current stack frame
+        $(item).append(buffer);
+        input_div.append(input);
+        $(item).append(input_div);
+
+        // set the input width
+        input.css('width', input_div.width()-input_div.find('.prompt').width());
+
+        $(item).find('.monospaced').css('font-family', 'monospace');
+    });
+    $('.location').click(); // start with all the except the last hidden
+    $('.location:last').click();
+});
+        </script>
+    </head>
+    <body>
+        <div><b>web.Application Traceback (most recent call last): </b>(<a href="{{ ajax_endpoint }}">direct link to debugger</a>)</div>
+        <div>{% raw traceback_as_html %}</div>
+    </body>
+</html>

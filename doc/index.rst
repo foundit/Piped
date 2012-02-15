@@ -16,14 +16,15 @@ Piped documentation
         f -> b
         f -> g
 
-Piped is a `MIT-licensed <https://github.com/foundit/Piped/blob/develop/LICENSE>`_ framework for
+Piped is an `MIT-licensed <https://github.com/foundit/Piped/blob/develop/LICENSE>`_ framework and
+application server with built-in support for
 `flow based programming <http://en.wikipedia.org/wiki/Flow-based_programming>`_ written in Python that focuses on:
 
-* Ease of use.
 * Extendability.
 * Painless integrating with other systems.
 * Testing and maintainability.
 * Performance.
+* Ease of use.
 
 
 A base Piped installation already speaks multiple protocols, such as HTTP, SMTP and Perspective Broker. Contrib packages that extends Piped,

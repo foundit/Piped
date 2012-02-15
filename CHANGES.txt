@@ -9,6 +9,11 @@ Features:
       and processing them in pipelines, as well as a simple helper
       for creating and providing AMQP-based RPC-clients.
 
+    - Cyclone: Support for Cyclone applications (http://cyclone.io), which
+      is an implementation of Tornado (http://tornadoweb.org) on top of
+      Twisted. This enables building full-fledged web-apps that use the
+      dependency/resource management/pipelines in piped.
+
     - Built-in and contrib providers now use "processor: ..." instead
         of "pipeline: ...", and are able to depend on arbitrary dependencies.
         The dependencies are invoked with the baton as the first and
