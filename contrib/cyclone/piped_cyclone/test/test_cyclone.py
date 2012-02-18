@@ -126,7 +126,7 @@ class CycloneProviderTest(unittest.TestCase):
 
     def test_custom_app(self):
         app = self.get_configured_cyclone(
-            type = reflect.fullyQualifiedName(TestApplication)
+            application_factory = reflect.fullyQualifiedName(TestApplication)
         )
         self.assertIsInstance(app, TestApplication)
 

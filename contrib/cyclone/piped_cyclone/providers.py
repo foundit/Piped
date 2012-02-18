@@ -5,7 +5,7 @@ from zope import interface
 from twisted.application import strports
 from twisted.python import reflect, filepath
 
-from piped import resource, exceptions
+from piped import resource, exceptions, log
 from piped_cyclone import handlers
 
 
@@ -25,8 +25,8 @@ class CycloneProvider(object):
 
         cyclone:
             site_name:
-                listen: 8888
-                type: cyclone.web.Application # or a fully qualified name of a subclass
+                listen: 8888 # (default)
+                application_factory: cyclone.web.Application # (default) - a fully qualified name of a subclass
                 application:
                     handlers:
                         # a tuple: pattern, handler, kwargs (optional), name (optional)
@@ -106,9 +106,13 @@ class CycloneProvider(object):
         cm = runtime_environment.configuration_manager
 
         for name, config in cm.get(self.configuration_key, dict()).items():
+            if not config.get('enabled', True):
+                log.info('Not starting cyclone site [{0}] because it is disabled.'.format(name))
+                continue
+
             listen = str(config.pop('listen', '8888'))
-            application_factory_type = config.pop('type', 'cyclone.web.Application')
-            application_factory = reflect.namedAny(application_factory_type)
+            application_factory_name = config.pop('application_factory', 'cyclone.web.Application')
+            application_factory = reflect.namedAny(application_factory_name)
 
             application_config = config.pop('application', dict())
 
