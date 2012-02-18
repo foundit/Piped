@@ -1,5 +1,12 @@
 ================================ Next release ================================
 
+========================== Release 0.3.2 2012-02-18 ==========================
+
+Internal changes:
+    - piped.dependencies.DependencyMap now has a ``.get_dependency(key)`` method
+      that returns the dependency object for the given key in the dependency
+      map.
+
 
 ========================== Release 0.3.1 2012-02-15 ==========================
 
