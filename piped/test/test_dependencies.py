@@ -820,7 +820,6 @@ class DependencyMapTest(unittest.TestCase):
         for resource_path in resource_paths:
             self.resource_manager.register(resource_path, p)
 
-
     def test_simple_dependency_map(self):
         self._create_provider(lambda dep: dep.on_resource_ready('foo-resource'), 'foo')
 
@@ -842,6 +841,17 @@ class DependencyMapTest(unittest.TestCase):
         self.assertRaises(exceptions.UnsatisfiedDependencyError, map.__getitem__, 'foo')
         self.dependency_manager.resolve_initial_states()
         self.assertEquals(map['foo'], 'foo-resource')
+
+    def test_get_dependency(self):
+        self._create_provider(lambda dep: dep.on_resource_ready('foo-resource'), 'foo')
+        map = self._create_map()
+        map['foo'] = foo_dependency = dependencies.ResourceDependency(provider='foo')
+        map['bar'] = 'this will become an instance dependency'
+
+        self.dependency_manager.resolve_initial_states()
+
+        self.assertEqual(map.get_dependency('foo'), foo_dependency)
+        self.assertIsInstance(map.get_dependency('bar'), dependencies.InstanceDependency)
 
     def test_resource_changes_updates_the_map(self):
         resource_dependencies = list()

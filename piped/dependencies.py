@@ -642,6 +642,14 @@ class DependencyMap(InstanceDependency):
 
         return dependency
 
+    def get_dependency(self, key):
+        """ Get a dependency entry.
+
+        :param key: The key identifying the dependency to get
+        :return: The dependency object.
+        """
+        return self._dependency_by_key[key]
+
     def wait_for_resource(self, key, timeout=None):
         """ Return a deferred that fires with a resource when it becomes
         available.
