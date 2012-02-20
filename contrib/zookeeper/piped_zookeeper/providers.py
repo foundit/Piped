@@ -165,9 +165,17 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
     def stopService(self):
         if self.running:
             service.Service.stopService(self)
-            self.on_disconnected(failure.Failure(DisconnectException('stopping service')))
+
+            closing = None
             self._on_event('stopping')
-            return self.close()
+
+            # don't try to close if we don't have a handle.
+            if self.handle is not None:
+                closing = self.close()
+
+            self.on_disconnected(failure.Failure(DisconnectException('stopping service')))
+
+            return closing
 
     def _cached(self, func):
         def wrapper(*a, **kw):
