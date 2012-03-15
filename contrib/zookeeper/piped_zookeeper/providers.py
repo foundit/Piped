@@ -27,6 +27,7 @@ class ZookeeperClientProvider(object, service.MultiService):
             install_log_stream: true # default. handles the zookeeper log stream with piped.log
             clients:
                 my_client:
+                    reuse_session: true # if false, never re-uses a session if it expires.
                     servers: localhost:2181
                     events:
                         starting: my_processor
@@ -83,8 +84,9 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
     connecting = None
     connected = False
     
-    def __init__(self, events = None, *a, **kw):
+    def __init__(self, reuse_session = True, events = None, *a, **kw):
         super(PipedZookeeperClient, self).__init__(*a, **kw)
+        self.reuse_session = reuse_session
         self.events = events or dict()
 
         self.on_connected = event.Event()
@@ -139,6 +141,12 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
             #       because the server rollbacked -- see https://issues.apache.org/jira/browse/ZOOKEEPER-832)
             self.on_disconnected(failure.Failure(DisconnectException(event.state_name)))
             self._on_event('reconnecting')
+
+            if not self.reuse_session:
+                log.info('Not reusing ZooKeeper session.')
+                yield self.stopService()
+                yield self.startService()
+
         elif event.state_name == 'expired':
             self.on_disconnected(failure.Failure(DisconnectException(event.state_name)))
             self._on_event(event.state_name)
