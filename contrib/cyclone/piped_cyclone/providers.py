@@ -1,5 +1,7 @@
 # Copyright (c) 2012, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
+import copy
+
 from cyclone import web
 from zope import interface
 from twisted.application import strports
@@ -109,6 +111,9 @@ class CycloneProvider(object):
             if not config.get('enabled', True):
                 log.info('Not starting cyclone site [{0}] because it is disabled.'.format(name))
                 continue
+
+            # take a deep copy of the configurations, since we're going to modify it
+            config = copy.deepcopy(config)
 
             listen = str(config.pop('listen', '8888'))
             application_factory_name = config.pop('application_factory', 'cyclone.web.Application')
