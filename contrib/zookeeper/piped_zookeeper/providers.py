@@ -151,6 +151,9 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
                 yield self.startService()
                 return
 
+            if self.forcing_reconnect:
+                return
+
             self.on_connected(self)
             self._on_event('reconnected')
         elif event.state_name == 'connecting':
