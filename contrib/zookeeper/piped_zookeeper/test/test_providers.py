@@ -6,7 +6,7 @@ from mock import patch
 from txzookeeper import client as txclient
 from twisted.internet import defer
 
-from piped import exceptions, processing, dependencies
+from piped import exceptions, processing, dependencies, util
 from twisted.trial import unittest
 from piped_zookeeper import providers
 
@@ -260,6 +260,9 @@ class TestClient(unittest.TestCase):
 
                 expired_event = txclient.ClientEvent(type=zookeeper.SESSION_EVENT, connection_state=zookeeper.EXPIRED_SESSION_STATE, path=None)
                 client._watch_connection(client, expired_event)
+
+                # give zookeeper a reactor iteration to cope
+                yield util.wait(0)
 
                 # the expired event currently causes a full disconnect and reconnect in order to ensure we get a new session:
                 fired_events = [args[0] for args, kwargs in mocked_dependencies.wait_for_resource.call_args_list]

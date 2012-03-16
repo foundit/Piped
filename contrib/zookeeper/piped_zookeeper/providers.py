@@ -7,7 +7,7 @@ from twisted.python import failure
 from twisted.internet import defer
 from txzookeeper import client
 
-from piped import resource, event, log, exceptions
+from piped import resource, event, log, exceptions, util
 
 from piped_zookeeper import log_stream
 
@@ -83,6 +83,8 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
     possible_events = ('starting', 'stopping', 'connected', 'reconnecting', 'reconnected', 'expired')
     connecting = None
     connected = False
+    force_reconnect = False
+    forcing_reconnect = False
     
     def __init__(self, reuse_session = True, events = None, *a, **kw):
         super(PipedZookeeperClient, self).__init__(*a, **kw)
@@ -114,13 +116,18 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
         
         self.dependencies = runtime_environment.create_dependency_map(self, **self.events)
 
-    def _started(self):
+    def _started(self, result=None):
         self.connecting = None
-        self.on_connected(self)
+        if not self.forcing_reconnect:
+            self.on_connected(self)
         self._on_event('connected')
+        return result
 
     @defer.inlineCallbacks
     def _on_event(self, event_name):
+        if self.forcing_reconnect:
+            return
+
         baton = dict(event=event_name, client=self)
 
         try:
@@ -134,6 +141,16 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
     def _watch_connection(self, client, event):
         # see client.STATE_NAME_MAPPING for possible values for event.state_name
         if event.state_name == 'connected':
+            if self.force_reconnect:
+                self.force_reconnect = False
+                log.info('Executing forceful reconnect for [{0}]'.format(self))
+                yield util.wait(0)
+                yield self.stopService()
+                yield util.wait(0)
+                self.forcing_reconnect = False
+                yield self.startService()
+                return
+
             self.on_connected(self)
             self._on_event('reconnected')
         elif event.state_name == 'connecting':
@@ -142,16 +159,19 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
             self.on_disconnected(failure.Failure(DisconnectException(event.state_name)))
             self._on_event('reconnecting')
 
-            if not self.reuse_session:
-                log.info('Not reusing ZooKeeper session.')
-                yield self.stopService()
-                yield self.startService()
+            if not self.reuse_session and not self.forcing_reconnect:
+                log.info('A forceful reconnect has been queued for [{0}] in order to avoid reusing sessions'.format(self))
+                self.forcing_reconnect = True
+                self.force_reconnect = True
 
         elif event.state_name == 'expired':
             self.on_disconnected(failure.Failure(DisconnectException(event.state_name)))
             self._on_event(event.state_name)
             # force a full reconnect in order to ensure we get a new session
+            yield util.wait(0)
             yield self.stopService()
+            self.forcing_reconnect = self.force_reconnect = False
+            yield util.wait(0)
             yield self.startService()
         else:
             log.warn('Unhandled event: {0}'.format(event))
@@ -168,7 +188,11 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
             # set a really high timeout (1 year) because we want txzookeeper to keep
             # trying to connect for a considerable amount of time.
             self.connecting = self.connect(timeout=60*60*24*365)
-            return self.connecting.addCallback(lambda _: self._started())
+            return self.connecting.addCallbacks(self._started, self._stopped)
+
+    def _stopped(self, failure):
+        self.connecting = None
+        return failure
 
     def stopService(self):
         if self.running:
