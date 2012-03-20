@@ -1,6 +1,6 @@
 # Copyright (c) 2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
-from twisted.application import internet, service
+from twisted.application import internet, service, strports
 from twisted.conch import manhole, manhole_ssh, error as conch_error
 from twisted.conch.insults import insults
 from twisted.conch.ssh import keys
@@ -21,6 +21,8 @@ class ManholeProvider(object, service.MultiService):
             my_manhole:
                 enabled: true # defaults to true
                 port: 10022 # defaults to 10022
+                # or instead of port, you may use a strport
+                # listen: 10222
                 keys:
                     public_key_file: path # or public_key: str
                     private_key_file: path # or private_key: str
@@ -110,7 +112,8 @@ class ManholeService(service.MultiService):
 
         factory = self._make_factory()
 
-        tcpservice = internet.TCPServer(self.manhole_configuration.get('port', 10022), factory)
+        listen = str(self.manhole_configuration.get('listen', self.manhole_configuration.get('port', 10022)))
+        tcpservice = strports.service(listen, factory)
         tcpservice.setName(self.name)
         tcpservice.setServiceParent(self)
 
@@ -139,7 +142,7 @@ class ManholeService(service.MultiService):
 
     def _make_factory(self):
         checkers = self._make_checkers()
-        realm = manhole_ssh.TerminalRealm()
+        realm = PipedTerminalRealm()
         portal_ = MultipleCheckersPortal(realm, checkers)
 
         def chainProtocolFactory():
@@ -164,6 +167,21 @@ class ManholeService(service.MultiService):
         for key, value in self.manhole_configuration.get('namespace', dict()).items():
             namespace[key] = reflect.namedAny(value)
         return namespace
+
+
+class PipedTerminalSessionTransport(manhole_ssh.TerminalSessionTransport):
+    def __init__(self, proto, chainedProtocol, avatar, width, height):
+        chainedProtocol.avatar = avatar
+        manhole_ssh.TerminalSessionTransport.__init__(self, proto, chainedProtocol, avatar, width, height)
+
+
+class PipedTerminalRealm(manhole_ssh.TerminalRealm):
+    transportFactory = PipedTerminalSessionTransport
+
+    def _getAvatar(self, avatarId):
+        avatar = manhole_ssh.TerminalRealm._getAvatar(self, avatarId)
+        avatar.avatarId = avatarId
+        return avatar
 
 
 class MultipleCheckersPortal(portal.Portal):
