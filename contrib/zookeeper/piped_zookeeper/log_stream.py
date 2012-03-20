@@ -50,6 +50,9 @@ def _relay_log():
                 level = None
                 message = line # TODO: can we genereate a better logging message?
 
+            if not message:
+                continue
+
             if level is None:
                 reactor.callFromThread(log_message, log.info, message)
             else:

@@ -145,8 +145,10 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
                 self.force_reconnect = False
                 log.info('Executing forceful reconnect for [{0}]'.format(self))
                 yield util.wait(0)
+                log.info('Stopping client (forceful reconnect) [{0}]'.format(self))
                 yield self.stopService()
                 yield util.wait(0)
+                log.info('Starting client (forceful reconnect) [{0}]'.format(self))
                 self.forcing_reconnect = False
                 yield self.startService()
                 return
@@ -179,6 +181,24 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
         else:
             log.warn('Unhandled event: {0}'.format(event))
 
+    def _check_result(self, result_code, deferred, extra_codes=()):
+        d = defer.Deferred()
+        result = super(PipedZookeeperClient, self)._check_result(result_code, d, extra_codes)
+        if d.called:
+            maybe_error = d.result
+            if isinstance(maybe_error, Exception):
+                maybe_error = failure.Failure(maybe_error)
+            if isinstance(maybe_error, failure.Failure):
+                try:
+                    raise maybe_error.type, maybe_error.value
+                except Exception as e:
+                    # add an empty errback since we're handling the failure by forwarding the exception
+                    d.addErrback(lambda _: None)
+                    deferred.errback()
+                    return result
+        d.chainDeferred(deferred)
+        return result
+
     def startService(self):
         if not self.running:
             service.Service.startService(self)
@@ -197,20 +217,19 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
         self.connecting = None
         return failure
 
+    @defer.inlineCallbacks
     def stopService(self):
         if self.running:
             service.Service.stopService(self)
 
-            closing = None
             self._on_event('stopping')
 
             # don't try to close if we don't have a handle.
             if self.handle is not None:
-                closing = self.close()
+                yield self.close()
 
             self.on_disconnected(failure.Failure(DisconnectException('stopping service')))
-
-            return closing
+            self.handle = None
 
     def _cached(self, func):
         def wrapper(*a, **kw):
