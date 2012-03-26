@@ -1,6 +1,7 @@
 # Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
 import mocker
+import mock
 import zmq
 from twisted.application import service
 from twisted.internet import defer
@@ -328,7 +329,9 @@ class ZMQProcessorFeederTest(unittest.TestCase):
 
         expected_processed = ['foo', 'baz']
         message_batch = ['foo', 'bar', 'baz']
-        yield feeder.handle_messages(message_batch)
+
+        with mock.patch.object(providers, 'logger') as mocked_logger:
+            yield feeder.handle_messages(message_batch)
 
         # the batons should get processed
         self.assertEquals(processed_ok, expected_processed)

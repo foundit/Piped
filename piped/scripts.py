@@ -12,6 +12,7 @@ from twisted.python import util
 from twisted.scripts import twistd
 
 import piped
+from piped import log
 
 
 def run_trial():
@@ -66,6 +67,8 @@ def run_piped():
     overrides = json.loads(os.environ.get('PIPED_CONFIGURATION_OVERRIDES', '[]'))
     os.environ['PIPED_CONFIGURATION_OVERRIDES'] = json.dumps(overrides+args.override)
 
+    log.configure(args)
+
     twistd_config = _create_configuration_for_twistd(args)
     _run_twistd_with_config(twistd_config)
 
@@ -110,6 +113,7 @@ def _make_parser():
     parser.add_argument('-l', '--logfile',
                         help='log to a specified file, - for stdout. %%d in the filename will be replaced with "[config_basename].log" (default: "-")',
                         default='-')
+    parser.add_argument('-lc', '--logging-config', help='Path to a logging configuration file.')
     parser.add_argument('-p', '--pidfile',
                         help='Name of the pidfile. %%d in the filename will be replaced by the default. (default: "[config_basename].pid")')
     parser.add_argument('-d', '--rundir', help='Change to a supplied directory before running (default: ".")', default='.')
@@ -138,6 +142,7 @@ def _create_configuration_for_twistd(args):
 
     config['python'] = util.sibpath(__file__, 'service.tac')
     config['no_save'] = True
+    config['logger'] = lambda: log.observer.emit
 
     conf_without_extension = os.path.basename(config['conf']).rsplit('.', 1)[0]
     default_pidfile = '%s.pid'%conf_without_extension

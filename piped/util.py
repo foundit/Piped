@@ -4,6 +4,7 @@
 # See LICENSE for details.
 import datetime
 import itertools
+import logging
 import operator
 import os
 import sys
@@ -16,15 +17,13 @@ from twisted.internet import defer, reactor
 from twisted.application import service
 from twisted.python import failure, filepath, reflect
 
-from piped import log
-
 try:
     from collections import OrderedDict
 except ImportError:
     from ordereddict import OrderedDict
 
 
-""" Utility functions. """
+logger = logging.getLogger(__name__)
 
 
 def chunked(iterable, chunk_size):
@@ -536,7 +535,7 @@ class PullFromQueueAndProcessWithDependency(service.Service):
 
         self._process_input()
 
-        log.info('Starting pulling: %s using %s.'%(self.name, self.dependency_config['provider']))
+        logger.info('Starting pulling: %s using %s.'%(self.name, self.dependency_config['provider']))
 
     def stopService(self):
         service.Service.stopService(self)
@@ -544,7 +543,7 @@ class PullFromQueueAndProcessWithDependency(service.Service):
         if self._waiting_on_queue:
             self._waiting_on_queue.cancel()
 
-        log.info('Stopped pulling: %s.'%self.name)
+        logger.info('Stopped pulling: %s.'%self.name)
 
     @defer.inlineCallbacks
     def _process_input(self):
@@ -563,10 +562,10 @@ class PullFromQueueAndProcessWithDependency(service.Service):
                 processor = yield self._waiting_on_processor
                 self._waiting_on_processor = processor(baton)
                 yield self._waiting_on_processor
-            except Exception:
+            except Exception as e:
                 # An exception occurred while processing the baton, and we don't have anyone to inform
                 # so just log the exception and continue
-                log.error()
+                logger.error('Exception raised while processing baton', exc_info=True)
             finally:
                 self._waiting_on_processor = None
 

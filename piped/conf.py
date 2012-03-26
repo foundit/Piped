@@ -1,5 +1,6 @@
 # Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
+import logging
 import os
 import warnings
 from pprint import pformat
@@ -9,7 +10,10 @@ from twisted.python import filepath
 
 # We don't use yamlutil directly here, but import it as it registers custom constructors and representers.
 from piped import yamlutil
-from piped import log, exceptions, util
+from piped import exceptions, util
+
+
+logger = logging.getLogger(__name__)
 
 
 def _warn_because_file_is_loaded_multiple_times(path, visited_files):
@@ -24,9 +28,9 @@ def _warn_because_file_is_loaded_multiple_times(path, visited_files):
 
     # issue a simple warning, log more details with hints:
     warnings.warn(exceptions.ConfigurationWarning(msg))
-    log.debug('WARNING: %s' % msg)
-    log.debug('DETAIL: %s' % detail)
-    log.debug('HINT: %s' % hint)
+    logger.debug('WARNING: %s' % msg)
+    logger.debug('DETAIL: %s' % detail)
+    logger.debug('HINT: %s' % hint)
 
 
 class ConfigurationManager(object):
@@ -78,7 +82,7 @@ class ConfigurationManager(object):
         For an overview of how configuration is loaded, see :doc:`/topic/configuration`
         """
         filename = util.expand_filepath(filename)
-        log.debug('Loading configuration from: %s'%filename)
+        logger.debug('Loading configuration from: %s'%filename)
         self._fail_if_configuration_file_does_not_exist(filename)
 
         base_config = yaml.load(open(filename))
@@ -87,7 +91,7 @@ class ConfigurationManager(object):
 
         self._config = complete_config
 
-        log.debug('Loaded configuration: '+pformat(complete_config))
+        logger.debug('Loaded configuration: '+pformat(complete_config))
 
     def _load_config(self, config, visited_files):
         """ Handles the configuration object, including referenced configurations as

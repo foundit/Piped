@@ -676,28 +676,28 @@ class TestLogger(unittest.TestCase):
         self.assertRaises(exceptions.ConfigurationError, util_processors.Logger)
 
     def test_logging_with_default_level(self):
-        with mock.patch('piped.processors.util_processors.log') as mocked_log:
+        with mock.patch('piped.processors.util_processors.logging.root') as mocked_log:
             logger = util_processors.Logger(message='log message')
             logger.process(dict())
 
         mocked_log.info.assert_called_once_with('log message')
 
     def test_logging_with_custom_level(self):
-        with mock.patch('piped.processors.util_processors.log') as mocked_log:
+        with mock.patch('piped.processors.util_processors.logging.root') as mocked_log:
             logger = util_processors.Logger(message='error message', level='error')
             logger.process(dict())
 
         mocked_log.error.assert_called_once_with('error message')
 
     def test_logging_with_path(self):
-        with mock.patch('piped.processors.util_processors.log') as mocked_log:
+        with mock.patch('piped.processors.util_processors.logging.root') as mocked_log:
             logger = util_processors.Logger(message_path='log.message')
             logger.process(dict(log=dict(message='log message')))
 
         mocked_log.info.assert_called_once_with('log message')
 
     def test_not_logging_when_no_message(self):
-        with mock.patch('piped.processors.util_processors.log') as mocked_log:
+        with mock.patch('piped.processors.util_processors.logging.root') as mocked_log:
             logger = util_processors.Logger(message_path='log.message')
             logger.process(dict())
 

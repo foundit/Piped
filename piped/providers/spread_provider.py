@@ -1,5 +1,6 @@
 # Copyright (c) 2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
+import logging
 import random
 import weakref
 
@@ -10,7 +11,10 @@ from twisted.spread import pb
 from twisted.cred import portal, credentials
 from twisted.python import reflect
 
-from piped import resource, event, log, exceptions, util
+from piped import resource, event, exceptions, util
+
+
+logger = logging.getLogger(__name__)
 
 
 class PBClientProvider(object, service.MultiService):
@@ -436,14 +440,14 @@ class PipedPBClientFactory(pb.PBClientFactory, service.Service):
 
             self.retries += 1
             if self.max_retries is not None and (self.retries > self.max_retries):
-                log.info("Abandoning %s after %d retries." %(self.client, self.retries))
+                logger.info("Abandoning %s after %d retries." %(self.client, self.retries))
                 break
 
             self.delay = min(self.delay * self.factor, self.max_delay)
             if self.jitter:
                 self.delay = random.normalvariate(self.delay, self.delay * self.jitter)
 
-            log.info("%s will retry in %d seconds" % (self.client, self.delay,))
+            logger.info("%s will retry in %d seconds" % (self.client, self.delay,))
             yield util.wait(self.delay)
 
     def startService(self):
@@ -490,5 +494,4 @@ class PipedPBClientFactory(pb.PBClientFactory, service.Service):
 
     def _log_error_getting_root_object(self, reason):
         self.on_failed_getting_root_object(reason)
-        log.error(reason)
-        
+        logger.error('Error getting root object', exc_info=(reason.type, reason.value, reason.tb))

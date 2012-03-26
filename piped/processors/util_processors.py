@@ -6,6 +6,7 @@
 """ Utility processors that are useful in many contexts. """
 import collections
 import copy
+import logging
 import pdb
 import pprint
 import sys
@@ -16,8 +17,11 @@ from twisted.internet import defer, reactor
 from twisted.python import failure, reflect
 from zope import interface
 
-from piped import exceptions, util, log, processing, yamlutil
+from piped import exceptions, util, processing
 from piped.processors import base
+
+
+logger = logging.getLogger(__name__)
 
 
 class MergeWithDictProcessor(base.Processor):
@@ -28,12 +32,12 @@ class MergeWithDictProcessor(base.Processor):
     name = 'merge-with-dict'
     interface.classProvides(processing.IProcessor)
 
-    def __init__(self, dict=None, merge_args=dict(), **kw):
+    def __init__(self, dict=None, merge_args=None, **kw):
         super(MergeWithDictProcessor, self).__init__(**kw)
         self.dict = dict
         if dict is None:
             self.dict = dict()
-        self.merge_args = merge_args
+        self.merge_args = merge_args or dict()
         # Defaulting to true because most of the time we expect the
         # dictionary we pass into a pipeline to be the same dictionary
         # *instance* that is sent to every processor.
@@ -393,7 +397,7 @@ class LambdaProcessor(base.InputOutputProcessor):
         try:
             return self.lambda_(input)
         except:
-            log.error('Failed "%s"' % self.lambda_definition)
+            logger.error('Failed "%s"' % self.lambda_definition)
             raise
 
     def __unicode__(self):
@@ -868,7 +872,7 @@ class RateReporter(base.Processor):
 
         log_string = self.format % dict(rate=rate, delta=delta, value=value)
         if(rate != 0 or self.report_zero):
-            log.info(log_string)
+            logger.info(log_string)
         return baton
 
 
@@ -885,16 +889,20 @@ class Logger(base.Processor):
     interface.classProvides(processing.IProcessor)
     name = 'log'
 
-    def __init__(self, message=None, message_path=None, level='info', **kw):
+    def __init__(self, message=None, message_path=None, logger_name=None, level='info', **kw):
         super(Logger, self).__init__(**kw)
 
         if (message is None) + (message_path is None) != 1:
             raise exceptions.ConfigurationError('specify either message or message_path')
 
+        processor_logger = logging.root
+        if logger_name:
+            processor_logger = logging.getLogger(logger_name)
+
         level = level.lower()
         if level not in ('critical', 'debug', 'error', 'failure', 'info', 'warn'):
             raise ValueError('Invalid log-level: "%s"' % level)
-        self.logger = getattr(log, level)
+        self.logger = getattr(processor_logger, level)
 
         self.message = message
         self.message_path = message_path

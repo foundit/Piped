@@ -3,6 +3,7 @@
 import re
 import socket
 
+import mock
 from cyclone import web, httpclient
 from twisted.application import service
 from twisted.internet import defer
@@ -224,13 +225,14 @@ class CycloneProviderTest(unittest.TestCase):
         # start the web application
         yield self.service.startService()
 
-        try:
-            # perform the web request with debugging enabled so we can inspect the stack :)
-            defer.setDebugging(True)
+        with mock.patch.object(handlers, 'logger') as mocked_logger:
+            try:
+                # perform the web request with debugging enabled so we can inspect the stack :)
+                defer.setDebugging(True)
 
-            response = yield httpclient.fetch('http://localhost:{0}/'.format(port))
-        finally:
-            defer.setDebugging(False)
+                response = yield httpclient.fetch('http://localhost:{0}/'.format(port))
+            finally:
+                defer.setDebugging(False)
 
         self.assertEqual(response.code, 500)
         self.assertIn('web.Application Traceback (most recent call last)', response.body)
@@ -269,10 +271,11 @@ class CycloneProviderTest(unittest.TestCase):
         # start the web application
         yield self.service.startService()
 
-        response = yield httpclient.fetch('http://localhost:{0}/'.format(port))
+        with mock.patch.object(handlers, 'logger') as mocked_logger:
+            response = yield httpclient.fetch('http://localhost:{0}/'.format(port))
 
-        # we should get an error..
-        self.assertEqual(response.code, 500)
-        # .. but should be unable to debug because we're not in the debug_allow list.
-        self.assertNotIn('web.Application Traceback (most recent call last)', response.body)
-        self.assertIn('500: Internal Server Error', response.body)
+            # we should get an error..
+            self.assertEqual(response.code, 500)
+            # .. but should be unable to debug because we're not in the debug_allow list.
+            self.assertNotIn('web.Application Traceback (most recent call last)', response.body)
+            self.assertIn('500: Internal Server Error', response.body)

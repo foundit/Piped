@@ -1,5 +1,6 @@
 # Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
+import logging
 import os
 import sys
 import json
@@ -7,7 +8,10 @@ import json
 import yaml
 from twisted.internet import reactor
 
-from piped import log, exceptions, resource, processing
+from piped import exceptions, resource, processing
+
+
+logger = logging.getLogger('piped.service')
 
 
 runtime_environment = processing.RuntimeEnvironment()
@@ -27,7 +31,7 @@ def _on_configuration_loaded():
         # It's just a nicety, though, so don't blow up if we can't.
         pass
 
-    log.info('Starting service "%s" (PID %i).'%(service_name, os.getpid()))
+    logger.info('Starting service "%s" (PID %i).'%(service_name, os.getpid()))
 
     provider_plugin_manager = resource.ProviderPluginManager()
     provider_plugin_manager.configure(runtime_environment)
@@ -43,18 +47,11 @@ def bootstrap():
         _fail_if_no_configuration_file_is_specified(configuration_file_path)
 
         runtime_environment.configuration_manager.load_from_file(configuration_file_path)
-
-        # configure piped.log since it may be used by override-handler.
-        log.configure(runtime_environment)
-        
         _handle_configuration_overrides(runtime_environment.configuration_manager, overrides)
-
-        # reconfigure piped.log, as its configuration may have changed
-        log.configure(runtime_environment)
 
         _on_configuration_loaded()
     except:
-        log.critical()
+        logger.critical('Error while bootstrapping service.', exc_info=True)
         reactor.stop()
 
 
@@ -73,7 +70,7 @@ def _handle_configuration_overrides(configuration_manager, overrides):
             raise exceptions.ConfigurationError(e_msg, detail)
 
         for path, value in override_as_dict.items():
-            log.debug('Setting configuration override %r.'%path)
+            logger.debug('Setting configuration override %r.'%path)
             configuration_manager.set(path, value)
 
 def _fail_if_no_configuration_file_is_specified(configuration_file_path):

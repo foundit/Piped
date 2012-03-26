@@ -2,6 +2,7 @@
 
 # Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
+import logging
 import warnings
 
 import sqlalchemy as sa
@@ -10,7 +11,10 @@ from twisted.application import service
 from twisted.internet import defer, reactor, threads
 from twisted.python import failure
 
-from piped import event, exceptions, util, log
+from piped import event, exceptions, util
+
+
+logger = logging.getLogger(__name__)
 
 
 class DatabaseError(exceptions.PipedError):
@@ -47,7 +51,7 @@ class DatabaseMetadataManager(object, service.Service):
         self.on_connection_established = event.Event() #: Event called when a connection has been established. Provides a metadata instance as argument.
         self.on_connection_lost = event.Event()
         self.on_connection_failed = event.Event()
-        log_failure = lambda failure: log.error('A connection to "%s" failed: %s' % (self.database_name, failure.getErrorMessage()))
+        log_failure = lambda failure: logger.error('A connection to "%s" failed: %s' % (self.database_name, failure.getErrorMessage()))
         self.on_connection_failed += log_failure
         self.on_connection_failed += lambda failure: self.keep_reconnecting_and_report()
 
@@ -84,12 +88,12 @@ class DatabaseMetadataManager(object, service.Service):
         try:
             self._try_connecting()
         except sa.exc.SQLAlchemyError, e:
-            log.error('Could not connect to database "%s": %s' % (self.database_name, e))
+            logger.error('Could not connect to database "%s": %s' % (self.database_name, e))
             reactor.callFromThread(self.on_connection_failed, failure.Failure())
             raise
         else:
             self.is_connected = True
-            log.info('Connected to database "%s"' % self.database_name)
+            logger.info('Connected to database "%s"' % self.database_name)
             reactor.callFromThread(self.on_connection_established, self.metadata)
 
     def _configure_driver(self):
@@ -200,14 +204,14 @@ class DatabaseMetadataManager(object, service.Service):
         `wait_between_reconnect_tries` seconds. """
         while self.running:
             try:
-                log.debug('Trying to connect to database "%s"' % self.database_name)
+                logger.debug('Trying to connect to database "%s"' % self.database_name)
                 yield threads.deferToThread(self.test_connectivity)
                 yield threads.deferToThread(self.reconnected)
                 break
 
             except sa.exc.SQLAlchemyError, e:
                 reactor.callFromThread(self.on_connection_failed, failure.Failure())
-                log.error('Could not connect to database "%s": %s' % (self.database_name, e))
+                logger.error('Could not connect to database "%s": %s' % (self.database_name, e))
             yield util.wait(self.reconnect_wait)
 
         self._reconnect_deferred = None

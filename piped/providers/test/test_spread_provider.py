@@ -431,15 +431,17 @@ class PBClientTest(PBTestBase):
 
         self.replace_twisted_log_err()
 
-        client_wrong_password_factory_dependency = dm.add_dependency(self, dict(provider='pb.client.test_wrong_password_client'))
-        dm.resolve_initial_states()
+        with mock.patch.object(spread_provider, 'logger') as mocked_logger:
+            client_wrong_password_factory_dependency = dm.add_dependency(self, dict(provider='pb.client.test_wrong_password_client'))
+            dm.resolve_initial_states()
 
-        # trying to log in with an unauthorized login should result in an "unauthorized login"
-        wrong_pw_factory = yield client_wrong_password_factory_dependency.wait_for_resource()
-        (args, kwargs) = yield wrong_pw_factory.on_failed_getting_root_object.wait_until_fired()
-        reason = args[0]
+            # trying to log in with an unauthorized login should result in an "unauthorized login"
+            wrong_pw_factory = yield client_wrong_password_factory_dependency.wait_for_resource()
+            (args, kwargs) = yield wrong_pw_factory.on_failed_getting_root_object.wait_until_fired()
+            reason = args[0]
 
-        self.assertEquals(reason.type, 'twisted.cred.error.UnauthorizedLogin')
+            self.assertEquals(reason.type, 'twisted.cred.error.UnauthorizedLogin')
+            yield util.wait(0) # wait a reactor iteration so the event finishes processing
 
     @defer.inlineCallbacks
     def test_manual_login(self):

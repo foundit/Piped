@@ -1,10 +1,12 @@
+import logging
 import os
 import threading
 import zookeeper
 import sys
 from twisted.internet import reactor
 
-from piped import log
+
+logger = logging.getLogger(__name__)
 
 
 _installed = False
@@ -54,11 +56,11 @@ def _relay_log():
                 continue
 
             if level is None:
-                reactor.callFromThread(log_message, log.info, message)
+                reactor.callFromThread(log_message, logger.info, message)
             else:
-                reactor.callFromThread(log_message, getattr(log, level), message)
+                reactor.callFromThread(log_message, getattr(logger, level), message)
         except Exception as v:
-            log.error('Exception occurred while relaying zookeeper log: [{0}]'.format(v))
+            logger.error('Exception occurred while relaying zookeeper log.', exc_info=True)
 
 
 def is_installed():

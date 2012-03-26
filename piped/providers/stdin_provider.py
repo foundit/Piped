@@ -1,5 +1,6 @@
 # Copyright (c) 2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
+import logging
 import sys
 
 from twisted.application import service
@@ -7,7 +8,10 @@ from twisted.internet import defer, stdio, process, reactor, fdesc
 from twisted.protocols import basic
 from zope import interface
 
-from piped import event, exceptions, log, util, resource
+from piped import event, exceptions, util, resource
+
+
+logger = logging.getLogger(__name__)
 
 
 class StdinProvider(object, service.MultiService):
@@ -104,4 +108,4 @@ class StdinProtocol(basic.LineReceiver):
         try:
             raise StdinException(e_msg, hint, detail)
         except:
-            log.error()
+            logger.error('Line length exceeded', exc_info=True)

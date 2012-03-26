@@ -1,6 +1,7 @@
 # Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
 import copy
+import logging
 
 import pika
 from pika import connection, exceptions as pika_exceptions
@@ -10,7 +11,10 @@ from twisted.application import service
 from twisted.internet import reactor, defer, task, endpoints, error
 from twisted.python import failure
 
-from piped import log, resource, util, event, exceptions
+from piped import resource, util, event, exceptions
+
+
+logger = logging.getLogger(__name__)
 
 
 class AMQPConnectionProvider(object, service.MultiService):
@@ -223,7 +227,7 @@ class AMQPConnection(object, service.MultiService):
         while self.running:
             try:
                 server = self.get_next_server()
-                log.info('Connecting to {0}'.format(server))
+                logger.info('Connecting to {0}'.format(server))
 
                 endpoint = endpoints.clientFromString(reactor, server)
 
@@ -236,14 +240,14 @@ class AMQPConnection(object, service.MultiService):
             except (error.ConnectError, error.DNSLookupError, error.ConnectionDone) as ce:
                 # ConnectionDone might be raised because we managed to connect, but reached the
                 # max idle time during the AMQP handshake.
-                log.warn('Unable to connect: {0}'.format(repr(ce)))
+                logger.warn('Unable to connect: {0}'.format(repr(ce)))
                 self.on_disconnected(failure.Failure())
                 yield currently(util.wait(self.reconnect_interval))
                 continue
 
             except Exception as e:
                 # log any completely unexpected errors, wait a little, then retry.
-                log.warn()
+                logger.warn('Unexpected error caught while connecting', exc_info=True)
                 self.on_disconnected(failure.Failure())
                 yield currently(util.wait(self.reconnect_interval))
                 continue
@@ -396,7 +400,7 @@ class AMQPConsumer(object, service.Service):
         self.log_processor_exceptions = log_processor_exceptions
         if log_processor_exceptions:
             # make sure the provided log level actually exists:
-            available_log_levels = [key.lower() for key in log.level_value_by_name]
+            available_log_levels = [key.lower() for key in logging._levelNames.keys() if isinstance(key, basestring)]
             if log_processor_exceptions not in available_log_levels:
                 e_msg = 'Invalid log level {0!r}.'.format(log_processor_exceptions.lower())
                 hint = 'Available log levels: {0}'.format(available_log_levels)
@@ -442,14 +446,14 @@ class AMQPConsumer(object, service.Service):
                     self._process(channel, method, properties, body)
 
             except pika_exceptions.ChannelClosed as cc:
-                log.warn()
+                logger.warn('AMQP channel closed.', exc_info=True)
                 yield util.wait(self.channel_reopen_interval)
 
             except defer.CancelledError as ce:
                 return
 
             except Exception as e:
-                log.warn()
+                logger.warn()
 
     @defer.inlineCallbacks
     def _process(self, channel, method, properties, body):
@@ -457,8 +461,8 @@ class AMQPConsumer(object, service.Service):
             yield self.process(channel=channel, method=method, properties=properties, body=body)
         except Exception as e:
             if self.log_processor_exceptions:
-                logger = getattr(log, self.log_processor_exceptions.lower())
-                logger()
+                log_func = getattr(logger, self.log_processor_exceptions.lower())
+                log_func('Exception raised during processing', exc_info=True)
 
             if self.no_ack:
                 return

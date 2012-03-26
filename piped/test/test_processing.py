@@ -5,10 +5,9 @@ import difflib
 import pprint
 import warnings
 
-from mock import patch
 from twisted.internet import reactor, defer
 from twisted.trial import unittest
-from twisted.python import failure, reflect
+from twisted.python import failure
 from zope import interface
 
 from piped import exceptions, processing, util
@@ -1390,9 +1389,7 @@ class TestProcessorGraphFactory(ProcessorGraphTest):
                 ]
             )
             # These should not be recognized as pipeline configurations at all..
-            with patch.object(processing.log, 'info') as mocked_info:
-                self.assertConfigurationProperlyTransformed(invalid_pipeline_configuration, dict(), reason)
-                self.assertEquals(mocked_info.call_args_list, [(('No pipeline definitions were found in the configuration.',), {})])
+            self.assertConfigurationProperlyTransformed(invalid_pipeline_configuration, dict(), reason)
 
     def test_rewriting_invalid_processor_when_in_pipeline(self):
 

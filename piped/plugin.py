@@ -1,6 +1,7 @@
 # Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
 import functools
+import logging
 import pkgutil
 import re
 import warnings
@@ -8,20 +9,23 @@ import warnings
 from twisted import plugin as twisted_plugin
 from twisted.python import reflect, failure, log as twisted_log
 
-from piped import event, exceptions, log, util
+from piped import event, exceptions, util
+
+
+logger = logging.getLogger(__name__)
 
 
 def _plugin_error_handler(package):
     f = failure.Failure()
     f.trap(ImportError)
 
-    logger = log.error
+    log_func = logger.error
 
     # set the logger to info when running unit tests in order to avoid flooding
     if util.in_unittest():
-        logger = log.info
+        log_func = logger.info
 
-    logger('Failed loading plugins from package %r: %s(%s)' % (package.__name__, f.type.__name__, f.getErrorMessage()))
+    log_func('Failed loading plugins from package %r: %s(%s)' % (package.__name__, f.type.__name__, f.getErrorMessage()))
 
 
 def getPlugins(interface, package):

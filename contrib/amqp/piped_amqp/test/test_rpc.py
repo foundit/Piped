@@ -267,7 +267,7 @@ class TestRPC(unittest.TestCase):
         rpc_client.startService()
 
         with patch.object(rpc_client, 'process_response') as mocked_response:
-            with patch.object(rpc.log, 'warn') as mocked_warn:
+            with patch.object(rpc.logger, 'warn') as mocked_warn:
                 message_queue.put(failure.Failure(pika_exceptions.ChannelClosed('test closed')))
                 self.assertEquals(mocked_warn.call_count, 1)
 

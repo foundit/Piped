@@ -1,5 +1,6 @@
 # Copyright (c) 2012, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
+import logging
 import os
 import json
 
@@ -9,7 +10,10 @@ from twisted.internet import defer, reactor
 from twisted.web import util
 from twisted.python import failure
 
-from piped import debugger, log
+from piped import debugger
+
+
+logger = logging.getLogger(__name__)
 
 
 class DebuggableHandler(web.RequestHandler):
@@ -87,7 +91,7 @@ class DebuggableHandler(web.RequestHandler):
             ajax_endpoint = self.request.path + '?__debug__='+str(id(reason))
             full_url_to_debugger = self.request.protocol + '://' + self.request.host + ajax_endpoint
 
-            log.error('Debugger for [{0}] started at [{1}]'.format(reason.getErrorMessage(), full_url_to_debugger))
+            logger.error('Debugger for [{0}] started at [{1}]'.format(reason.getErrorMessage(), full_url_to_debugger))
 
             self.request.arguments['__debug__'] = [str(id(reason))]
             if self.request.remote_ip in self.settings.get('debug_allow', list()):
@@ -106,7 +110,7 @@ class DebuggableHandler(web.RequestHandler):
         try:
             return self.render_string(template_name, traceback_as_html=traceback_as_html, ajax_endpoint=ajax_endpoint)
         except Exception as e:
-            log.error()
+            logger.error('Error while rendering debug html template.', exc_info=True)
             raise e
 
     @classmethod

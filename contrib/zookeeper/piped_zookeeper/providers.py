@@ -1,5 +1,7 @@
 # Copyright (c) 2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
+import logging
+
 import zookeeper
 from zope import interface
 from twisted.application import service
@@ -7,9 +9,12 @@ from twisted.python import failure
 from twisted.internet import defer
 from txzookeeper import client
 
-from piped import resource, event, log, exceptions, util
+from piped import resource, event, exceptions, util
 
 from piped_zookeeper import log_stream
+
+
+logger = logging.getLogger(__name__)
 
 
 class DisconnectException(exceptions.PipedError):
@@ -143,12 +148,12 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
         if event.state_name == 'connected':
             if self.force_reconnect:
                 self.force_reconnect = False
-                log.info('Executing forceful reconnect for [{0}]'.format(self))
+                logger.info('Executing forceful reconnect for [{0}]'.format(self))
                 yield util.wait(0)
-                log.info('Stopping client (forceful reconnect) [{0}]'.format(self))
+                logger.info('Stopping client (forceful reconnect) [{0}]'.format(self))
                 yield self.stopService()
                 yield util.wait(0)
-                log.info('Starting client (forceful reconnect) [{0}]'.format(self))
+                logger.info('Starting client (forceful reconnect) [{0}]'.format(self))
                 self.forcing_reconnect = False
                 yield self.startService()
                 return
@@ -165,7 +170,7 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
             self._on_event('reconnecting')
 
             if not self.reuse_session and not self.forcing_reconnect:
-                log.info('A forceful reconnect has been queued for [{0}] in order to avoid reusing sessions'.format(self))
+                logger.info('A forceful reconnect has been queued for [{0}] in order to avoid reusing sessions'.format(self))
                 self.forcing_reconnect = True
                 self.force_reconnect = True
 
@@ -179,7 +184,7 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
             yield util.wait(0)
             yield self.startService()
         else:
-            log.warn('Unhandled event: {0}'.format(event))
+            logger.warn('Unhandled event: {0}'.format(event))
 
     def _check_result(self, result_code, deferred, extra_codes=()):
         d = defer.Deferred()
@@ -204,9 +209,13 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
             service.Service.startService(self)
             self._on_event('starting')
             if self.connecting:
-                log.warn('Started connecting before previous connect finished.')
+                logger.warn('Started connecting before previous connect finished.')
                 return
             # TODO: what if we have to stop/start during connecting?
+
+            if not self.handle and self.connected:
+                self.connected = False
+
             # TODO: handle connection timeouts
             # set a really high timeout (1 year) because we want txzookeeper to keep
             # trying to connect for a considerable amount of time.

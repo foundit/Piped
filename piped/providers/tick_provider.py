@@ -1,12 +1,16 @@
 # Copyright (c) 2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
+import logging
 import time
 
 from twisted.application import service
 from twisted.internet import defer
 from zope import interface
 
-from piped import event, log, util, resource
+from piped import event, util, resource
+
+
+logger = logging.getLogger(__name__)
 
 
 class TickProvider(object, service.MultiService):
@@ -126,7 +130,7 @@ class TickInterval(object, service.Service):
                 self._waiting_for_processor = processor(baton)
                 yield self._waiting_for_processor
             except Exception as e:
-                log.error()
+                logger.error('Error while waiting for waiting for processor', exc_info=True)
             finally:
                 self._waiting_for_processor = None
 

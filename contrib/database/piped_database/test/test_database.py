@@ -5,6 +5,7 @@
 gracefully and notify its customers upon connection, disconnections,
 etc. """
 import mocker
+import mock
 import sqlalchemy as sa
 from twisted.application import service
 from twisted.internet import defer
@@ -35,11 +36,6 @@ class DatabaseProviderTest(unittest.TestCase):
     def tearDown(self):
         self.mocker.restore()
         self.mocker.verify()
-
-    def disable_logging(self):
-        log = self.mocker.replace('piped.log')
-        log.error(mocker.ANY)
-        self.mocker.count(0, None)
 
     @defer.inlineCallbacks
     def test_connection_events_called(self):
@@ -101,21 +97,20 @@ class DatabaseProviderTest(unittest.TestCase):
 
         on_connection_failed = defer.Deferred()
         self.metadata_provider.on_connection_failed += on_connection_failed.callback
-
-        self.disable_logging()
         self.mocker.replay()
 
-        try:
-            self.metadata_provider.connect()
-            self.fail("Expected an SQLAlchemyError")
-        except sa.exc.SQLAlchemyError:
-            pass
+        with mock.patch.object(db, 'logger') as mocked_logger:
+            try:
+                self.metadata_provider.connect()
+                self.fail("Expected an SQLAlchemyError")
+            except sa.exc.SQLAlchemyError:
+                pass
 
-        try:
-            yield on_connection_failed
-            self.fail("Expected to a failure")
-        except sa.exc.SQLAlchemyError:
-            pass
+            try:
+                yield on_connection_failed
+                self.fail("Expected to a failure")
+            except sa.exc.SQLAlchemyError:
+                pass
 
         self.mocker.verify()
 
@@ -178,13 +173,14 @@ class DatabaseProviderTest(unittest.TestCase):
 
         self.mocker.replay()
 
-        # Start reconnecting
-        d = self.metadata_provider.keep_reconnecting_and_report()
-        # Check idempotency.
-        d2 = self.metadata_provider.keep_reconnecting_and_report()
-        self.assertEquals(d, d2)
+        with mock.patch.object(db, 'logger') as mocked_logger:
+            # Start reconnecting
+            d = self.metadata_provider.keep_reconnecting_and_report()
+            # Check idempotency.
+            d2 = self.metadata_provider.keep_reconnecting_and_report()
+            self.assertEquals(d, d2)
 
-        yield d
+            yield d
         # Make sure we are really connected when the reconnection-deferred has callbacked.
         self.metadata_provider.test_connectivity()
 
@@ -199,19 +195,19 @@ class DatabaseProviderTest(unittest.TestCase):
                             database_name='if_this_exists_it_is_my_own_fault_some_tests_fail',
                             timeout=timeout)
 
-        self.disable_logging()
         self.mocker.replay()
 
         # Make a new provider, since the default one from setUp is correctly configured.
         self.metadata_provider = db.DatabaseMetadataManager(wrong_config)
 
-        try:
-            self.metadata_provider.connect()
-            self.fail("The connect should fail")
-        except sa.exc.SQLAlchemyError:
-            pass
-        # wait one reactor iteration, so the callFromThread error from the connection-attempt gets executed
-        yield util.wait(0)
+        with mock.patch.object(db, 'logger') as mocked_logger:
+            try:
+                self.metadata_provider.connect()
+                self.fail("The connect should fail")
+            except sa.exc.SQLAlchemyError:
+                pass
+            # wait one reactor iteration, so the callFromThread error from the connection-attempt gets executed
+            yield util.wait(0)
 
     def test_connect_with_existing_metadata(self):
         """ Test that we can provide our own metadata. """
@@ -302,13 +298,14 @@ class TestDatabaseMetadataProvider(unittest.TestCase):
 
         self.mocker.replay()
 
-        provider.add_consumer(resource_dependency)
+        with mock.patch.object(db, 'logger') as mocked_logger:
+            provider.add_consumer(resource_dependency)
 
-        try:
-            yield d
-            self.fail('Expected the connect call to result in an exception')
-        except sa.exc.SQLAlchemyError:
-            pass
+            try:
+                yield d
+                self.fail('Expected the connect call to result in an exception')
+            except sa.exc.SQLAlchemyError:
+                pass
 
         self.mocker.verify()
 

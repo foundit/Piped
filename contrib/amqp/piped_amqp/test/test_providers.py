@@ -1,6 +1,5 @@
 # Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
-
 import mock
 from mock import patch
 from pika import frame, exceptions as pika_exceptions
@@ -203,7 +202,7 @@ class TestMockConnection(unittest.TestCase):
 
             mocked_connect.side_effect = connect
 
-            with patch.object(providers.log, 'warn') as mocked_warn:
+            with patch.object(providers.logger, 'warn') as mocked_warn:
                 connection.startService()
                 while connect_return_values:
                     yield util.wait(0)
@@ -469,7 +468,7 @@ class TestConsumer(unittest.TestCase):
         message_queue.put((mocked_channel, mock.Mock(name='method'), mock.Mock(name='properties'), 'test message body'))
         self.assertEquals(mocked_processor.call_count, 1)
 
-        with patch.object(providers.log, 'warn') as mocked_warn:
+        with patch.object(providers.logger, 'warn') as mocked_warn:
             consumer.stopService()
             consumer.startService()
 
@@ -503,7 +502,7 @@ class TestConsumer(unittest.TestCase):
         # only one channel should have been created at the moment
         self.assertEquals(mocked_connection.channel.call_count, 1)
 
-        with patch.object(providers.log, 'warn') as mocked_warn:
+        with patch.object(providers.logger, 'warn') as mocked_warn:
             message_queue.put(failure.Failure(pika_exceptions.ChannelClosed()))
 
         # wait for the reopen interval to pass:
@@ -535,7 +534,7 @@ class TestConsumer(unittest.TestCase):
         mocked_processor.side_effect = failure.Failure(Exception('test exception'))
 
         # but putting message into the queue should result in the processor being invoked
-        with patch.object(providers.log, 'warn') as mocked_warn:
+        with patch.object(providers.logger, 'warn') as mocked_warn:
             mocked_method = mock.Mock(name='method')
             self.assertEquals(mocked_warn.call_count, 0)
             message_queue.put((mocked_channel, mocked_method, mock.Mock(name='properties'), 'test message body'))
@@ -567,7 +566,7 @@ class TestConsumer(unittest.TestCase):
         mocked_processor.side_effect = failure.Failure(Exception('test exception'))
 
         # but putting message into the queue should result in the processor being invoked
-        with patch.object(providers.log, 'warn') as mocked_warn:
+        with patch.object(providers.logger, 'warn') as mocked_warn:
             mocked_method = mock.Mock(name='method')
             self.assertEquals(mocked_warn.call_count, 0)
             message_queue.put((mocked_channel, mocked_method, mock.Mock(name='properties'), 'test message body'))
@@ -585,7 +584,7 @@ class TestConsumer(unittest.TestCase):
         consumer.processor_dependency.on_resource_ready(mocked_processor)
         mocked_processor.return_value = failure.Failure(Exception('test exception'))
 
-        with patch.object(providers.log, 'warn') as mocked_warn:
+        with patch.object(providers.logger, 'warn') as mocked_warn:
             mocked_method = mock.Mock(name='method')
             consumer._process(mock.Mock(name='channel'), mocked_method, mock.Mock(name='properties'), 'test message body')
 
@@ -600,7 +599,7 @@ class TestConsumer(unittest.TestCase):
         consumer.processor_dependency.on_resource_ready(mocked_processor)
         mocked_processor.return_value = failure.Failure(Exception('test exception'))
 
-        with patch.object(providers.log, 'critical') as mocked_critical:
+        with patch.object(providers.logger, 'critical') as mocked_critical:
             self.assertEquals(mocked_critical.call_count, 0)
             mocked_method = mock.Mock(name='method')
             consumer._process(mock.Mock(name='channel'), mocked_method, mock.Mock(name='properties'), 'test message body')
@@ -627,7 +626,7 @@ class TestConsumer(unittest.TestCase):
         for return_value in [failure.Failure(Exception('test_exception')), 'test result']:
             mocked_processor.return_value = return_value
 
-            with patch.object(providers.log, 'warn') as mocked_warn:
+            with patch.object(providers.logger, 'warn') as mocked_warn:
                 message_queue.put((mocked_channel, mock.Mock(name='method'), mock.Mock(name='properties'), 'test message body'))
 
             # since no_ack is True, neither message should be acked/nacked

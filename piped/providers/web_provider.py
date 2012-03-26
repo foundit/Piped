@@ -2,21 +2,24 @@
 # See LICENSE for details.
 import json
 import datetime
+import logging
 import weakref
 
 from zope import interface
 from twisted.internet import defer, task
-from twisted.web import server, resource, static, util as web_util, http, http_headers
-from twisted.web.test import test_web
-from twisted.application import service, internet, strports
+from twisted.web import server, resource, static, util as web_util, http
+from twisted.application import service, strports
 
-from piped import exceptions, log, util, debugger
+from piped import exceptions, util, debugger
 from piped import resource as piped_resource
 
 try:
     from cStringIO import StringIO
 except ImportError:
     from StringIO import StringIO
+
+
+logger = logging.getLogger(__name__)
 
 
 STANDARD_HTML_TEMPLATE = """
@@ -227,9 +230,9 @@ class WebSite(object, service.MultiService):
         routing = self.site_configuration['routing']
 
         if self.debug_configuration:
-            log.debug('Debugging enabled for site "%s": %s.' % (self.site_name, self.debug_configuration))
+            logger.debug('Debugging enabled for site "%s": %s.' % (self.site_name, self.debug_configuration))
             if not self.debug_configuration['allow']:
-                log.warn('No clients are currently allowed to debug on site "%s".' % self.site_name)
+                logger.warn('No clients are currently allowed to debug on site "%s".' % self.site_name)
 
         root_resource = WebResource(self, routing)
         root_resource.configure(runtime_environment)
@@ -244,7 +247,7 @@ class WebSite(object, service.MultiService):
     def log_exception(self, failure):
         if not self.log_exceptions_level:
             return
-        logger = getattr(log, self.log_exceptions_level)
+        logger = getattr(logger, self.log_exceptions_level)
         logger(failure)
 
 
@@ -376,7 +379,7 @@ class WebDebugHandler(resource.Resource, service.Service):
             if client_name in self.allow:
                 return True
         formatted_client_name = ' or '.join(['"%s"' % client_name for client_name in list(set(client_names))])
-        log.debug('A client identified by %s attempted to access a debugging resource, but was denied.' % formatted_client_name)
+        logger.debug('A client identified by %s attempted to access a debugging resource, but was denied.' % formatted_client_name)
         return False
 
     def getChildWithDefault(self, path, request):
@@ -626,7 +629,7 @@ class WebResource(resource.Resource):
         baton = dict(request=request_proxy)
         d = defer.maybeDeferred(self._process_baton_with_processor, baton, processor_dependency)
         d.addErrback(self._delayed_errback, request=request_proxy)
-        d.addErrback(log.error)
+        d.addErrback(lambda reason: logger.error('Exception raised while handling an error in a web processor.', exc_info=(reason.type, reason.value, reason.tb)))
         # The end result of this deferred cannot contain a reference to the request_proxy in any
         # way, since that will affect the garbage collection of the request_proxy. Because of this,
         # we always replace its final callback/errback result with None, after any error handling and
@@ -647,7 +650,7 @@ class WebResource(resource.Resource):
     def _handle_deferred_gc(self, ref, request):
         """ This function is called when the request_proxy in the baton have been finalized. """
         # if the client haven't gotten a response, just finish the request
-        log.debug('Garbage collecting for request: %s'%request)
+        logger.debug('Garbage collecting for request: %s'%request)
         if not request.finished and request.channel:
             request.finish()
         self._weakrefs.remove(ref)

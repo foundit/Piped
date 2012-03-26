@@ -1,12 +1,17 @@
 # Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
+import logging
+
 from zope import interface
 from pika import exceptions as pika_exceptions
 from twisted.application import service
 from twisted.internet import defer, reactor
 from twisted.python import reflect
 
-from piped import log, resource, util, event, dependencies
+from piped import resource, util, event, dependencies
+
+
+logger = logging.getLogger(__name__)
 
 
 class RPCClientProvider(object, service.MultiService):
@@ -155,7 +160,7 @@ class RPCClientBase(object, service.Service):
             # we're ready to start consuming now:
             self._consume_queue()
         except defer.CancelledError as ce:
-            log.info('Initialization of %r was cancelled.' % self)
+            logger.info('Initialization of %r was cancelled.' % self)
 
     def _handle_disconnect(self):
         self.connection = None
@@ -195,7 +200,7 @@ class RPCClientBase(object, service.Service):
                 self.process_response(channel, method, properties, body)
 
         except pika_exceptions.ChannelClosed as cc:
-            log.warn()
+            logger.warn('AMQP channel closed.', exc_info=True)
             self.consuming_dependency.fire_on_lost('channel closed')
             self._handle_disconnect()
 

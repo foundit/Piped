@@ -1,5 +1,6 @@
 # Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
+import logging
 import threading
 import time
 
@@ -8,7 +9,10 @@ from twisted.application import service
 from twisted.internet import reactor, defer, task
 from zope import interface
 
-from piped import exceptions, log, resource, dependencies, util
+from piped import exceptions, resource, dependencies
+
+
+logger = logging.getLogger(__name__)
 
 
 class SocketError(exceptions.PipedError):
@@ -74,10 +78,9 @@ class ZMQSocketProvider(object):
         for socket_name, socket in self._socket_by_name.items():
             try:
                 socket.close()
-            except:
+            except Exception as e:
                 # Nothing we can do, but we'll want to try to close the other sockets.
-                log.error('Could not close ZeroMQ-socket named "%s"' % socket_name)
-                util.reraise_if_should_exit()
+                logger.error('Could not close ZeroMQ-socket named "%s"' % socket_name, exc_info=True)
 
     def configure(self, runtime_environment):
         self.runtime_environment = runtime_environment
@@ -173,14 +176,14 @@ class ZMQSocketProvider(object):
     def _configure_binds(self):
         for socket, bind_specs in self._sockets_to_bind:
             for bind_spec in bind_specs:
-                log.info('Binding %s to %s.'%(self._name_by_socket[socket], bind_spec))
+                logger.info('Binding %s to %s.'%(self._name_by_socket[socket], bind_spec))
                 socket.bind(bind_spec)
         self._sockets_to_bind = []
 
     def _configure_connects(self):
         for socket, connect_specs in self._sockets_to_connect:
             for connect_spec in connect_specs:
-                log.info('Connecting %s to %s.'%(self._name_by_socket[socket], connect_spec))
+                logger.info('Connecting %s to %s.'%(self._name_by_socket[socket], connect_spec))
                 socket.connect(connect_spec)
         self._sockets_to_connect = []
 
@@ -270,7 +273,7 @@ class ZMQProcessorFeeder(object):
         self_dependency.on_ready.wait_until_fired().addCallback(lambda _: self._register_in_poller())
 
     def _log_process_error(self, reason):
-        log.error(reason)
+        logger.error('Error during processing', exc_info=(reason.type, reason.value, reason.tb))
 
     def _register_in_poller(self):
         self.socket_poller.register_socket(self, self.socket_dependency.get_resource())
@@ -286,8 +289,8 @@ class ZMQProcessorFeeder(object):
                     # the batons come from.
                     cooperative = task.cooperate(iter([defer.maybeDeferred(processor, message).addErrback(self._log_process_error)]))
                     yield cooperative.whenDone()
-                except Exception:
-                    log.error()
+                except Exception as e:
+                    logger.error('Error while handling messages', exc_info=True)
         finally:
             self._register_in_poller()
 

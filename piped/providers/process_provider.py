@@ -1,5 +1,6 @@
 # Copyright (c) 2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
+import logging
 import os
 
 from twisted.application import service
@@ -8,7 +9,10 @@ from twisted.protocols import basic
 from twisted.python import reflect, failure
 from zope import interface
 
-from piped import event, exceptions, log, util, resource
+from piped import event, exceptions, util, resource
+
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessProvider(object, service.Service):
@@ -290,15 +294,15 @@ class DefaultProcessProtocol(protocol.ProcessProtocol):
             return self.stdin_protocol
 
     def connectionMade(self):
-        log.info('Process %s has started.'%self.process_name)
+        logger.info('Process %s has started.'%self.process_name)
         for protocol in self.stdout_protocol, self.stderr_protocol, self.stdin_protocol:
             protocol.connectionMade()
 
     def processEnded(self, reason):
         if reason.value == error.ProcessDone:
-            log.info('Process %s terminated normally.'%self.process_name)
+            logger.info('Process %s terminated normally.'%self.process_name)
         else:
-            log.warn('Process %s terminated with exit code %s.'%(self.process_name, reason.value.exitCode))
+            logger.warn('Process %s terminated with exit code %s.'%(self.process_name, reason.value.exitCode))
 
         for protocol in self.stdout_protocol, self.stderr_protocol, self.stdin_protocol:
             protocol.processEnded(reason)
@@ -379,7 +383,7 @@ class DefaultOutput(basic.LineReceiver):
     def lineReceived(self, line):
         baton = dict(line=line)
         if not self.processor_config:
-            log.debug('Output from process %s on %s ignored because no processor were configured. Output was: %s.'%(self.process_protocol.process_name, self.type, line))
+            logger.debug('Output from process %s on %s ignored because no processor were configured. Output was: %s.'%(self.process_protocol.process_name, self.type, line))
         else:
             self.deferred_queue.put(baton)
 
@@ -394,7 +398,7 @@ class DefaultOutput(basic.LineReceiver):
         try:
             raise exceptions.PipedError(e_msg, detail, hint)
         except:
-            log.error()
+            logger.error('Line length exceeded', exc_info=True)
 
     def connectionMade(self):
         pass

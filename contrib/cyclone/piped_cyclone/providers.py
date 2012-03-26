@@ -1,14 +1,18 @@
 # Copyright (c) 2012, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
 import copy
+import logging
 
 from cyclone import web
 from zope import interface
 from twisted.application import strports
 from twisted.python import reflect, filepath
 
-from piped import resource, exceptions, log
+from piped import resource, exceptions
 from piped_cyclone import handlers
+
+
+logger = logging.getLogger(__name__)
 
 
 class InvalidHandlerError(exceptions.PipedError):
@@ -109,7 +113,7 @@ class CycloneProvider(object):
 
         for name, config in cm.get(self.configuration_key, dict()).items():
             if not config.get('enabled', True):
-                log.info('Not starting cyclone site [{0}] because it is disabled.'.format(name))
+                logger.info('Not starting cyclone site [{0}] because it is disabled.'.format(name))
                 continue
 
             # take a deep copy of the configurations, since we're going to modify it

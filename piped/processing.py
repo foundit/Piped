@@ -7,6 +7,7 @@ dataflow graphs and evaluating them.
 """
 import collections
 import inspect
+import logging
 import pprint
 import time
 import warnings
@@ -21,7 +22,10 @@ from twisted.plugin import IPlugin
 from twisted.python import failure
 from zope import interface
 
-from piped import exceptions, graph, log, util, conf, resource, dependencies, processors as piped_processors, plugin, plugins
+from piped import exceptions, graph, util, conf, resource, dependencies, processors as piped_processors, plugin, plugins
+
+
+logger = logging.getLogger(__name__)
 
 
 class IProcessor(IPlugin):
@@ -552,7 +556,7 @@ class ProcessorGraphFactory(object):
         self.pipelines_configuration = self._get_pipeline_configuration(runtime_environment)
 
         if not self.pipelines_configuration:
-            log.info('No pipeline definitions were found in the configuration.')
+            logger.info('No pipeline definitions were found in the configuration.')
 
         self.plugin_manager = ProcessorPluginManager()
         self.plugin_manager.configure(runtime_environment)
@@ -1021,7 +1025,7 @@ class ProcessorGraphFactory(object):
                                    provided_args='", "'.join(processor_configuration.keys()))
             hint = None
         else:
-            log.error('Error when creating plugin %s' % (plugin_name, ))
+            logger.error('Error when creating plugin %s' % (plugin_name, ))
             raise
         raise exceptions.ConfigurationError(e_msg, detail, hint)
 

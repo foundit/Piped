@@ -1,16 +1,21 @@
 # Copyright (c) 2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
 import json
+import logging
+import sys
 
 from twisted.internet import defer, reactor, threads
 from zope import interface
 
-from piped import exceptions, log, resource, util
+from piped import exceptions, resource, util
 
 try:
     import cPickle as pickle
 except ImportError:
     import pickle
+
+
+logger = logging.getLogger(__name__)
 
 
 class NoSuchContextError(exceptions.PipedError):
@@ -151,9 +156,9 @@ class PersistedContextProvider(object):
             else:
                 context = pickle.load(file_path.open())
 
-            reactor.callFromThread(log.info, 'Loaded context "%s" from "%s"' % (context_name, file_path.path))
+            reactor.callFromThread(logger.info, 'Loaded context {0!r} from {1!r}'.format(context_name, file_path.path))
         except Exception, e:
-            reactor.callFromThread(log.error, 'Could not load persisted context "%s": %s' % (context_name, e.args[0]))
+            reactor.callFromThread(logger.error, 'Could not load persisted context {0!r}'.format(context_name), exc_info=sys.exc_info())
             # Fallbacking to the initial_data.
 
         self._contexts_to_persist[context_name] = context
@@ -182,5 +187,5 @@ class PersistedContextProvider(object):
             else:
                 yield threads.deferToThread(pickle.dump, context, file_path.open('w'))
         except Exception, e:
-            log.error('Could not persist context "%s": %s' % (context_name, e.args[0]))
+            logger.error('Could not persist context {0}'.format(context_name), exc_info=True)
             raise
