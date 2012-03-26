@@ -60,9 +60,6 @@ def run_piped():
     if args.conf:
         os.environ['PIPED_CONFIGURATION_FILE'] = args.conf
 
-    if args.logfile == '-' and not args.nodaemon:
-        parser.error('Daemons cannot log to stdout. Use -n to avoid daemonizing.')
-
     # append the command line overrides to the environment overrides
     overrides = json.loads(os.environ.get('PIPED_CONFIGURATION_OVERRIDES', '[]'))
     os.environ['PIPED_CONFIGURATION_OVERRIDES'] = json.dumps(overrides+args.override)
@@ -110,10 +107,8 @@ def _make_parser():
     parser.add_argument('-v', '--version', action=VersionAction, help='Print version information and exit.', nargs=0)
 
     parser.add_argument('-n', '--nodaemon', action='store_true', help='don\'t daemonize, don\'t use default umask of 0077')
-    parser.add_argument('-l', '--logfile',
-                        help='log to a specified file, - for stdout. %%d in the filename will be replaced with "[config_basename].log" (default: "-")',
-                        default='-')
-    parser.add_argument('-lc', '--logging-config', help='Path to a logging configuration file.')
+    parser.add_argument('-l', '--logging-config', help='Path to a logging configuration file.')
+
     parser.add_argument('-p', '--pidfile',
                         help='Name of the pidfile. %%d in the filename will be replaced by the default. (default: "[config_basename].pid")')
     parser.add_argument('-d', '--rundir', help='Change to a supplied directory before running (default: ".")', default='.')
@@ -146,13 +141,11 @@ def _create_configuration_for_twistd(args):
 
     conf_without_extension = os.path.basename(config['conf']).rsplit('.', 1)[0]
     default_pidfile = '%s.pid'%conf_without_extension
-    default_logfile = '%s.log'%conf_without_extension
 
     if not config.get('pidfile'):
         config['pidfile'] = default_pidfile
 
     config['pidfile'] = config['pidfile'].replace('%d', default_pidfile)
-    config['logfile'] = config['logfile'].replace('%d', default_logfile)
 
     twistd_config = twistd.ServerOptions()
     twistd_config.update(config)

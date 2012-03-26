@@ -2,7 +2,6 @@
 # See LICENSE for details.
 """ Utilities for bootstrapping the logging system. """
 import time
-import datetime
 
 import yaml
 import logging
@@ -52,6 +51,7 @@ class UTCFormatter(logging.Formatter):
             # TODO: more custom formats
             datefmt = datefmt.replace('%03.f', '%03.f'%record.msecs)
         return super(UTCFormatter, self).formatTime(record, datefmt)
+
 
 def configure(args):
     logging_config = filepath.FilePath(piped.__file__).sibling('logging.yaml')

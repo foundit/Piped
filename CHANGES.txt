@@ -1,5 +1,17 @@
 ================================ Next release ================================
 
+
+========================== Release 0.4.0 2012-02-26 ==========================
+
+Backward-incompatible changes:
+    - piped.log is deprecated and the standard Python logging module should
+      be used instead.
+
+    - ``piped -l`` now no longer is the name of a file to log to, but the name
+      of a logging configuration file. See the ``logging.yaml`` file included
+      in the piped distribution for example usage.
+
+
 ========================== Release 0.3.2 2012-02-18 ==========================
 
 Internal changes:
