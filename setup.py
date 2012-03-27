@@ -13,7 +13,7 @@ import piped
 
 packages = find_packages(where=here)
 package_data = {
-    'piped': ['conf.yml', 'service.tac'],
+    'piped': ['conf.yml', 'logging.yaml', 'service.tac'],
     'piped.test': [
         'data/bar.txt', 'data/foo.txt', 'data/test_conf.yml',
         'data/test_includes.yml', 'data/baz/bar.baz', 'data/baz/foo.bar',
