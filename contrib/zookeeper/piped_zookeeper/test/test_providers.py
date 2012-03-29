@@ -36,7 +36,8 @@ class TestClientProvider(unittest.TestCase):
 
         # set the client to started, which should provide the client as a resource
         internal_client = provider._client_by_name['test_client']
-        internal_client._started()
+        internal_client._create_client = lambda: mock.Mock()
+        yield internal_client.startService()
 
         client = dependency.get_resource()
         self.assertIsInstance(client, providers.PipedZookeeperClient)

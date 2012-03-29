@@ -1,11 +1,16 @@
 version: 1
 
 root:
-    level: DEBUG
+    level: INFO
     handlers:
       - console
       #- file
       #- graylog2
+
+loggers:
+    piped:
+        level: INFO # override to affect logging for piped only
+        handlers: [console]
 
 handlers:
   console:

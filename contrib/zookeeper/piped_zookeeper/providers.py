@@ -84,111 +84,11 @@ class ZookeeperClientProvider(object, service.MultiService):
         return self._client_by_name[client_name]
 
 
-class PipedZookeeperClient(client.ZookeeperClient, service.Service):
-    possible_events = ('starting', 'stopping', 'connected', 'reconnecting', 'reconnected', 'expired')
-    connecting = None
-    connected = False
-    force_reconnect = False
-    forcing_reconnect = False
-    
-    def __init__(self, reuse_session = True, events = None, *a, **kw):
-        super(PipedZookeeperClient, self).__init__(*a, **kw)
-        self.reuse_session = reuse_session
-        self.events = events or dict()
-
-        self.on_connected = event.Event()
-        self.on_connected += lambda _: setattr(self, 'connected', True)
-        self.on_disconnected = event.Event()
-        self.on_disconnected += lambda _: setattr(self, 'connected', False)
-
-        self.set_session_callback(self._watch_connection)
-        self._cache = dict()
-        self.on_disconnected += lambda _: self._cache.clear()
-        self._pending = dict()
-
-        self.cached_get_children = self._cached(self.get_children_and_watch)
-        self.cached_get = self._cached(self.get_and_watch)
-        self.cached_exists = self._cached(self.exists_and_watch)
-
-    def configure(self, runtime_environment):
-        for key, value in self.events.items():
-            if key not in self.possible_events:
-                e_msg = 'Invalid event: {0}.'.format(key)
-                detail = 'Use one of the possible events: {0}'.format(self.possible_events)
-                raise exceptions.ConfigurationError(e_msg, detail)
-
-            self.events[key] = dict(provider=value) if isinstance(value, basestring) else value
-        
-        self.dependencies = runtime_environment.create_dependency_map(self, **self.events)
-
-    def _started(self, result=None):
-        self.connecting = None
-        if not self.forcing_reconnect:
-            self.on_connected(self)
-        self._on_event('connected')
-        return result
-
-    @defer.inlineCallbacks
-    def _on_event(self, event_name):
-        if self.forcing_reconnect:
-            return
-
-        baton = dict(event=event_name, client=self)
-
-        try:
-            processor = yield self.dependencies.wait_for_resource(event_name)
-            yield processor(baton)
-        except KeyError as ae:
-            # we have no processor for this event
-            pass
-
-    @defer.inlineCallbacks
-    def _watch_connection(self, client, event):
-        # see client.STATE_NAME_MAPPING for possible values for event.state_name
-        if event.state_name == 'connected':
-            if self.force_reconnect:
-                self.force_reconnect = False
-                logger.info('Executing forceful reconnect for [{0}]'.format(self))
-                yield util.wait(0)
-                logger.info('Stopping client (forceful reconnect) [{0}]'.format(self))
-                yield self.stopService()
-                yield util.wait(0)
-                logger.info('Starting client (forceful reconnect) [{0}]'.format(self))
-                self.forcing_reconnect = False
-                yield self.startService()
-                return
-
-            if self.forcing_reconnect:
-                return
-
-            self.on_connected(self)
-            self._on_event('reconnected')
-        elif event.state_name == 'connecting':
-            # TODO: if we're in "connecting" for too long, give up and give us a new connection (old session might be bad
-            #       because the server rollbacked -- see https://issues.apache.org/jira/browse/ZOOKEEPER-832)
-            self.on_disconnected(failure.Failure(DisconnectException(event.state_name)))
-            self._on_event('reconnecting')
-
-            if not self.reuse_session and not self.forcing_reconnect:
-                logger.info('A forceful reconnect has been queued for [{0}] in order to avoid reusing sessions'.format(self))
-                self.forcing_reconnect = True
-                self.force_reconnect = True
-
-        elif event.state_name == 'expired':
-            self.on_disconnected(failure.Failure(DisconnectException(event.state_name)))
-            self._on_event(event.state_name)
-            # force a full reconnect in order to ensure we get a new session
-            yield util.wait(0)
-            yield self.stopService()
-            self.forcing_reconnect = self.force_reconnect = False
-            yield util.wait(0)
-            yield self.startService()
-        else:
-            logger.warn('Unhandled event: {0}'.format(event))
-
+class ZookeeperClient(client.ZookeeperClient):
     def _check_result(self, result_code, deferred, extra_codes=()):
+        """ Overriden to provide tracebacks on exceptions """
         d = defer.Deferred()
-        result = super(PipedZookeeperClient, self)._check_result(result_code, d, extra_codes)
+        result = super(ZookeeperClient, self)._check_result(result_code, d, extra_codes)
         if d.called:
             maybe_error = d.result
             if isinstance(maybe_error, Exception):
@@ -204,41 +104,119 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
         d.chainDeferred(deferred)
         return result
 
+
+class PipedZookeeperClient(object, service.Service):
+    possible_events = ('starting', 'stopping', 'connected', 'reconnecting', 'reconnected', 'expired')
+    connected = False
+    _current_client = None
+    
+    def __init__(self, servers=None, session_timeout=None, reuse_session=True, events=None):
+        self.servers = self._servers = servers
+        self.session_timeout = self._session_timeout = session_timeout
+        self.reuse_session = reuse_session
+        self.events = events or dict()
+
+        self.on_connected = event.Event()
+        self.on_connected += lambda _: setattr(self, 'connected', True)
+        self.on_disconnected = event.Event()
+        self.on_disconnected += lambda _: setattr(self, 'connected', False)
+
+        self._cache = dict()
+        self.on_disconnected += lambda _: self._cache.clear()
+        self._pending = dict()
+
+    def configure(self, runtime_environment):
+        for key, value in self.events.items():
+            if key not in self.possible_events:
+                e_msg = 'Invalid event: {0}.'.format(key)
+                detail = 'Use one of the possible events: {0}'.format(self.possible_events)
+                raise exceptions.ConfigurationError(e_msg, detail)
+
+            self.events[key] = dict(provider=value) if isinstance(value, basestring) else value
+        
+        self.dependencies = runtime_environment.create_dependency_map(self, **self.events)
+
+    def _create_client(self):
+        zk = ZookeeperClient(servers=self.servers, session_timeout=self.session_timeout)
+        zk.set_session_callback(self._watch_connection)
+        return zk
+
+    def _started(self, client):
+        if client != self._current_client:
+            return
+
+        self.cached_get_children = self._cached(client.get_children_and_watch)
+        self.cached_get = self._cached(client.get_and_watch)
+        self.cached_exists = self._cached(client.exists_and_watch)
+
+        self.on_connected(self)
+        self._on_event('connected')
+
+    @defer.inlineCallbacks
+    def _on_event(self, event_name):
+        baton = dict(event=event_name, client=self)
+
+        try:
+            processor = yield self.dependencies.wait_for_resource(event_name)
+            yield processor(baton)
+        except KeyError as ae:
+            # we have no processor for this event
+            pass
+
+    @defer.inlineCallbacks
+    def _watch_connection(self, client, event):
+        if client != self._current_client or event.path != '':
+            return
+
+        # see client.STATE_NAME_MAPPING for possible values for event.state_name
+        if event.state_name == 'connected':
+            self.on_connected(self)
+            self._on_event('reconnected')
+
+        elif event.state_name == 'connecting':
+            # TODO: if we're in "connecting" for too long, give up and give us a new connection (old session might be bad
+            #       because the server rollbacked -- see https://issues.apache.org/jira/browse/ZOOKEEPER-832)
+            self.on_disconnected(failure.Failure(DisconnectException(event.state_name)))
+            self._on_event('reconnecting')
+
+            if self.reuse_session and self._current_client:
+                logger.info('[{0}] is reconnecting with a new client in order to avoid reusing sessions.'.format(self))
+                yield self.stopService()
+                yield self.startService()
+
+        elif event.state_name == 'expired':
+            self.on_disconnected(failure.Failure(DisconnectException(event.state_name)))
+            self._on_event(event.state_name)
+            # force a full reconnect in order to ensure we get a new session
+            yield self.stopService()
+            yield self.startService()
+
+        else:
+            logger.warn('Unhandled event: {0}'.format(event))
+
+
     def startService(self):
         if not self.running:
             service.Service.startService(self)
             self._on_event('starting')
-            if self.connecting:
-                logger.warn('Started connecting before previous connect finished.')
-                return
-            # TODO: what if we have to stop/start during connecting?
-
-            if not self.handle and self.connected:
-                self.connected = False
-
             # TODO: handle connection timeouts
             # set a really high timeout (1 year) because we want txzookeeper to keep
             # trying to connect for a considerable amount of time.
-            self.connecting = self.connect(timeout=60*60*24*365)
-            return self.connecting.addCallbacks(self._started, self._stopped)
+            self._current_client = self._create_client()
+            return self._current_client.connect(timeout=60*60*24*365).addCallback(self._started)
 
-    def _stopped(self, failure):
-        self.connecting = None
-        return failure
-
-    @defer.inlineCallbacks
     def stopService(self):
         if self.running:
             service.Service.stopService(self)
 
             self._on_event('stopping')
 
-            # don't try to close if we don't have a handle.
-            if self.handle is not None:
-                yield self.close()
+            # don't try to close if we don't have a client
+            if self._current_client:
+                defer.maybeDeferred(self._current_client.close).addErrback(lambda _: None)
+                self._current_client = None
 
             self.on_disconnected(failure.Failure(DisconnectException('stopping service')))
-            self.handle = None
 
     def _cached(self, func):
         def wrapper(*a, **kw):
@@ -309,3 +287,11 @@ class PipedZookeeperClient(client.ZookeeperClient, service.Service):
 
                 except zookeeper.NoNodeException as nne:
                     continue
+
+    def __getattr__(self, item):
+        client = self._current_client
+
+        if not client:
+            raise AttributeError
+
+        return getattr(client, item)
