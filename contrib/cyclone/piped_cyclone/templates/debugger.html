@@ -6,6 +6,12 @@
 $(document).ready(function() {
     var ajax_endpoint = "{{ ajax_endpoint }}";
 
+    $("body").bind("ajaxSend", function(elm, xhr, s){
+       if (s.type == "POST") {
+          xhr.setRequestHeader('X-CSRFToken', "{{ handler.xsrf_token }}");
+       }
+    });
+
     $('.frame,.firstFrame').each(function(i, item) {
         // Make the location div clickable
         var location = $(item).find('.location');
