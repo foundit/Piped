@@ -1,5 +1,16 @@
 ================================ Next release ================================
 
+========================== Release 0.4.2 2012-02-29 ==========================
+
+Internal changes:
+    - The bundled logging.yaml configuration file now defaults to "INFO"
+      instead of "DEBUG"
+
+    - The Cyclone contrib now includes XSRF-tokens in the debugging template.
+
+Backward-incompatible changes:
+    - The ZooKeeper contrib now proxies a client instead of subclassing it
+      in order to more easily facilitate reconnects.
 
 ========================== Release 0.4.0 2012-02-26 ==========================
 
