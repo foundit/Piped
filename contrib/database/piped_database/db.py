@@ -21,213 +21,106 @@ class DatabaseError(exceptions.PipedError):
     pass
 
 
-class DatabaseMetadataManager(object, service.Service):
-    """ Class that handles all establishing, losing, and re-establishing
-    connections to a database.
+class EngineManager(object, service.Service):
 
-    TODO: Remove false limitation to MySQL and Postgres.
-    """
+    def __init__(self, configuration, profile_name):
+        self.configuration = configuration
+        self.profile_name = profile_name
+        configuration.setdefault('ping_interval', 10.0)
+        configuration.setdefault('retry_interval', 5.0)
 
-    def __init__(self, database_configuration):
-        self.database_configuration = database_configuration
-
-        for key in ('database_name', 'user', 'password'):
-            setattr(self, key, database_configuration.get(key))
-
-        # Options for which we'll provide a default:
-        for key, default in (('protocol', 'postgresql'), ('pool_size', 10), ('timeout', 1), ('reconnect_wait', 10),
-                             ('host', '')): # The empty string as a host means use local socket
-            setattr(self, key, database_configuration.get(key, default))
-        if not self.protocol in ('postgresql', 'mysql'):
-            raise ValueError('The provider currently only works with PostgreSQL and MySQL, not ' + self.protocol)
-
-        # Options to provide to the underlying DBAPI-driver.
-        self.dbapi_options = database_configuration.get('dbapi_options', {})
+        self._fail_if_configuration_is_invalid(configuration)
+        configuration['engine'].setdefault('proxy', ConnectionProxy(self))
 
         self.is_connected = False
-        self.engine = None
-        self.port = None # The default port is set by _configure_(postgres|mysql)
+        self.currently = util.create_deferred_state_watcher(self)
+        self.engine = sa.engine_from_config(configuration['engine'], prefix='')
 
-        self.on_connection_established = event.Event() #: Event called when a connection has been established. Provides a metadata instance as argument.
+        self.on_connection_established = event.Event()
         self.on_connection_lost = event.Event()
         self.on_connection_failed = event.Event()
-        log_failure = lambda failure: logger.error('A connection to "%s" failed: %s' % (self.database_name, failure.getErrorMessage()))
-        self.on_connection_failed += log_failure
-        self.on_connection_failed += lambda failure: self.keep_reconnecting_and_report()
-
-        self._reconnect_deferred = None
-        self._should_reflect = False
-        self._has_reflected = False
-        self.metadata = None
-        self.metadata_factory = sa.MetaData
-
-    def connect(self, reflect=True, existing_metadata=None):
-        """ Connect to the database.
-
-        When a connection has been established, the
-        `on_connection_established` is invoked with the metadata.
-        If connecting fails, the `on_connection_failed` is invoked
-        with the failure.
-
-        :param reflect: If true, reflects the tables and their relations.
-
-        :param existing_metadata: If provided, use this existing
-            metadata instead of creating a metadata instance.
-
-        :param reconnect_on_failure: If true, keeps reconnecting if the initial
-            attempt fails.
-        """
-        if self.is_connected:
-            return
-
-        self._should_reflect = reflect
-
-        self._configure_driver()
-        self._make_metadata(existing_metadata)
-
-        try:
-            self._try_connecting()
-        except sa.exc.SQLAlchemyError, e:
-            logger.error('Could not connect to database "%s": %s' % (self.database_name, e))
-            reactor.callFromThread(self.on_connection_failed, failure.Failure())
-            raise
-        else:
-            self.is_connected = True
-            logger.info('Connected to database "%s"' % self.database_name)
-            reactor.callFromThread(self.on_connection_established, self.metadata)
-
-    def _configure_driver(self):
-        if self.protocol == 'postgresql':
-            self._configure_postgres()
-        else:
-            self._configure_mysql()
-
-    def _configure_mysql(self):
-        """ Configure a MySQL engine. """
-        self.port = self.database_configuration.get('port', 3306)
-
-        self.dbapi_options.setdefault('connect_timeout', self.timeout)
-
-        # Unicode dammit! :)
-        self.dbapi_options.setdefault('charset', 'utf8')
-        self.dbapi_options.setdefault('use_unicode', '1')
-
-        dsn = sa.engine.url.URL('mysql', self.user, self.password, self.host, self.port,
-                                self.database_name, self.dbapi_options)
-
-
-        self.engine = sa.create_engine(dsn, convert_unicode=True, proxy=ConnectionProxy(self))
-
-    def _configure_postgres(self):
-        """ Configure a PostgreSQL engine. """
-        self.port = self.database_configuration.get('port', 5432)
-        engine_description = 'postgresql://%s/%s' % (self.host, self.database_name)
-        # The effort here is to get to Psycopg2's connect_timeout, which it for some
-        # reason does *NOT* provide through dbapi-options.
-        pool = sa.pool.QueuePool(self._raw_connect_postgres, pool_size=self.pool_size)
-        self.engine = sa.create_engine(engine_description, pool=pool, proxy=ConnectionProxy(self))
-
-    def _raw_connect_postgres(self):
-        """ Gets a raw dbapi-connection to the database """
-        import psycopg2
-        c_string = "user='%s' host='%s' port='%i' dbname='%s' password='%s' connect_timeout=%i" % \
-            (self.user, self.host, self.port, self.database_name, self.password, self.timeout)
-
-        try:
-            return psycopg2.connect(c_string)
-        except psycopg2.OperationalError:
-            raise sa.exc.OperationalError(c_string, {}, None)
-
-    def _make_metadata(self, existing_metadata):
-        if existing_metadata:
-            self.metadata = existing_metadata
-            self.metadata.bind  = self.engine
-        else:
-            self.metadata = self.metadata_factory(self.engine)
-
-    def _try_connecting(self):
-        if self._should_reflect:
-            self._reflect()
-        else:
-            self.test_connectivity()
-
-    def _reflect(self):
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore', sa.exc.SAWarning)
-            self.metadata.reflect()
-        self._has_reflected = True
-
-    def disconnect(self):
-        """ Disconnect from the database.
-
-        This closes all active connections in the underlying
-        connection pool, and calls the `on_connection_lost`. """
-        self.metadata.bind.dispose()
-        reactor.callFromThread(self.on_connection_lost)
-
-    def test_connectivity(self):
-        """ Test the connectivity and return `True` if the
-        connectivity works --- throw an exception otherwise.
-
-        :Exceptions:
-            :exc:`sa.exc.SQLAlchemyError`
-               An exception indicating why the connectivity is broken.
-
-        :todo: What if the pool is full and the connect() blocks forever? """
-        assert self.metadata, "No metadata, have never been connected in the first place."
-        self.metadata.bind.connect().execute(sa.select([1])).scalar() == 1
-        self.is_connected = True
-
-    def reconnected(self):
-        """ Called when a connection has been re-established.
-
-        This will do reflection if necessary and call the
-        `on_connection_established`. It will also callback any
-        active reconnection-deferred.
-        """
-        if self._should_reflect and not self._has_reflected:
-            self._reflect()
-
-        reactor.callFromThread(self.on_connection_established, self.metadata)
-
-    def keep_reconnecting_and_report(self):
-        """ Returns a deferred that is callbacked when connectivity
-        has been re-established. """
-        self._warn_if_reactor_is_not_running()
-        if not self._reconnect_deferred:
-            self._reconnect_deferred = self._test_connection_until_working()
-        return self._reconnect_deferred
-
-    @defer.inlineCallbacks
-    def _test_connection_until_working(self):
-        """ Keep trying to connect. Calls itself every
-        `wait_between_reconnect_tries` seconds. """
-        while self.running:
-            try:
-                logger.debug('Trying to connect to database "%s"' % self.database_name)
-                yield threads.deferToThread(self.test_connectivity)
-                yield threads.deferToThread(self.reconnected)
-                break
-
-            except sa.exc.SQLAlchemyError, e:
-                reactor.callFromThread(self.on_connection_failed, failure.Failure())
-                logger.error('Could not connect to database "%s": %s' % (self.database_name, e))
-            yield util.wait(self.reconnect_wait)
-
-        self._reconnect_deferred = None
-        defer.returnValue(self.metadata)
 
     @classmethod
-    def _warn_if_reactor_is_not_running(cls):
-        if reactor.running or util.in_unittest():
+    def _fail_if_configuration_is_invalid(cls, configuration):
+        if not configuration.get('engine'):
+            raise exceptions.ConfigurationError('no engine-configuration provided')
+        if not configuration['engine'].get('url'):
+            raise exceptions.ConfigurationError('missing database-URL')
+        if not configuration['ping_interval']:
+            detail = 'currently set to "%r"' % configuration['ping_interval']
+            raise exceptions.ConfigurationError('Please specify a non-zero ping-interval', detail)
+
+    def startService(self):
+        if self.running:
             return
 
-        msg = 'connection attempted without running Twisted reactor'
-        detail = ('The reconnect mechanism is based on having a running Twisted reactor. '
-                  'Either ensure that Twisted is running, don\'t expect reconnecting to happen or '
-                  'implement a checker thread.')
-        warning = exceptions.PipedWarning(msg, detail)
-        warnings.warn(warning)
+        service.Service.startService(self)
+        self._connect_and_stay_connected()
+
+    def stopService(self):
+        if not self.running:
+            return
+
+        service.Service.stopService(self)
+        if self._currently:
+            self._currently.cancel()
+
+    @defer.inlineCallbacks
+    def _connect_and_stay_connected(self):
+        try:
+            while self.running:
+                connection = None
+                try:
+                    # Connect and ping. The engine is a pool, so we're not
+                    # really establishing new connections all the time.
+                    logger.info('Attempting to connect to "{0}"'.format(self.profile_name))
+                    connection = yield self.currently(threads.deferToThread(self.engine.connect))
+                    # If the connection was previously established and
+                    # just returned from the pool, ping to make sure it's Still Alive.
+                    try:
+                        yield self.currently(self._test_connectivity(connection))
+                    except sa.exc.OperationalError as e:
+                        connection.close()
+                        raise
+                    logger.info('Connected to "{0}"'.format(self.profile_name))
+
+                    if not self.is_connected:
+                        self.on_connection_established(self.engine)
+
+                    self.is_connected = True
+
+                    try:
+                        while self.running:
+                            yield self.currently(util.wait(self.configuration['ping_interval']))
+                            yield self.currently(self._test_connectivity(connection))
+                    except defer.CancelledError:
+                        pass
+                    finally:
+                        connection.close()
+
+                except sa.exc.OperationalError as e:
+                    logger.error('Error with engine "{0}": {1}'.format(self.profile_name, e.message))
+                    failure_ = failure.Failure()
+                    if self.is_connected:
+                        logger.error('Lost connection to "{0}"'.format(self.profile_name))
+                        self.on_connection_lost(failure_)
+
+                    self.is_connected = False
+                    self.on_connection_failed(failure_)
+
+                    yield self.currently(util.wait(self.configuration['retry_interval']))
+
+                except defer.CancelledError:
+                    pass
+
+        except Exception as e:
+            logger.error('Unhandled exception in _connect_and_stay_connected. Traceback follows')
+            logger.error()
+        finally:
+            self.engine.dispose()
+
+    def _test_connectivity(self, connection):
+        return threads.deferToThread(connection.execute, "SELECT 'ping'")
 
 
 class ConnectionProxy(sqlalchemy.interfaces.ConnectionProxy):

@@ -1,8 +1,0 @@
-includes:
-    - !pipedpath conf.yml
-
-test_database:
-    protocol: postgresql
-    database_name: piped_trial
-    user: piped_trial
-    timeout: 1
