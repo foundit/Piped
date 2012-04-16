@@ -19,12 +19,12 @@ handlers:
     stream: ext://sys.stdout
     #level: DEBUG
 
-  graylog2:
-    class: graypy.GELFHandler
-    formatter: default
-    host: localhost
-    port: 12201
-    #level: DEBUG
+#   graylog2:
+#     class: graypy.GELFHandler
+#     formatter: default
+#     host: localhost
+#     port: 12201
+#     #level: DEBUG
 
   file:
     class : logging.handlers.RotatingFileHandler
