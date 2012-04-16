@@ -135,6 +135,8 @@ class EngineProviderTest(unittest.TestCase):
         self.assertEquals(self.mocker.mock_calls, [
             mock.call.engine.connect(),
             mock.call.connection.execute("SELECT 'ping'"),
+            mock.call.connection.close(),
+            mock.call.engine.connect(),
             mock.call.connection.execute("SELECT 'ping'"),
             mock.call.connection.close(),
             mock.call.engine.connect(),

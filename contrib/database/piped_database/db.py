@@ -69,19 +69,11 @@ class EngineManager(object, service.Service):
     def _connect_and_stay_connected(self):
         try:
             while self.running:
-                connection = None
                 try:
                     # Connect and ping. The engine is a pool, so we're not
                     # really establishing new connections all the time.
                     logger.info('Attempting to connect to "{0}"'.format(self.profile_name))
-                    connection = yield self.currently(threads.deferToThread(self.engine.connect))
-                    # If the connection was previously established and
-                    # just returned from the pool, ping to make sure it's Still Alive.
-                    try:
-                        yield self.currently(self._test_connectivity(connection))
-                    except sa.exc.OperationalError as e:
-                        connection.close()
-                        raise
+                    yield self.currently(threads.deferToThread(self._test_connectivity, self.engine))
                     logger.info('Connected to "{0}"'.format(self.profile_name))
 
                     if not self.is_connected:
@@ -92,11 +84,9 @@ class EngineManager(object, service.Service):
                     try:
                         while self.running:
                             yield self.currently(util.wait(self.configuration['ping_interval']))
-                            yield self.currently(self._test_connectivity(connection))
+                            yield self.currently(threads.deferToThread(self._test_connectivity, self.engine))
                     except defer.CancelledError:
                         pass
-                    finally:
-                        connection.close()
 
                 except sa.exc.OperationalError as e:
                     logger.error('Error with engine "{0}": {1}'.format(self.profile_name, e.message))
@@ -114,13 +104,16 @@ class EngineManager(object, service.Service):
                     pass
 
         except Exception as e:
-            logger.error('Unhandled exception in _connect_and_stay_connected. Traceback follows')
-            logger.error()
+            logger.exception('Unhandled exception in _connect_and_stay_connected. Traceback follows')
         finally:
             self.engine.dispose()
 
-    def _test_connectivity(self, connection):
-        return threads.deferToThread(connection.execute, "SELECT 'ping'")
+    def _test_connectivity(self, engine):
+        connection = engine.connect()
+        try:
+            connection.execute("SELECT 'ping'")
+        finally:
+            connection.close()
 
 
 class ConnectionProxy(sqlalchemy.interfaces.ConnectionProxy):
