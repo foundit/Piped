@@ -9,7 +9,7 @@ import sqlalchemy as sa
 import sqlalchemy.interfaces
 from twisted.application import service
 from twisted.internet import defer, reactor, threads
-from twisted.python import failure
+from twisted.python import failure, reflect
 
 from piped import event, exceptions, util
 
@@ -34,11 +34,18 @@ class EngineManager(object, service.Service):
 
         self.is_connected = False
         self.currently = util.create_deferred_state_watcher(self)
+
         self.engine = sa.engine_from_config(configuration['engine'], prefix='')
+        self._bind_events()
 
         self.on_connection_established = event.Event()
         self.on_connection_lost = event.Event()
         self.on_connection_failed = event.Event()
+
+    def _bind_events(self):
+        for event, list_of_handlers in self.configuration.get('events', dict()).items():
+            for handler_name in list_of_handlers:
+                sa.event.listen(self.engine, event, reflect.namedAny(handler_name))
 
     @classmethod
     def _fail_if_configuration_is_invalid(cls, configuration):
