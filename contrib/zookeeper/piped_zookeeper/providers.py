@@ -165,11 +165,15 @@ class PipedZookeeperClient(object, service.Service):
 
     @defer.inlineCallbacks
     def _watch_connection(self, client, event):
+        if client != self._current_client and client.connected:
+            client.close()
+
         if client != self._current_client or event.path != '':
             return
 
         # see client.STATE_NAME_MAPPING for possible values for event.state_name
         if event.state_name == 'connected':
+            self._cache.clear()
             self.on_connected(self)
             self._on_event('reconnected')
 
@@ -292,6 +296,6 @@ class PipedZookeeperClient(object, service.Service):
         client = self._current_client
 
         if not client:
-            raise AttributeError
+            raise zookeeper.ClosingException()
 
         return getattr(client, item)

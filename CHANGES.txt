@@ -1,5 +1,17 @@
 ================================ Next release ================================
 
+========================== Release 0.4.3 2012-06-12 ==========================
+
+Internal changes:
+    - The ZooKeeper contrib is more determined about closing previous
+      connections to avoid leaking unused clients and clears its cache
+      when connections are re-established.
+
+Backward-incompatible changes:
+    - The ZooKeeper contrib now raises zookeeper.ClosingException exceptions
+      for attempted method calls to a stopped client instead of the previous
+      AttributeError
+
 ========================== Release 0.4.2 2012-02-29 ==========================
 
 Internal changes:
