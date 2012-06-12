@@ -1,5 +1,11 @@
 ================================ Next release ================================
 
+========================== Release 0.4.4 2012-06-12 ==========================
+
+Bug fixes:
+    - No longer requires graypy by default via the logging configuration.
+    - Buildout now refers to the correct contrib package names.
+
 ========================== Release 0.4.3 2012-06-12 ==========================
 
 Internal changes:
