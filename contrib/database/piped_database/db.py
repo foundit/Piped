@@ -2,7 +2,9 @@
 
 # Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
+import collections
 import logging
+import urlparse
 import warnings
 
 import sqlalchemy as sa
@@ -15,6 +17,14 @@ from piped import event, exceptions, util
 
 
 logger = logging.getLogger(__name__)
+
+
+try:
+    import psycopg2
+    from txpostgres import txpostgres
+except ImportError:
+    psycopg2 = None
+    txpostgres = None
 
 
 class DatabaseError(exceptions.PipedError):
@@ -139,3 +149,117 @@ class ConnectionProxy(sqlalchemy.interfaces.ConnectionProxy):
         except self.intercepted_exceptions:
             reactor.callFromThread(self.manager.on_connection_failed, failure.Failure())
             raise
+
+
+class PostgresListener(object, service.Service):
+
+    def __init__(self, configuration, profile_name):
+        if not txpostgres and psycopg2:
+            raise exceptions.ConfigurationError('cannot use PostgresListener without psycopg2 and txpostgres')
+
+        self.configuration = configuration
+        self.profile_name = profile_name
+        self.currently = util.create_deferred_state_watcher(self)
+        self._connection = None
+        self._listeners = collections.defaultdict(set)
+
+        self.is_connected = False
+        self.on_connection_established = event.Event()
+        self.on_connection_lost = event.Event()
+        self.on_connection_failed = event.Event()
+
+        configuration.setdefault('ping_interval', 10.0)
+        configuration.setdefault('retry_interval', 5.0)
+
+    def _connect(self):
+        url = urlparse.urlparse(self.configuration['engine']['url'])
+        dsn = dict(
+            database=url.path.strip('/'),
+            password=url.password,
+            user=url.username,
+            host=url.hostname,
+            port=url.port
+        )
+
+        self._connection = txpostgres.Connection()
+        return self._connection.connect(**dsn)
+        
+    def startService(self):
+        if self.running:
+            return
+
+        service.Service.startService(self)
+        self._connect_and_listen()
+
+    def stopService(self):
+        if not self.running:
+            return
+
+        service.Service.stopService(self)
+        if self._connection:
+            self._connection.close()
+
+    def _notify(self, notification):
+        for queue in self._listeners[notification.channel]:
+            queue.put(notification)
+
+    @defer.inlineCallbacks
+    def _connect_and_listen(self):
+        try:
+            while self.running:
+                try:
+                    logger.info('PostgresListener attempting to connect to "{0}"'.format(self.profile_name))
+                    yield self.currently(self._connect())
+                    self.is_connected = True
+                    yield self.currently(self._connection.runOperation("SET application_name TO '%s-listener'" % self.profile_name))                    
+                    self._connection.addNotifyObserver(self._notify)
+                    logger.info('PostgresListener connected "{0}"'.format(self.profile_name))
+                    self.on_connection_established(self)
+
+                    try:
+                        while self.running:
+                            yield self.currently(util.wait(self.configuration['ping_interval']))
+                            yield self.currently(self._test_connectivity())
+                    except defer.CancelledError:
+                        pass
+                    
+                except psycopg2.Error:
+                    failure_ = failure.Failure()
+                    if self.is_connected:
+                        self.on_connection_lost(failure_)
+                    self.is_connected = False
+                    self.on_connection_failed(failure_)
+                    
+                    yield self.currently(util.wait(self.configuration['retry_interval']))
+                    
+                except defer.CancelledError:
+                    pass
+
+        except Exception as e:
+            logger.exception('Unhandled exception in _connect_and_listen. Traceback follows')
+
+    @defer.inlineCallbacks
+    def listen(self, events):
+        dq = defer.DeferredQueue()
+        for event in events:
+            if not self._listeners[event]:
+                yield self._connection.runOperation('LISTEN "%s"' % event)
+                logger.info('"%s"-listener is now listening to "%s"' % (self.profile_name, event))
+            
+            self._listeners[event].add(dq)
+
+        defer.returnValue(dq)
+
+    @defer.inlineCallbacks
+    def unlisten(self, queue):
+        1/0
+        for listener_name, queues in self._listeners.items():
+            if queue in queues:
+                queues.discard(queue)
+                if not queues:
+                    yield self._connection.runOperation('UNLISTEN "%s"' % listener_name)
+                    logger.info('"%s"-listener is now NOT listening to "%s"' % (self.profile_name, listener_name))
+                    
+
+    def _test_connectivity(self):
+        return self._connection.runOperation("SELECT 'ping'")

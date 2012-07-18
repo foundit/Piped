@@ -1,3 +1,3 @@
 from piped_database import version
 
-from piped_database.providers import DatabaseEngineProvider
+from piped_database.providers import DatabaseEngineProvider, PostgresListenProvider
