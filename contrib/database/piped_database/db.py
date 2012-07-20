@@ -211,6 +211,7 @@ class PostgresListener(object, service.Service):
                     logger.info('PostgresListener attempting to connect to "{0}"'.format(self.profile_name))
                     yield self.currently(self._connect())
                     self.is_connected = True
+                    yield self.currently(self._connection.runOperation("SET SESSION TIMEZONE TO 'UTC'"))
                     yield self.currently(self._connection.runOperation("SET application_name TO '%s-listener'" % self.profile_name))                    
                     self._connection.addNotifyObserver(self._notify)
                     logger.info('PostgresListener connected "{0}"'.format(self.profile_name))
