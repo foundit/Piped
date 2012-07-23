@@ -85,48 +85,47 @@ class EngineManager(object, service.Service):
 
     @defer.inlineCallbacks
     def _connect_and_stay_connected(self):
-        try:
-            while self.running:
+        while self.running:
+            try:
+                # Connect and ping. The engine is a pool, so we're not
+                # really establishing new connections all the time.
+                logger.info('Attempting to connect to "{0}"'.format(self.profile_name))
+                yield self.currently(threads.deferToThread(self._test_connectivity, self.engine))
+                logger.info('Connected to "{0}"'.format(self.profile_name))
+
+                if not self.is_connected:
+                    self.on_connection_established(self.engine)
+
+                self.is_connected = True
+
                 try:
-                    # Connect and ping. The engine is a pool, so we're not
-                    # really establishing new connections all the time.
-                    logger.info('Attempting to connect to "{0}"'.format(self.profile_name))
-                    yield self.currently(threads.deferToThread(self._test_connectivity, self.engine))
-                    logger.info('Connected to "{0}"'.format(self.profile_name))
-
-                    if not self.is_connected:
-                        self.on_connection_established(self.engine)
-
-                    self.is_connected = True
-
-                    try:
-                        while self.running:
-                            yield self.currently(util.wait(self.configuration['ping_interval']))
-                            yield self.currently(threads.deferToThread(self._test_connectivity, self.engine))
-                    except defer.CancelledError:
-                        pass
-
-                except sa.exc.OperationalError as e:
-                    logger.error('Error with engine "{0}": {1}'.format(self.profile_name, e.message))
-                    failure_ = failure.Failure()
-                    if self.is_connected:
-                        logger.error('Lost connection to "{0}"'.format(self.profile_name))
-                        self.on_connection_lost(failure_)
-
-                    self.is_connected = False
-                    self.on_connection_failed(failure_)
-
-                    yield self.currently(util.wait(self.configuration['retry_interval']))
-
+                    while self.running:
+                        yield self.currently(util.wait(self.configuration['ping_interval']))
+                        yield self.currently(threads.deferToThread(self._test_connectivity, self.engine))
                 except defer.CancelledError:
                     pass
 
-        except Exception as e:
-            logger.exception('Unhandled exception in _connect_and_stay_connected. Traceback follows')
-        finally:
-            self.engine.dispose()
+            except Exception as e:
+                logger.error('Error with engine "{0}": {1}'.format(self.profile_name, e.message))
+                failure_ = failure.Failure()
+                if self.is_connected:
+                    logger.error('Lost connection to "{0}"'.format(self.profile_name))
+                    self.on_connection_lost(failure_)
+
+                self.is_connected = False
+                self.on_connection_failed(failure_)
+
+                yield self.currently(util.wait(self.configuration['retry_interval']))
+
+            except defer.CancelledError:
+                pass
+
+            finally:
+                self.engine.dispose()
 
     def _test_connectivity(self, engine):
+        # This is actually checking in and out of an engine pool. We're not actually
+        # establishing new connections all the time.
         connection = engine.connect()
         try:
             connection.execute("SELECT 'ping'")
@@ -235,6 +234,7 @@ class PostgresListener(object, service.Service):
                             pass
                     
                 except psycopg2.Error:
+                    logger.exception('Database failure. Traceback follows')
                     failure_ = failure.Failure()
                     if self.is_connected:
                         self.on_connection_lost(failure_)
