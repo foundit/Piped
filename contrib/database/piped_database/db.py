@@ -4,6 +4,7 @@
 # See LICENSE for details.
 import collections
 import logging
+import heapq
 import urlparse
 import warnings
 
@@ -162,6 +163,7 @@ class PostgresListener(object, service.Service):
         self.currently = util.create_deferred_state_watcher(self)
         self._connection = None
         self._listeners = collections.defaultdict(set)
+        self._txid_queue = []
 
         self.is_connected = False
         self.on_connection_established = event.Event()
@@ -170,8 +172,10 @@ class PostgresListener(object, service.Service):
 
         configuration.setdefault('ping_interval', 10.0)
         configuration.setdefault('retry_interval', 5.0)
+        configuration.setdefault('txid_poll_interval', .1)      
 
     def _connect(self):
+        # TODO: Failing to connect.
         url = urlparse.urlparse(self.configuration['engine']['url'])
         dsn = dict(
             database=url.path.strip('/'),
@@ -198,6 +202,8 @@ class PostgresListener(object, service.Service):
         service.Service.stopService(self)
         if self._connection:
             self._connection.close()
+        if self._currently:
+            self._currently.cancel()
 
     def _notify(self, notification):
         for queue in self._listeners[notification.channel]:
@@ -217,12 +223,16 @@ class PostgresListener(object, service.Service):
                     logger.info('PostgresListener connected "{0}"'.format(self.profile_name))
                     self.on_connection_established(self)
 
-                    try:
-                        while self.running:
-                            yield self.currently(util.wait(self.configuration['ping_interval']))
-                            yield self.currently(self._test_connectivity())
-                    except defer.CancelledError:
-                        pass
+                    while self.running:
+                        try:
+                            if self.is_waiting_for_txid_min:
+                                yield self.currently(util.wait(self.configuration['txid_poll_interval']))
+                                yield self.currently(self._check_txid_threshold())
+                            else:
+                                yield self.currently(util.wait(self.configuration['ping_interval']))
+                                yield self.currently(self._ping())
+                        except defer.CancelledError:
+                            pass
                     
                 except psycopg2.Error:
                     failure_ = failure.Failure()
@@ -253,14 +263,39 @@ class PostgresListener(object, service.Service):
 
     @defer.inlineCallbacks
     def unlisten(self, queue):
-        1/0
         for listener_name, queues in self._listeners.items():
             if queue in queues:
                 queues.discard(queue)
                 if not queues:
                     yield self._connection.runOperation('UNLISTEN "%s"' % listener_name)
                     logger.info('"%s"-listener is now NOT listening to "%s"' % (self.profile_name, listener_name))
-                    
 
-    def _test_connectivity(self):
+    def wait_for_txid_min(self, txid):
+        """ Returns a Deferred that is callbacked with the current
+        txid_min when txid_min is >= txid. """
+        d = defer.Deferred()
+        heapq.heappush(self._txid_queue, (txid, d))
+
+        if self._currently:
+            # In case we're waiting to do a ping. Don't wait that long if someone wants txids.
+            self._currently.cancel()
+        return d
+
+    @property
+    def is_waiting_for_txid_min(self):
+        return bool(self._txid_queue)
+
+    def _ping(self):
         return self._connection.runOperation("SELECT 'ping'")
+
+    @defer.inlineCallbacks
+    def _get_current_txid_min(self):
+        rs = yield self._connection.runQuery('SELECT txid_snapshot_xmin(txid_current_snapshot())')
+        defer.returnValue(rs[0][0])
+
+    @defer.inlineCallbacks
+    def _check_txid_threshold(self):
+        txid_min = yield self._get_current_txid_min()
+        while self.running and self._txid_queue and self._txid_queue[0][0] <= txid_min:
+            heapq.heappop(self._txid_queue)[1].callback(txid_min)
+
