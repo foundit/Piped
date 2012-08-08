@@ -9,7 +9,7 @@ root:
 
 loggers:
     piped:
-        level: DEBUG # override to affect logging for piped only
+        level: INFO # override to affect logging for piped only
         #handlers: [console]
         #propagate: false
 

@@ -1,5 +1,12 @@
 ================================ Next release ================================
 
+========================== Release 0.4.6 2012-08-08 ==========================
+
+Bug fixes:
+    - Default logging level should be INFO, not DEBUG.
+
+========================== Release 0.4.5 2012-08-08 ==========================
+
 Features:
     - REPL: Piped now comes with a built-in REPL (a Read-Eval-Print loop,
       similar to the Python shell). To start the REPL, use the "--repl"
