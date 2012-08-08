@@ -76,6 +76,18 @@ The following is an processor stub that processes a baton in a pipeline for ever
 For the topic page about dependencies, see :doc:`/topic/dependencies`.
 
 
+REPL
+----
+
+.. module:: piped.providers.repl_provider
+
+.. autoclass:: REPLProvider
+    :members:
+
+.. autoclass:: PipedREPL
+    :members:
+
+
 smtp
 --------
 
