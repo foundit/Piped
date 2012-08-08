@@ -1,5 +1,9 @@
 ================================ Next release ================================
 
+Bug fixes:
+    - The bundled logging configuration should no longer emit duplicate log
+      messages.
+
 ========================== Release 0.4.4 2012-06-12 ==========================
 
 Bug fixes:
