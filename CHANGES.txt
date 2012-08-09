@@ -1,5 +1,28 @@
 ================================ Next release ================================
 
+Features:
+    - The ZooKeeper contrib now uses a configurable ``connect_timeout`` and a
+      configurable ``reconnect_timeout``, which is used when connecting and
+      reconnecting, respectively.
+
+Internal changes:
+    - The ZooKeeper contrib will now retry timed out connections from python,
+      trying different combinations of servers in the specified server list
+      until one of the combinations starts working.
+
+    - Added `piped.util.deferred_with_timeout`` which is a function that
+      wraps a deferred with an optional timeout.
+
+Bug fixes:
+    - Added a setting ``force_blocking_stdout`` to the REPL provider, which
+      makes ``sys.__stdout__`` blocking after creating the StandardIO
+      interface. This is done by default because a lot of our logging seem
+      to enjoy a blocking standard output a lot more than handling EAGAIN.
+
+    - A traceback from the bootstrap script to the REPL should now show
+      the actual line contents from the source script.
+
+
 ========================== Release 0.4.6 2012-08-08 ==========================
 
 Bug fixes:
