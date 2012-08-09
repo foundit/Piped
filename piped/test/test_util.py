@@ -6,9 +6,10 @@ import copy
 import datetime
 
 from twisted.internet import defer
+from twisted.python import failure
 from twisted.trial import unittest
 
-from piped import util, processing
+from piped import util, processing, exceptions
 
 
 class uncopyable(object):
@@ -454,6 +455,61 @@ class TestWaitForFirst(unittest.TestCase):
             self.fail('expected failure')
         except defer.FirstError:
             pass
+
+
+class TestDeferredWithTimeout(unittest.TestCase):
+    timeout_exception = exceptions.TimeoutError('test timeout')
+
+    def _ignore(self, _):
+        return None
+
+    @defer.inlineCallbacks
+    def test_no_timeout(self):
+        d = defer.Deferred()
+        result_d = util.deferred_with_timeout(d, timeout=None)
+
+        yield util.wait(0)
+        self.assertFalse(result_d.called)
+
+        d.callback(42)
+        self.assertEqual((yield result_d), 42)
+
+    @defer.inlineCallbacks
+    def test_timeout(self):
+        d = defer.Deferred()
+        result_d = util.deferred_with_timeout(d, timeout=0, timeout_exception=self.timeout_exception)
+
+        yield util.wait(0)
+
+        self.assertTrue(result_d.called)
+        self.assertIsInstance(result_d.result, failure.Failure)
+        self.assertEqual(result_d.result.value, self.timeout_exception)
+        result_d.addBoth(self._ignore)
+
+    @defer.inlineCallbacks
+    def test_callback_before_timeout(self):
+        d = defer.Deferred()
+        result_d = util.deferred_with_timeout(d, timeout=0, timeout_exception=self.timeout_exception)
+
+        d.callback(42)
+        yield util.wait(0)
+
+        self.assertTrue(result_d.called)
+        self.assertEqual(result_d.result, 42)
+
+    @defer.inlineCallbacks
+    def test_errback_before_timeout(self):
+        my_exception = Exception(42)
+        d = defer.Deferred()
+        result_d = util.deferred_with_timeout(d, timeout=0, timeout_exception=self.timeout_exception)
+
+        d.errback(my_exception)
+        yield util.wait(0)
+
+        self.assertTrue(result_d.called)
+        self.assertIsInstance(result_d.result, failure.Failure)
+        self.assertEqual(result_d.result.value, my_exception)
+        result_d.addBoth(self._ignore)
 
 
 __doctests__ = [util]
