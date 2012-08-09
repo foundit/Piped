@@ -8,7 +8,7 @@ import tty
 import os
 
 from twisted.conch import stdio as conch_stdio
-from twisted.internet import reactor, stdio
+from twisted.internet import reactor, stdio, fdesc
 from zope import interface
 
 from piped import resource
@@ -88,19 +88,23 @@ class PipedREPL(object):
     """
     running = False
 
-    def __init__(self, console_manhole=None, dependencies=None, bootstrap=''):
+    def __init__(self, console_manhole=None, dependencies=None, bootstrap='', force_blocking_stdout=True):
         """
         :param console_manhole: Fully qualified name of the console manhole class to use.
             Defaults to :class:`piped.providers.repl_provider.PipedConsoleManhole`
         :param dependencies: A dict containing named dependencies
         :param bootstrap: A string containing the bootstrap script to use or a
             :class:`twisted.python.filepath.FilePath` instance that points to python file.
+        :param force_blocking_stdout: Whether to make stdout blocking after creating the StandardIO interface.
+            May be required on some platforms.
         """
         self.console_manhole_name = console_manhole or reflect.fullyQualifiedName(PipedConsoleManhole)
         self.console_manhole_factory = reflect.namedAny(self.console_manhole_name)
 
         self.dependencies = dependencies or dict()
         self.bootstrap = bootstrap
+
+        self.force_blocking_stdout = force_blocking_stdout
 
         self.namespace = dict()
 
@@ -119,19 +123,19 @@ class PipedREPL(object):
         self.namespace.setdefault('d', self.dependency_map)
         self.namespace.setdefault('dependencies', self.dependency_map)
 
-        try:
-            if isinstance(self.bootstrap, filepath.FilePath):
-                execfile(self.bootstrap.path, self.namespace, self.namespace)
-            else:
-                # run the bootstrap in the compiled namespace, using a tempfile to facilitate tracebacks
-                with tempfile.NamedTemporaryFile(suffix='_bootstrap.py') as ntf:
+        with tempfile.NamedTemporaryFile(suffix='_bootstrap.py') as ntf:
+            try:
+                if isinstance(self.bootstrap, filepath.FilePath):
+                    execfile(self.bootstrap.path, self.namespace, self.namespace)
+                else:
+                    # run the bootstrap in the compiled namespace, using a tempfile to facilitate tracebacks
                     ntf.file.write(self.bootstrap)
                     ntf.file.flush()
 
                     execfile(ntf.name, self.namespace, self.namespace)
                     logger.info('Finished bootstrapping the REPL namespace.')
-        except Exception as e:
-            logger.error('Caught exception while bootstrapping REPL. Traceback follows.', exc_info=True)
+            except Exception as e:
+                logger.error('Caught exception while bootstrapping REPL. Traceback follows.', exc_info=True)
 
         try:
             self.start()
@@ -149,6 +153,9 @@ class PipedREPL(object):
 
         self.server_protocol = conch_stdio.ServerProtocol(self.console_manhole_factory, namespace=self.namespace)
         self.stdio = stdio.StandardIO(self.server_protocol)
+
+        if self.force_blocking_stdout:
+            fdesc.setBlocking(sys.__stdout__.fileno())
 
         # fix the terminal so the user does not have to reset it after using us
         reactor.addSystemEventTrigger('before', 'shutdown', self._stop)
@@ -186,3 +193,7 @@ class PipedConsoleManhole(conch_stdio.ConsoleManhole):
         self.handle_BACKSPACE()
         while self.lineBufferIndex > 0 and self.lineBuffer[self.lineBufferIndex-1] not in self.WORD_DELIMITERS:
             self.handle_BACKSPACE()
+
+    def connectionLost(self, reason):
+        if reactor.running:
+            reactor.stop()
