@@ -54,6 +54,8 @@ class TestZooKeeperProcessorDepending(TestZooKeeperProcessor):
         client = yield processor.client_dependency.wait_for_resource()
         self.assertIsInstance(client, providers.PipedZookeeperClient)
 
+        yield test_client.stopService()
+
 
 class TestGetChildren(TestZooKeeperProcessor):
     @defer.inlineCallbacks

@@ -154,56 +154,69 @@ class PipedZookeeperClient(object, service.Service):
     def _start_connecting(self):
         try:
             while self.running:
-                for server_list_length in range(len(self.servers), 0, -1):
-                    if not self.running:
-                        break
-
-                    for server_list in itertools.combinations(self.servers, server_list_length):
-                        servers = ','.join(list(server_list))
-                        logger.info('Trying to create and connect a ZooKeeper client with the following servers: [{0}]'.format(servers))
-                        self._current_client = current_client = self._create_client(servers)
-
-                        try:
-                            connected_client = yield self.connecting_currently(self._current_client.connect(timeout=self.connect_timeout))
-                            if connected_client == self._current_client:
-                                yield self.connecting_currently(self._started(connected_client))
-                        except client.ConnectionTimeoutException as cte:
-                            logger.error('Connection timeout reached while trying to connect to ZooKeeper [{0}]: [{1!r}]'.format(server_list, cte))
-                            # the server list might be good, so we retry from the beginning with our configured server list.
+                try:
+                    for server_list_length in range(len(self.servers), 0, -1):
+                        if not self.running:
                             break
 
-                        except zookeeper.ZooKeeperException as e:
-                            logger.error('Cannot connect to ZooKeeper [{0}]: [{1!r}]'.format(server_list, e))
+                        for server_list in itertools.combinations(self.servers, server_list_length):
+                            servers = ','.join(list(server_list))
+                            logger.info('Trying to create and connect a ZooKeeper client with the following servers: [{0}]'.format(servers))
+                            self._current_client = current_client = self._create_client(servers)
 
-                            yield self.connecting_currently(util.wait(0))
+                            try:
+                                connected_client = yield self.connecting_currently(self._current_client.connect(timeout=self.connect_timeout))
+                                if connected_client == self._current_client:
+                                    yield self.connecting_currently(self._started(connected_client))
+                            except client.ConnectionTimeoutException as cte:
+                                logger.error('Connection timeout reached while trying to connect to ZooKeeper [{0}]: [{1!r}]'.format(server_list, cte))
+                                # the server list might be good, so we retry from the beginning with our configured server list.
+                                break
 
-                            if not current_client.handle:
-                                # we were unable to actually get a handle, so one of the servers in the server list might be bad.
-                                logger.warn('One of the servers in the server list [{0}] might be invalid somehow.'.format(server_list))
+                            except zookeeper.ZooKeeperException as e:
+                                logger.error('Cannot connect to ZooKeeper [{0}]: [{1!r}]'.format(server_list, e))
+
+                                yield self.connecting_currently(util.wait(0))
+
+                                if not current_client.handle:
+                                    # we were unable to actually get a handle, so one of the servers in the server list might be bad.
+                                    logger.warn('One of the servers in the server list [{0}] might be invalid somehow.'.format(server_list))
+                                    continue
+
+                                defer.maybeDeferred(current_client.close).addBoth(lambda _: None)
+                                self._current_client = None
                                 continue
 
-                            defer.maybeDeferred(current_client.close).addBoth(lambda _: None)
-                            self._current_client = None
-                            continue
+                            current_state = 0
+                            try:
+                                current_state = current_client.state
+                            except zookeeper.ZooKeeperException as zke:
+                                pass
 
-                        if not current_client.state == zookeeper.CONNECTED_STATE:
-                            logger.info('ZooKeeper client was unable to reach the connected state. Was in [{0}]'.format(client.STATE_NAME_MAPPING.get(current_client.state, 'unknwown')))
-                            current_client.close()
-                            if self._current_client == current_client:
-                                self._current_client = None
-                            yield self.connecting_currently(util.wait(0))
-                            continue
+                            if current_state == zookeeper.CONNECTED_STATE:
+                                logger.info('ZooKeeper client was unable to reach the connected state. Was in [{0}]'.format(client.STATE_NAME_MAPPING.get(current_state, 'unknwown')))
+                                current_client.close()
+                                if self._current_client == current_client:
+                                    self._current_client = None
+                                yield self.connecting_currently(util.wait(0))
+                                continue
 
-                        if self.running:
-                            logger.info('Connected to ZooKeeper ensemble [{0}] with handle [{1}]'.format(server_list, self._current_client.handle))
+                            if self.running:
+                                logger.info('Connected to ZooKeeper ensemble [{0}] with handle [{1}]'.format(server_list, self._current_client.handle))
+                            return
+
+                        yield self.connecting_currently(util.wait(0))
+
+                    if not self.running:
                         return
-
-                    yield self.connecting_currently(util.wait(0))
-
-                if not self.running:
-                    return
+                except defer.CancelledError as ce:
+                    raise
+                except Exception as e:
+                    logger.error('Error while starting ZooKeeper client [{0}]. Will retry. Traceback follows'.format(self), exc_info=True)
                 # if we didn't manage to connect, retry with the server list again
                 logger.info('Exhausted server list combinations, retrying after 5 seconds.')
+                if not self.running:
+                    return
                 yield self.connecting_currently(util.wait(5))
         except defer.CancelledError as ce:
             pass
@@ -251,8 +264,6 @@ class PipedZookeeperClient(object, service.Service):
 
         elif event.state_name == 'connecting':
             # if we're in "connecting" for too long, give up and give us a new connection, the working server list might have changed.
-            self._restart_if_still_running_and_not_connected_after_connect_timeout(self._current_client)
-
             self.on_disconnected(failure.Failure(DisconnectException(event.state_name)))
             self._on_event('reconnecting')
 
@@ -260,6 +271,9 @@ class PipedZookeeperClient(object, service.Service):
                 logger.info('[{0}] is reconnecting with a new client in order to avoid reusing sessions.'.format(self))
                 yield self.stopService()
                 yield self.startService()
+                return
+
+            self._restart_if_still_running_and_not_connected_after_connect_timeout(self._current_client)
 
         elif event.state_name == 'expired':
             self.on_disconnected(failure.Failure(DisconnectException(event.state_name)))

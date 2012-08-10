@@ -1,5 +1,8 @@
 ================================ Next release ================================
 
+Bug fixes:
+     - The ZooKeeper provider could sometimes fail connecting while still
+     providing the client.
 
 ========================== Release 0.4.7 2012-08-09 ==========================
 
