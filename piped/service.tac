@@ -8,7 +8,7 @@ import json
 import yaml
 from twisted.internet import reactor
 
-from piped import exceptions, resource, processing
+from piped import exceptions, resource, processing, service
 
 
 logger = logging.getLogger('piped.service')
@@ -35,6 +35,9 @@ def _on_configuration_loaded():
 
     provider_plugin_manager = resource.ProviderPluginManager()
     provider_plugin_manager.configure(runtime_environment)
+
+    service_plugin_manager = service.ServicePluginManager()
+    service_plugin_manager.configure(runtime_environment)
     
     # Move these into acting upon state changes.
     runtime_environment.dependency_manager.resolve_initial_states()
