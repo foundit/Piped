@@ -254,7 +254,9 @@ class PostgresListener(object, service.Service):
         dq = defer.DeferredQueue()
         for event in events:
             if not self._listeners[event]:
-                yield self._connection.runOperation('LISTEN "%s"' % event)
+                self._listeners[event].add(dq)
+
+                yield self.currently(self._connection.runOperation('LISTEN "%s"' % event))
                 logger.info('"%s"-listener is now listening to "%s"' % (self.profile_name, event))
             
             self._listeners[event].add(dq)
@@ -267,7 +269,7 @@ class PostgresListener(object, service.Service):
             if queue in queues:
                 queues.discard(queue)
                 if not queues:
-                    yield self._connection.runOperation('UNLISTEN "%s"' % listener_name)
+                    yield self.currently(self._connection.runOperation('UNLISTEN "%s"' % listener_name))
                     logger.info('"%s"-listener is now NOT listening to "%s"' % (self.profile_name, listener_name))
 
     def wait_for_txid_min(self, txid):
@@ -286,11 +288,11 @@ class PostgresListener(object, service.Service):
         return bool(self._txid_queue)
 
     def _ping(self):
-        return self._connection.runOperation("SELECT 'ping'")
+        return self.currently(self._connection.runOperation("SELECT 'ping'"))
 
     @defer.inlineCallbacks
     def _get_current_txid_min(self):
-        rs = yield self._connection.runQuery('SELECT txid_snapshot_xmin(txid_current_snapshot())')
+        rs = yield self.currently(self._connection.runQuery('SELECT txid_snapshot_xmin(txid_current_snapshot())'))
         defer.returnValue(rs[0][0])
 
     @defer.inlineCallbacks
