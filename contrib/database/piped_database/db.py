@@ -3,6 +3,7 @@
 # Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
 import collections
+import functools
 import logging
 import heapq
 import urlparse
@@ -57,6 +58,27 @@ class EngineManager(object, service.Service):
         for event, list_of_handlers in self.configuration.get('events', dict()).items():
             for handler_name in list_of_handlers:
                 sa.event.listen(self.engine, event, reflect.namedAny(handler_name))
+
+        for sql_string in self.configuration.get('checkout', []):
+            sa.event.listen(self.engine, 'checkout', functools.partial(self.on_checkout, sql_string))
+
+        for sql_string in self.configuration.get('checkin', []):
+            sa.event.listen(self.engine, 'checkin', functools.partial(self.on_checkin, sql_string))
+
+    def on_checkout(self, sql, dbapi_connection, connection_record, connection_proxy):
+        try:
+            dbapi_connection.cursor().execute(sql)
+        except Exception:
+            # The connection is in an unusable state, and this is communicated to the dependencies. Nothing
+            # more we can do here.
+            pass
+
+    def on_checkin(self, sql, dbapi_connection, connection_record):
+        try:
+            if dbapi_connection:
+                dbapi_connection.cursor().execute(sql)
+        except Exception:
+            pass
 
     @classmethod
     def _fail_if_configuration_is_invalid(cls, configuration):
