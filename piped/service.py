@@ -1,3 +1,4 @@
+from twisted.internet import defer
 from twisted.plugin import IPlugin
 from twisted.application import service
 from zope import interface
@@ -30,11 +31,11 @@ class ServicePluginManager(plugin.PluginManager, service.MultiService):
             service_instance.setServiceParent(self)
 
 
-class PipedService(object, service.Service):
+class PipedService(object, service.MultiService):
 
     def __init__(self):
-        self._currently = None
-        self.currently = util.create_deferred_state_watcher(self)
+        service.MultiService.__init__(self)
+        self._might_be_cancelled = None
 
     def configure(self, runtime_environment):
         pass
@@ -43,11 +44,34 @@ class PipedService(object, service.Service):
         if self.running:
             return
 
+        self._might_be_cancelled = defer.Deferred()
         service.Service.startService(self)
-        if hasattr(self, 'run'):
-            self.run()
+        self.run()
+
+    def run(self):
+        pass
 
     def stopService(self):
-        service.Service.stopService(self)
-        if self._currently:
-            self._currently.cancel()
+        if not self.running:
+            return
+
+        self.cancel()
+        service.MultiService.stopService(self)
+
+    def cancel(self):
+        # Swap it out before actually cancelling, so we don't
+        # accidentally end up in a loop
+        cancellable, self._might_be_cancelled = self._might_be_cancelled, defer.Deferred()
+
+        if cancellable:
+            cancellable.cancel()
+            # In case nobody's actually using it, shut up.
+            cancellable.addErrback(lambda failure: None)
+
+    def cancellable(self, d):
+        def _cancel(failure):
+            d.cancel()
+            return failure
+
+        self._might_be_cancelled.addBoth(_cancel)
+        return util.wait_for_first([d, self._might_be_cancelled])
