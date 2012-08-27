@@ -99,11 +99,12 @@ class EngineProviderTest(unittest.TestCase):
         self.failIf(self.events.size > 0)
         self.assertEquals(self.mocker.mock_calls, [
             mock.call.engine.connect(),
+            mock.call.engine.dispose(), # The first connect fails, so the engine is disposed.
             mock.call.engine.connect(),
             mock.call.connection(),
             mock.call.connection().execute("SELECT 'ping'"),
             mock.call.connection().close(),
-            mock.call.engine.dispose()
+            mock.call.engine.dispose() # and disposed when the service stops.
         ])
 
     @defer.inlineCallbacks
@@ -133,12 +134,18 @@ class EngineProviderTest(unittest.TestCase):
         yield util.wait(0)
 
         self.assertEquals(self.mocker.mock_calls, [
+            # First ping succeeds.
             mock.call.engine.connect(),
             mock.call.connection.execute("SELECT 'ping'"),
             mock.call.connection.close(),
+
+            # This one fails. The engine is disposed as a result.
             mock.call.engine.connect(),
             mock.call.connection.execute("SELECT 'ping'"),
             mock.call.connection.close(),
+            mock.call.engine.dispose(), 
+
+            # After this ping we stop the service.
             mock.call.engine.connect(),
             mock.call.connection.execute("SELECT 'ping'"),
             mock.call.connection.close(),
