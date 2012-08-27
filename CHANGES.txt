@@ -1,5 +1,76 @@
 ================================ Next release ================================
 
+Features:
+    - Plugin-loaded services: ``IPipedService``-plugins, with a helper
+      ``PipedService``-base class in ``piped.service``.
+
+Bug fixes:
+    - ``piped.graph`` now be compatible with ``networkx`` 1.7
+    - ``piped.util.wait_for_first`` will now errback with the actual failure, and
+      not a ``FirstError``.
+
+
+========================== Release 0.4.7 2012-08-09 ==========================
+
+Features:
+    - The ZooKeeper contrib now uses a configurable ``connect_timeout`` and a
+      configurable ``reconnect_timeout``, which is used when connecting and
+      reconnecting, respectively.
+
+    - Added a setting ``force_blocking_stdout`` to the REPL provider, which
+      makes ``sys.__stdout__`` blocking after creating the StandardIO
+      interface. This is done by default because a lot of our logging seem
+      to enjoy a blocking standard output a lot more than handling EAGAIN.
+
+Internal changes:
+    - The ZooKeeper contrib will now retry timed out connections from python,
+      trying different combinations of servers in the specified server list
+      until one of the combinations starts working.
+
+    - Added `piped.util.deferred_with_timeout`` which is a function that
+      wraps a deferred with an optional timeout.
+
+Minor bug fixes:
+    - A traceback from the bootstrap script to the REPL should now show
+      the actual line contents from the source script.
+
+
+========================== Release 0.4.6 2012-08-08 ==========================
+
+Bug fixes:
+    - Default logging level should be INFO, not DEBUG.
+
+========================== Release 0.4.5 2012-08-08 ==========================
+
+Features:
+    - REPL: Piped now comes with a built-in REPL (a Read-Eval-Print loop,
+      similar to the Python shell). To start the REPL, use the "--repl"
+      command line switch. For more information about the REPL and how
+      to configure it, see the reference documentation on the REPL provider,
+      which contains example configuration in YAML.
+
+Bug fixes:
+    - The bundled logging configuration should no longer emit duplicate log
+      messages.
+
+========================== Release 0.4.4 2012-06-12 ==========================
+
+Bug fixes:
+    - No longer requires graypy by default via the logging configuration.
+    - Buildout now refers to the correct contrib package names.
+
+========================== Release 0.4.3 2012-06-12 ==========================
+
+Internal changes:
+    - The ZooKeeper contrib is more determined about closing previous
+      connections to avoid leaking unused clients and clears its cache
+      when connections are re-established.
+
+Backward-incompatible changes:
+    - The ZooKeeper contrib now raises zookeeper.ClosingException exceptions
+      for attempted method calls to a stopped client instead of the previous
+      AttributeError
+
 ========================== Release 0.4.2 2012-02-29 ==========================
 
 Internal changes:

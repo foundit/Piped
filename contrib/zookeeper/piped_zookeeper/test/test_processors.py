@@ -45,8 +45,10 @@ class TestZooKeeperProcessorDepending(TestZooKeeperProcessor):
         # mock the connection
         test_client = provider._client_by_name['test_client']
         mock_client = mock.Mock()
+
+        mock_client.state = zookeeper.CONNECTED_STATE
         mock_client.connect.side_effect = lambda timeout: defer.succeed(mock_client)
-        test_client._create_client = lambda: mock_client
+        test_client._create_client = lambda servers: mock_client
         test_client.startService()
 
         client = yield processor.client_dependency.wait_for_resource()

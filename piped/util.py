@@ -644,6 +644,7 @@ def wait_for_first(ds):
     """ Returns a deferred that is callbacked/errbacked with whatever deferred in `ds` fires first. """
     d = defer.DeferredList(ds, fireOnOneCallback=True, fireOnOneErrback=True, consumeErrors=True)
     d.addCallback(operator.itemgetter(0))
+    d.addErrback(get_maybe_first_error_failure)
     return d
 
 
@@ -681,3 +682,43 @@ def get_callable_with_different_side_effects(side_effects):
             return side_effect
 
     return _wrapped
+
+
+def get_maybe_first_error_failure(reason):
+    """ Get the nested failure if the given failure contains a FirstError exception.
+
+    :param reason: A :class:`twisted.python.failure.Failure` instance
+    :return: The nested subFailure if the failure contained a FirstError exception.
+    """
+    if reason.type == defer.FirstError:
+        return reason.value.subFailure
+    return reason
+
+
+def deferred_with_timeout(d, timeout=None, timeout_exception=Exception('timeout')):
+    """ Gets a deferred with added support for waiting for a timeout to occur.
+
+    The configured DelayedCall is cancelled if the given deferred callbacks/errbacks before the timeout.
+
+    :param d: The deferred to add a timeout to.
+    :param timeout: Timeout (in seconds) before the timeout exception is raised.
+    :param timeout_exception: The exception to raise.
+    :return:
+    """
+    if timeout is None:
+        return d
+
+    timeout_deferred = defer.Deferred()
+    delayed_call = reactor.callLater(timeout, timeout_deferred.errback, timeout_exception)
+
+    def cleanup(_, delayed_call=delayed_call):
+        if not delayed_call.called:
+            delayed_call.cancel()
+        return _
+
+    dl = defer.DeferredList([d, timeout_deferred], fireOnOneCallback=True, fireOnOneErrback=True, consumeErrors=True)
+
+    return_deferred = dl.addCallback(operator.itemgetter(0)).addErrback(get_maybe_first_error_failure)
+
+    return return_deferred.addBoth(cleanup)
+

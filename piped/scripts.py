@@ -62,6 +62,8 @@ def run_piped():
 
     # append the command line overrides to the environment overrides
     overrides = json.loads(os.environ.get('PIPED_CONFIGURATION_OVERRIDES', '[]'))
+    if args.repl:
+        overrides.append('{"repl.enabled": true}')
     os.environ['PIPED_CONFIGURATION_OVERRIDES'] = json.dumps(overrides+args.override)
 
     log.configure(args)
@@ -126,6 +128,8 @@ def _make_parser():
 
     parser.add_argument('-r', '--reactor', help='Which reactor to use, (see --help-reactors for a list of possibilities)')
     parser.add_argument('--help-reactors', action='store_true', help='Display a list of possibly available reactor names.')
+
+    parser.add_argument('--repl', action='store_true', help='Starts the REPL by adding {"repl.enabled": true} to the configuration overrides')
 
     return parser
 
