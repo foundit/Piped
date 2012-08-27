@@ -15,6 +15,34 @@ except ImportError:
 
 
 class DatabaseEngineProvider(object, service.MultiService):
+    """Provides SQLAlchemy engines.
+
+    See `EngineManager` for per-engine configuration options.
+
+    Engines are provided to "database.engine.engine_name". The
+    engine's on_connection_established-, on_connection_failed- and
+    on_connection_lost-events are tied to the on_resource_ready and
+    on_resource_lost-events of the resulting `ResourceDependency`.
+
+    The same engine is provided to all consumers of it. See notes on
+    threads and connection pools in the documentation of
+    `EngineManager`.
+
+    Configuration example:
+
+    .. code-block:: yaml
+
+        database:
+            engines:
+                engine_name:
+                    engine:
+                        url: 'postgresql://user:password@host:port/database'
+                        # echo: true
+                        # see sqlalchemy.create_engine for more options.
+                    checkout:
+                        - "SET SESSION TIMEZONE TO 'UTC'"
+
+    """
     interface.classProvides(resource.IResourceProvider)
 
     def __init__(self):
@@ -54,6 +82,7 @@ class DatabaseEngineProvider(object, service.MultiService):
 
 
 class PostgresListenProvider(object, service.MultiService):
+    """ Provides `PostgresListener`s. """
     interface.classProvides(resource.IResourceProvider)
 
     def __init__(self):

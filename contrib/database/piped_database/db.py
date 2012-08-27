@@ -36,6 +36,52 @@ class DatabaseError(exceptions.PipedError):
 
 
 class EngineManager(object, service.Service):
+    """Manages a SQLAlchemy Engine.
+
+    There is no inherent support for threads. You are responsible for
+    not blocking the reactor when using the engine, only using it from
+    one thread, etc.
+
+    Note that an engine by default uses a connection pool. The manager
+    assumes that a connection will be available for checking out from
+    the pool every now and then to ping. Pinging is done by executing
+    a simple "SELECT 'ping'". If you exhaust the connection pool to
+    the point where no connection can be used for pinging, the manager
+    will assume error and restart.
+
+    Configurables:
+
+        engine: Dict that is passed directly to SQLAlchemy's
+        `create_engine`-call. See SQLAlchemy's documentation on
+        create_engine for full coverage, but these should get you
+        started:
+
+            url: For example 'postgresql://user:password@host:port/database'. Required.
+            echo: Whether to log all SQL emitted. Defaults to false.
+
+        ping_interval: How often to ping, in seconds. Defaults to every 10 seconds.
+        retry_interval: How long to wait before reconnecting on error, in seconds. Defaults to 5 seconds.
+
+        events: Dictionary mapping a SQLAlchemy engine-event to a
+        `reflectAny`-name that will handle the event.
+
+        checkout / checkin: List of SQL that is executed whenever a
+        connection is checked out and when the connection is checked
+        back in. For example, setting a timezone for the session when
+        checking out a connection is common, and if used, releasing
+        Postgres advisory locks should be done when checking a
+        connection back in.
+    
+
+    Events:
+
+        on_connection_established: A connection is established ---
+        i.e. a ping has been successful. Invoked with the engine when established.
+
+        on_connection_lost: An established connection was lost.
+
+        on_connection_failed: The connection attempt failed.
+    """
 
     def __init__(self, configuration, profile_name):
         self.configuration = configuration

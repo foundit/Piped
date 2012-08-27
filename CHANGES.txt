@@ -4,10 +4,24 @@ Features:
     - Plugin-loaded services: ``IPipedService``-plugins, with a helper
       ``PipedService``-base class in ``piped.service``.
 
+    - The database contrib has been reworked. By just providing
+      SQLAlchemy engines instead of MetaData, it's a lot simpler. The
+      API is still unstable, though.
+
+    - A PostgresListener-service makes working with asynchronous
+      notifications from a Postgres database a lot simpler. It also
+      has utilities for watching transaction snapshot threshold, which
+      is useful when implementing certain syncing strategies.
+
+Backward-incompatible changes:
+
+    - The database-contrib now provides and manages SQLAlchemy
+      engines, instead of ``MetaData``.
+
 Bug fixes:
-    - ``piped.graph`` now be compatible with ``networkx`` 1.7
+    - ``piped.graph`` now compatible with ``networkx`` 1.7
     - ``piped.util.wait_for_first`` will now errback with the actual failure, and
-      not a ``FirstError``.
+      not a ``FirstError`` wrapping it.
 
 
 ========================== Release 0.4.7 2012-08-09 ==========================
