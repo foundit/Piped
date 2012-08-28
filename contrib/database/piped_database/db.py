@@ -35,7 +35,7 @@ class DatabaseError(exceptions.PipedError):
     pass
 
 
-class EngineManager(object, service.Service):
+class EngineManager(piped_service.PipedService):
     """Manages a SQLAlchemy Engine.
 
     There is no inherent support for threads. You are responsible for
@@ -84,6 +84,7 @@ class EngineManager(object, service.Service):
     """
 
     def __init__(self, configuration, profile_name):
+        super(EngineManager, self).__init__()
         self.configuration = configuration
         self.profile_name = profile_name
         configuration.setdefault('ping_interval', 10.0)
@@ -96,7 +97,6 @@ class EngineManager(object, service.Service):
         configuration['engine'].setdefault('proxy', ConnectionProxy(self))
 
         self.is_connected = False
-        self.currently = util.create_deferred_state_watcher(self)
 
         self.engine = sa.engine_from_config(configuration['engine'], prefix='')
         self._bind_events()
@@ -141,29 +141,14 @@ class EngineManager(object, service.Service):
             detail = 'currently set to "%r"' % configuration['ping_interval']
             raise exceptions.ConfigurationError('Please specify a non-zero ping-interval', detail)
 
-    def startService(self):
-        if self.running:
-            return
-
-        service.Service.startService(self)
-        self._connect_and_stay_connected()
-
-    def stopService(self):
-        if not self.running:
-            return
-
-        service.Service.stopService(self)
-        if self._currently:
-            self._currently.cancel()
-
     @defer.inlineCallbacks
-    def _connect_and_stay_connected(self):
+    def run(self):
         while self.running:
             try:
                 # Connect and ping. The engine is a pool, so we're not
                 # really establishing new connections all the time.
                 logger.info('Attempting to connect to "{0}"'.format(self.profile_name))
-                yield self.currently(threads.deferToThread(self._test_connectivity, self.engine))
+                yield self.cancellable(threads.deferToThread(self._test_connectivity, self.engine))
                 logger.info('Connected to "{0}"'.format(self.profile_name))
 
                 if not self.is_connected:
@@ -171,12 +156,15 @@ class EngineManager(object, service.Service):
 
                 self.is_connected = True
 
-                try:
-                    while self.running:
-                        yield self.currently(util.wait(self.configuration['ping_interval']))
-                        yield self.currently(threads.deferToThread(self._test_connectivity, self.engine))
-                except defer.CancelledError:
-                    pass
+                while self.running:
+                    yield self.cancellable(util.wait(self.configuration['ping_interval']))
+                    yield self.cancellable(threads.deferToThread(self._test_connectivity, self.engine))
+
+            except defer.CancelledError as e:
+                if self.is_connected:
+                    self.on_connection_lost(e)
+
+                self.is_connected = False
 
             except Exception as e:
                 logger.error('Error with engine "{0}": {1}'.format(self.profile_name, e.message))
@@ -188,15 +176,15 @@ class EngineManager(object, service.Service):
                 self.is_connected = False
                 self.on_connection_failed(failure_)
 
-                yield self.currently(util.wait(self.configuration['retry_interval']))
+                yield self.cancellable(util.wait(self.configuration['retry_interval']))
 
-            except defer.CancelledError:
-                pass
 
             finally:
                 self.engine.dispose()
 
     def _test_connectivity(self, engine):
+        if not self.running:
+            return
         # This is actually checking in and out of an engine pool. We're not actually
         # establishing new connections all the time.
         connection = engine.connect()
