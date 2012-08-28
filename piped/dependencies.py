@@ -376,13 +376,14 @@ class DependencyManager(object):
 
         :param consumer: The consumer dependency.
         :param dependency: The dependency the consumer requires.
+        :return: The added dependency if one was provided, otherwise the consumer as a dependency.
         """
         consumer = self.as_dependency(consumer)
         self._bind_dependency_to_graph(consumer)
 
         if not dependency:
             # just adding a single node, so we're done.
-            return
+            return consumer
 
         dependency = self.as_dependency(dependency)
         self._bind_dependency_to_graph(dependency)

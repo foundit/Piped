@@ -403,10 +403,15 @@ def safe_deepcopy(dict_like, object_describer=repr, path_of_paths='_volatile', s
 
 
 def wait(nap_time, result=None):
+    # Chicken and the egg: we want the returned defer to be able to cancel the delayed-call,
+    # but the Deferred api only supports setting the canceller when we're creating the
+    # deferred, but the delayed_call needs to know which Deferred it should callback. We
+    # solve this by setting the `cancel` function directly on the Deferred after creating
+    # the delayed call, before returning the Deferred.
     d = defer.Deferred()
-    reactor.callLater(nap_time, d.callback, result)
+    delayed_call = reactor.callLater(nap_time, d.callback, result)
+    d.cancel = lambda: (delayed_call.cancel(), d.errback(defer.CancelledError()))
     return d
-
 
 class AttributeDict(dict):
     """ Dict where attributes can also be used to get the items. Used
