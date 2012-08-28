@@ -22,8 +22,9 @@ class DirectedGraphWithOrderedEdges(nx.DiGraph):
 
     def __init__(self):
         super(DirectedGraphWithOrderedEdges, self).__init__()
-        self.adj = self.succ = self.ordered_dictionary_factory()
+        self.adj = self.edge = self.succ = self.ordered_dictionary_factory()
         self.pred = self.ordered_dictionary_factory()
+        self.node = self.ordered_dictionary_factory()
 
     def _ensure_ordered_dicts_for_node(self, node):
         self.succ.setdefault(node, self.ordered_dictionary_factory())

@@ -1,8 +1,10 @@
 ================================ Next release ================================
 
 Bug fixes:
-     - The ZooKeeper provider could sometimes fail connecting while still
+    - The ZooKeeper provider could sometimes fail connecting while still
      providing the client.
+    - ``piped.graph`` now be compatible with ``networkx`` 1.7
+
 
 ========================== Release 0.4.7 2012-08-09 ==========================
 
@@ -291,8 +293,4 @@ Internal changes:
     - ConcatenatedFile is no longer a subclass of StaticFile, but rather a
         twisted.web.resource.Resource subclass.
     - DummyRequest moved from test_web_provider to web_provider, as it might
-        prove useful outside of the test suite
-
-========================== Release 0.1.0 2011-06-14 ==========================
-
-This was the first official release.
+        prove useful outside of 

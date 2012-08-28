@@ -160,6 +160,8 @@ class PipedZookeeperClient(object, service.Service):
                             break
 
                         for server_list in itertools.combinations(self.servers, server_list_length):
+                            self.on_disconnected(failure.Failure(DisconnectException('connecting')))
+
                             servers = ','.join(list(server_list))
                             logger.info('Trying to create and connect a ZooKeeper client with the following servers: [{0}]'.format(servers))
                             self._current_client = current_client = self._create_client(servers)
@@ -193,7 +195,7 @@ class PipedZookeeperClient(object, service.Service):
                             except zookeeper.ZooKeeperException as zke:
                                 pass
 
-                            if current_state == zookeeper.CONNECTED_STATE:
+                            if not current_state == zookeeper.CONNECTED_STATE:
                                 logger.info('ZooKeeper client was unable to reach the connected state. Was in [{0}]'.format(client.STATE_NAME_MAPPING.get(current_state, 'unknwown')))
                                 current_client.close()
                                 if self._current_client == current_client:
