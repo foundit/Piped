@@ -430,6 +430,10 @@ class TestFailAfterDelay(unittest.TestCase):
             self.assertTrue(actual_exception is e)
 
 
+class _FakeException(Exception):
+    pass
+
+
 class TestWaitForFirst(unittest.TestCase):
 
     @defer.inlineCallbacks
@@ -439,21 +443,21 @@ class TestWaitForFirst(unittest.TestCase):
 
     @defer.inlineCallbacks
     def test_handling_failure(self):
-        e = Exception()
+        e = _FakeException()
         try:
             yield util.wait_for_first([defer.Deferred(), defer.fail(e)])
             self.fail('expected failure')
-        except defer.FirstError, fe:
-            self.assertTrue(fe.subFailure.value is e)
+        except _FakeException:
+            pass
 
     @defer.inlineCallbacks
     def test_first_of_already_callbacked_deferreds(self):
-        result = yield util.wait_for_first([defer.succeed(42), defer.fail(Exception())])
+        result = yield util.wait_for_first([defer.succeed(42), defer.fail(_FakeException())])
         self.assertEquals(result, 42)
         try:
-            yield util.wait_for_first([defer.fail(Exception()), defer.succeed(42)])
+            yield util.wait_for_first([defer.fail(_FakeException()), defer.succeed(42)])
             self.fail('expected failure')
-        except defer.FirstError:
+        except _FakeException:
             pass
 
 

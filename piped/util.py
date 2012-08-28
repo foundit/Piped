@@ -644,6 +644,7 @@ def wait_for_first(ds):
     """ Returns a deferred that is callbacked/errbacked with whatever deferred in `ds` fires first. """
     d = defer.DeferredList(ds, fireOnOneCallback=True, fireOnOneErrback=True, consumeErrors=True)
     d.addCallback(operator.itemgetter(0))
+    d.addErrback(get_maybe_first_error_failure)
     return d
 
 

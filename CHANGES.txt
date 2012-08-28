@@ -1,9 +1,15 @@
 ================================ Next release ================================
 
+Features:
+    - Plugin-loaded services: ``IPipedService``-plugins, with a helper
+      ``PipedService``-base class in ``piped.service``.
+
 Bug fixes:
     - The ZooKeeper provider could sometimes fail connecting while still
      providing the client.
     - ``piped.graph`` now be compatible with ``networkx`` 1.7
+    - ``piped.util.wait_for_first`` will now errback with the actual failure, and
+      not a ``FirstError``.
 
 
 ========================== Release 0.4.7 2012-08-09 ==========================
