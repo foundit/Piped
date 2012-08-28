@@ -1,3 +1,5 @@
+import copy
+
 import sqlalchemy as sa
 from piped_database import db as database
 from twisted.application import service
@@ -17,16 +19,16 @@ except ImportError:
 class DatabaseEngineProvider(object, service.MultiService):
     """Provides SQLAlchemy engines.
 
-    See `EngineManager` for per-engine configuration options.
+    See :class:`EngineManager` for per-engine configuration options.
 
     Engines are provided to "database.engine.engine_name". The
     engine's on_connection_established-, on_connection_failed- and
     on_connection_lost-events are tied to the on_resource_ready and
-    on_resource_lost-events of the resulting `ResourceDependency`.
+    on_resource_lost-events of the resulting :class:`ResourceDependency`.
 
     The same engine is provided to all consumers of it. See notes on
     threads and connection pools in the documentation of
-    `EngineManager`.
+    :class:`EngineManager`.
 
     Configuration example:
 
@@ -71,7 +73,7 @@ class DatabaseEngineProvider(object, service.MultiService):
 
     def _ensure_profile_has_manager(self, profile_name):
         if profile_name not in self._manager_for_profile:
-            manager = database.EngineManager(self.database_profiles[profile_name], profile_name)
+            manager = database.EngineManager(profile_name, **self.database_profiles[profile_name])
             manager.setServiceParent(self)
             self._manager_for_profile[profile_name] = manager
         return self._manager_for_profile[profile_name]
@@ -85,7 +87,7 @@ class DatabaseEngineProvider(object, service.MultiService):
 
 
 class PostgresListenProvider(object, service.MultiService):
-    """ Provides `PostgresListener`s. """
+    """ Provides :class:`PostgresListener`s. """
     interface.classProvides(resource.IResourceProvider)
 
     def __init__(self):
@@ -117,7 +119,10 @@ class PostgresListenProvider(object, service.MultiService):
 
     def _ensure_profile_has_listener(self, profile_name):
         if profile_name not in self._listener_for_profile:
-            listener = database.PostgresListener(self.database_profiles[profile_name], profile_name)
+            configuration = copy.deepcopy(self.database_profiles[profile_name])
+            configuration['url'] = configuration.pop('engine')['url']
+            
+            listener = database.PostgresListener(profile_name, **configuration)
             listener.setServiceParent(self)
             self._listener_for_profile[profile_name] = listener
         return self._listener_for_profile[profile_name]

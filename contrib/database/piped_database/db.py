@@ -35,6 +35,25 @@ class DatabaseError(exceptions.PipedError):
     pass
 
 
+
+class ConnectionProxy(sqlalchemy.interfaces.ConnectionProxy):
+    """ Proxy that intercepts executed cursors and relays
+    `OperationalError`s to the manager. """
+
+    intercepted_exceptions = (sa.exc.OperationalError, )
+
+    def __init__(self, manager):
+        self.manager = manager
+
+    # See SQLAlchemy's documentation on this one.
+    def cursor_execute(self, execute, cursor, statement, parameters, context, executemany):
+        try:
+            return execute(cursor, statement, parameters, context)
+        except self.intercepted_exceptions:
+            reactor.callFromThread(self.manager.on_connection_failed, failure.Failure())
+            raise
+
+
 class EngineManager(piped_service.PipedService):
     """Manages a SQLAlchemy Engine.
 
@@ -83,22 +102,25 @@ class EngineManager(piped_service.PipedService):
         on_connection_failed: The connection attempt failed.
     """
 
-    def __init__(self, configuration, profile_name):
+    proxy_factory = ConnectionProxy
+
+    def __init__(self, profile_name, engine, events=None, checkout=None, checkin=None, ping_interval=10.0, retry_interval=5.0):
         super(EngineManager, self).__init__()
-        self.configuration = configuration
         self.profile_name = profile_name
-        configuration.setdefault('ping_interval', 10.0)
-        configuration.setdefault('retry_interval', 5.0)
+        self.ping_interval = ping_interval
+        self.retry_interval = retry_interval
 
-        self._fail_if_configuration_is_invalid(configuration)
+        self.events = {} if events is None else events
+        self.checkout = [] if checkout is None else checkout
+        self.checkin = [] if checkin is None else checkin
 
-        # We'll manipulate the configuration, so copy it.
-        configuration['engine'] = copy.deepcopy(configuration['engine'])
-        configuration['engine'].setdefault('proxy', ConnectionProxy(self))
+        self.engine_configuration = copy.deepcopy(engine)
+        self._fail_if_configuration_is_invalid()
+        self.engine_configuration.setdefault('proxy', self.proxy_factory(self))
 
         self.is_connected = False
 
-        self.engine = sa.engine_from_config(configuration['engine'], prefix='')
+        self.engine = sa.engine_from_config(self.engine_configuration, prefix='')
         self._bind_events()
 
         self.on_connection_established = event.Event()
@@ -106,14 +128,14 @@ class EngineManager(piped_service.PipedService):
         self.on_connection_failed = event.Event()
 
     def _bind_events(self):
-        for event, list_of_handlers in self.configuration.get('events', dict()).items():
+        for event, list_of_handlers in self.events.items():
             for handler_name in list_of_handlers:
                 sa.event.listen(self.engine, event, reflect.namedAny(handler_name))
 
-        for sql_string in self.configuration.get('checkout', []):
+        for sql_string in self.checkout:
             sa.event.listen(self.engine, 'checkout', functools.partial(self.on_checkout, sql_string))
 
-        for sql_string in self.configuration.get('checkin', []):
+        for sql_string in self.checkin:
             sa.event.listen(self.engine, 'checkin', functools.partial(self.on_checkin, sql_string))
 
     def on_checkout(self, sql, dbapi_connection, connection_record, connection_proxy):
@@ -131,14 +153,13 @@ class EngineManager(piped_service.PipedService):
         except Exception:
             pass
 
-    @classmethod
-    def _fail_if_configuration_is_invalid(cls, configuration):
-        if not configuration.get('engine'):
+    def _fail_if_configuration_is_invalid(self):
+        if not self.engine_configuration:
             raise exceptions.ConfigurationError('no engine-configuration provided')
-        if not configuration['engine'].get('url'):
+        if not self.engine_configuration.get('url'):
             raise exceptions.ConfigurationError('missing database-URL')
-        if not configuration['ping_interval']:
-            detail = 'currently set to "%r"' % configuration['ping_interval']
+        if not self.ping_interval:
+            detail = 'currently set to [{0!r}]'.format(configuration['ping_interval'])
             raise exceptions.ConfigurationError('Please specify a non-zero ping-interval', detail)
 
     @defer.inlineCallbacks
@@ -147,40 +168,41 @@ class EngineManager(piped_service.PipedService):
             try:
                 # Connect and ping. The engine is a pool, so we're not
                 # really establishing new connections all the time.
-                logger.info('Attempting to connect to "{0}"'.format(self.profile_name))
+                logger.info('Attempting to connect to [{0}]'.format(self.profile_name))
                 yield self.cancellable(threads.deferToThread(self._test_connectivity, self.engine))
-                logger.info('Connected to "{0}"'.format(self.profile_name))
+                logger.info('Connected to [{0}]'.format(self.profile_name))
 
                 if not self.is_connected:
+                    self.is_connected = True
                     self.on_connection_established(self.engine)
 
-                self.is_connected = True
-
                 while self.running:
-                    yield self.cancellable(util.wait(self.configuration['ping_interval']))
+                    yield self.cancellable(util.wait(self.ping_interval))
                     yield self.cancellable(threads.deferToThread(self._test_connectivity, self.engine))
 
-            except defer.CancelledError as e:
+            except defer.CancelledError:
                 if self.is_connected:
-                    self.on_connection_lost(e)
+                    self.is_connected = False
+                    self.on_connection_lost(failure.Failure())
 
-                self.is_connected = False
+                continue # Engine is disposed in finally.
 
             except Exception as e:
-                logger.error('Error with engine "{0}": {1}'.format(self.profile_name, e.message))
+                logger.exception('Error with engine [{0}]'.format(self.profile_name))
                 failure_ = failure.Failure()
+
                 if self.is_connected:
-                    logger.error('Lost connection to "{0}"'.format(self.profile_name))
+                    logger.error('Lost connection to [{0}]'.format(self.profile_name))
+                    self.is_connected = False
                     self.on_connection_lost(failure_)
-
-                self.is_connected = False
-                self.on_connection_failed(failure_)
-
-                yield self.cancellable(util.wait(self.configuration['retry_interval']))
-
+                else:
+                    self.on_connection_failed(failure_)
 
             finally:
+                self.is_connected = False
                 self.engine.dispose()
+
+            yield self.cancellable(util.wait(self.retry_interval))
 
     def _test_connectivity(self, engine):
         if not self.running:
@@ -192,24 +214,6 @@ class EngineManager(piped_service.PipedService):
             connection.execute("SELECT 'ping'")
         finally:
             connection.close()
-
-
-class ConnectionProxy(sqlalchemy.interfaces.ConnectionProxy):
-    """ Proxy that intercepts executed cursors and relays
-    `OperationalError`s to the manager. """
-
-    intercepted_exceptions = (sa.exc.OperationalError, )
-
-    def __init__(self, manager):
-        self.manager = manager
-
-    # See SQLAlchemy's documentation on this one.
-    def cursor_execute(self, execute, cursor, statement, parameters, context, executemany):
-        try:
-            return execute(cursor, statement, parameters, context)
-        except self.intercepted_exceptions:
-            reactor.callFromThread(self.manager.on_connection_failed, failure.Failure())
-            raise
 
 
 class PostgresListener(piped_service.PipedService):
@@ -231,15 +235,28 @@ class PostgresListener(piped_service.PipedService):
     This service is not intended to be used directly to issue
     arbitrary SQL. Use the EngineProvider if you need more data from
     the database on notifications.
+
+    Although it takes the same configuration arguments as
+    :class:`EventManager`, only `engine.url`, and `checkout` are used,
+    in addition to the retry/ping/txid_poll-intervals. Since we are
+    not dealing with a connection pool in this case, only the
+    checkout-strings make sense in this context. Event handlers in
+    `events` are not used.
     """
 
-    def __init__(self, configuration, profile_name):
+    def __init__(self, profile_name, url, checkout=None, checkin=None, events=None, ping_interval=10.0, retry_interval=5.0, txid_poll_interval=.1):
         super(PostgresListener, self).__init__()
         if not txpostgres and psycopg2:
             raise exceptions.ConfigurationError('cannot use PostgresListener without psycopg2 and txpostgres')
 
-        self.configuration = configuration
         self.profile_name = profile_name
+        self.url = url
+        self.ping_interval = ping_interval
+        self.retry_interval = retry_interval
+        self.txid_poll_interval = txid_poll_interval
+        
+        self.checkout = [] if checkout is None else checkout
+        
         self._lock = defer.DeferredLock()
         self._connection = None
         self._listeners = collections.defaultdict(set)
@@ -253,12 +270,8 @@ class PostgresListener(piped_service.PipedService):
         self.on_connection_lost = event.Event()
         self.on_connection_failed = event.Event()
 
-        configuration.setdefault('ping_interval', 10.0)
-        configuration.setdefault('retry_interval', 5.0)
-        configuration.setdefault('txid_poll_interval', .1)      
-
     def _connect(self):
-        url = urlparse.urlparse(self.configuration['engine']['url'])
+        url = urlparse.urlparse(self.url)
         dsn = dict(
             database=url.path.strip('/'),
             password=url.password,
@@ -288,39 +301,52 @@ class PostgresListener(piped_service.PipedService):
         try:
             while self.running:
                 try:
-                    logger.info('PostgresListener attempting to connect to "{0}"'.format(self.profile_name))
+                    logger.info('PostgresListener attempting to connect to [{0}]'.format(self.profile_name))
                     yield self._run_exclusively(self._connect)
                     self.is_connected = True
-                    yield self._run_exclusively(self._connection.runOperation, "SET SESSION TIMEZONE TO 'UTC'")
+
                     yield self._run_exclusively(self._connection.runOperation, "SET application_name TO '%s-listener'" % self.profile_name)
+                    for sql_string in self.checkout:
+                        yield self._run_exclusively(self._connection.runOperation, sql_string)
+
                     self._connection.addNotifyObserver(self._notify)
-                    logger.info('PostgresListener connected "{0}"'.format(self.profile_name))
+                    logger.info('PostgresListener connected [{0}]'.format(self.profile_name))
                     self.on_connection_established(self)
 
                     while self.running:
                         try:
                             if self.is_waiting_for_txid_min:
-                                yield util.wait(self.configuration['txid_poll_interval'])
+                                yield self.cancellable(util.wait(self.txid_poll_interval))
                                 yield self._check_txid_threshold()
                             else:
-                                yield self.currently_pinging(util.wait(self.configuration['ping_interval']))
+                                yield self.currently_pinging(self.cancellable(util.wait(self.ping_interval)))
                                 yield self.currently_pinging(self._ping())
                         except defer.CancelledError:
                             pass
+
+                    # We've cancelled, and is no longer running.
+                    if self.is_connected:
+                        self.is_connected = False
+                        self.on_connection_lost(failure.Failure())
                     
                 except psycopg2.Error:
                     logger.exception('Database failure. Traceback follows')
                     failure_ = failure.Failure()
                     if self.is_connected:
+                        self.is_connected = False
                         self.on_connection_lost(failure_)
-                    self.is_connected = False
-                    self.on_connection_failed(failure_)
+                    else:
+                        self.on_connection_failed(failure_)
                     
-                    yield self.currently(util.wait(self.configuration['retry_interval']))
+                    yield self.currently(util.wait(self.retry_interval))
                     
                 except defer.CancelledError:
-                    pass
+                    if self.is_connected:
+                        self.is_connected = False
+                        self.on_connection_lost(failure.Failure())
 
+        except defer.CancelledError:
+            pass
         except Exception as e:
             logger.exception('Unhandled exception in PostgresListener.run')
         finally:

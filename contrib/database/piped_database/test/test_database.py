@@ -36,11 +36,14 @@ class EngineProviderTest(unittest.TestCase):
     def make_engine_manager(self, profile_name='test_profile', **kwargs):
         kwargs.setdefault('engine', dict(url='sqlite://'))
 
-        engine_manager = db.EngineManager(kwargs, profile_name)
+        engine_manager = db.EngineManager(profile_name, **kwargs)
 
-        # Only wait a reactor-iteration when testing.
-        engine_manager.configuration['ping_interval'] = 0
-        engine_manager.configuration['retry_interval'] = 0
+        # Only wait a reactor-iteration when testing. (There's an
+        # assertion that this is non-zero, as that's not something you
+        # want outside of tests, so we have to set it after making the
+        # manager)
+        engine_manager.ping_interval = 0
+        engine_manager.retry_interval = 0
 
         engine_manager.on_connection_established += lambda engine: self.events.put(('connected', engine))
         engine_manager.on_connection_lost += lambda reason: self.events.put(('lost', reason))
@@ -104,6 +107,7 @@ class EngineProviderTest(unittest.TestCase):
             mock.call.connection(),
             mock.call.connection().execute("SELECT 'ping'"),
             mock.call.connection().close(),
+            mock.call.engine.dispose(), # and disposed when the service stops.
             mock.call.engine.dispose() # and disposed when the service stops.
         ])
 
@@ -122,10 +126,6 @@ class EngineProviderTest(unittest.TestCase):
 
         event = yield self.events.get()
         self.assertEquals(event[0], 'lost')
-        self.assertTrue(event[1].value is fake_error)
-
-        event = yield self.events.get()
-        self.assertEquals(event[0], 'failed')
         self.assertTrue(event[1].value is fake_error)
 
         self.assertEquals((yield self.events.get()), ('connected', mocked_engine))
