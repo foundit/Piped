@@ -70,7 +70,7 @@ class PipedService(object, service.MultiService):
             return
 
         self._might_be_cancelled = defer.Deferred()
-        service.Service.startService(self)
+        service.MultiService.startService(self)
         self.run()
 
     def run(self):
