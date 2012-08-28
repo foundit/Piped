@@ -653,6 +653,42 @@ def wait_for_first(ds):
     return d
 
 
+def get_callable_with_different_side_effects(side_effects):
+    """ Returns a callable that either returns a value, returns the
+    result of a callable or raises an exception for a call *i*
+    depending on the *i*-th value of *side_effects*.
+
+    This is useful when needing different side-effects for mocked calls.
+
+    Example: ..:
+
+        >>> f = get_callable_with_different_side_effects([1, lambda: 42, Exception('err'), 2])
+        >>> f()
+        1
+        >>> f()
+        42
+        >>> f() # doctest:+ELLIPSIS
+        Traceback (most recent call last):
+        ...
+        Exception: err
+        >>> f()
+        2
+    """
+    side_effects = iter(side_effects)
+
+    def _wrapped(*a, **kw):
+        side_effect = side_effects.next()
+
+        if isinstance(side_effect, Exception):
+            raise side_effect
+        elif hasattr(side_effect, '__call__'):
+            return side_effect(*a, **kw)
+        else:
+            return side_effect
+
+    return _wrapped
+
+
 def get_maybe_first_error_failure(reason):
     """ Get the nested failure if the given failure contains a FirstError exception.
 
@@ -690,3 +726,4 @@ def deferred_with_timeout(d, timeout=None, timeout_exception=Exception('timeout'
     return_deferred = dl.addCallback(operator.itemgetter(0)).addErrback(get_maybe_first_error_failure)
 
     return return_deferred.addBoth(cleanup)
+

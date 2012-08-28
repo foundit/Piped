@@ -1,14 +1,13 @@
-# Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
+# Copyright (c) 2010-2012, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
 
 """ Test the database provider --- it should handle failures
 gracefully and notify its customers upon connection, disconnections,
 etc. """
-import mocker
 import mock
 import sqlalchemy as sa
 from twisted.application import service
-from twisted.internet import defer
+from twisted.internet import defer, reactor
 from twisted.trial import unittest
 from twisted.python import util as twisted_util, failure
 
@@ -17,302 +16,138 @@ from piped_database import db, test as test_package
 from piped_database import providers as database_provider
 
 
-class DatabaseProviderTest(unittest.TestCase):
-    timeout = 2
+class FakeError(sa.exc.OperationalError):
+    def __init__(self):
+        pass
+
+    def __str__(self):
+        return 'FakeError'
+    __repr__ = __str__
+
+
+class EngineProviderTest(unittest.TestCase):
+    timeout = 20
     configuration_manager = None
 
     def setUp(self):
-        # only set up the configuration manager once per class:
-        if not self.configuration_manager:
-            self.configuration_manager = conf.ConfigurationManager()
-            piped_conf_file = twisted_util.sibpath(test_package.__file__, 'conf.yml')
-            self.configuration_manager.load_from_file(piped_conf_file)
+        self.events = defer.DeferredQueue()
+        self.mocker = mock.MagicMock()
 
-        self.mocker = mocker.Mocker()
+    def make_engine_manager(self, profile_name='test_profile', **kwargs):
+        kwargs.setdefault('engine', dict(url='sqlite://'))
 
-        database_configuration = self.configuration_manager.get('test_database')
-        self.metadata_provider = db.DatabaseMetadataManager(database_configuration)
+        engine_manager = db.EngineManager(profile_name, **kwargs)
 
-    def tearDown(self):
-        self.mocker.restore()
-        self.mocker.verify()
+        # Only wait a reactor-iteration when testing. (There's an
+        # assertion that this is non-zero, as that's not something you
+        # want outside of tests, so we have to set it after making the
+        # manager)
+        engine_manager.ping_interval = 0
+        engine_manager.retry_interval = 0
+
+        engine_manager.on_connection_established += lambda engine: self.events.put(('connected', engine))
+        engine_manager.on_connection_lost += lambda reason: self.events.put(('lost', reason))
+        engine_manager.on_connection_failed += lambda reason: self.events.put(('failed', reason))
+
+        return engine_manager
 
     @defer.inlineCallbacks
-    def test_connection_events_called(self):
+    def test_connect_event_called(self):
         """ Check that the right events are called when connections
         are established and lost. """
+        engine_manager = self.make_engine_manager()
 
-        queue = defer.DeferredQueue()
+        engine_manager.engine = mocked_engine = self.mocker.engine
+        mocked_connection = self.mocker.connection
+        mocked_engine.connect.return_value=mocked_connection
 
-        self.metadata_provider.on_connection_established += lambda *a: queue.put('established')
-        self.metadata_provider.on_connection_lost += lambda *a: queue.put('lost')
+        engine_manager.startService()
 
-        # Connect and check that the event was called.
-        self.metadata_provider.connect()
-        event_invoked = yield queue.get()
-        self.assertEquals(event_invoked, 'established')
+        event = yield self.events.get()
+        self.assertEquals(event, ('connected', mocked_engine))
 
-        # It should be idempotent.
-        self.metadata_provider.connect()
-        yield util.wait(0) # To give any unwanted event a chance to put something in the queue.
-        self.failIf(queue.size > 0, "When already connected, an additional connect() should not invoke the established-event")
+        engine_manager.stopService()
+        yield util.wait(0)
 
-        # Disconnect and check that the event was called.
-        self.metadata_provider.disconnect()
+        self.failIf(self.events.size > 0)
 
-        event_invoked = yield queue.get()
-        self.assertEquals(event_invoked, 'lost')
-
-    def test_with_reflection_an_initial_connection_is_established_with_reflection(self):
-        """ Check that a connection is established when
-        reflecting. """
-        self.metadata_provider.connect(reflect=True)
-        self.assertEquals(self.metadata_provider.metadata.bind.pool.checkedin(), 1,
-                          "A connection was not established when we expected it to")
-
-    def test_with_reflection_an_initial_connection_is_established_without_reflection(self):
-        """ Check that a connection is established also when not
-        reflecting. """
-        self.metadata_provider.connect(reflect=False)
-        self.assertEquals(self.metadata_provider.metadata.bind.pool.checkedin(), 1,
-                          "A connection was not established when we expected it to")
+        self.assertEquals(self.mocker.mock_calls, [
+                mock.call.engine.connect(),
+                mock.call.connection.execute("SELECT 'ping'"),
+                mock.call.connection.close(),
+                mock.call.engine.dispose()
+        ])
 
     @defer.inlineCallbacks
-    def test_connected_event_not_called_upon_connection_error(self):
-        """ If a connection cannot be established, the
-        on_connection_established must not be invoked."""
+    def test_handling_connect_error(self):
+        """ If an error occurs on connect, another attempt should be made. """
+        engine_manager = self.make_engine_manager()
+        engine_manager.engine = mocked_engine = self.mocker.engine
+        mocked_connection = self.mocker.connection
+        fake_error = FakeError()
+        mocked_engine.connect.side_effect=util.get_callable_with_different_side_effects([fake_error, mocked_connection])
 
-        # Set the initial connection up to fail.
-        fake_metadata = self.mocker.mock()
-        fake_metadata.reflect()
-        exception = sa.exc.SQLAlchemyError()
-        self.mocker.throw(exception)
+        engine_manager.startService()
+        event = yield self.events.get()
+        self.assertEquals(event[0], 'failed')
+        self.assertTrue(event[1].value is fake_error)
 
-        self.metadata_provider.metadata_factory = lambda engine: fake_metadata
+        event = yield self.events.get()
+        self.assertEquals(event, ('connected', mocked_engine))
 
-        # connect event should not be invoked, whereas connection_failed should.
-        def fail(_):
-            self.fail('Expected on_connection_established to NOT be called.')
-        self.metadata_provider.on_connection_established += fail
+        yield util.wait(0)
+        engine_manager.stopService()
+        yield util.wait(0)
 
-        on_connection_failed = defer.Deferred()
-        self.metadata_provider.on_connection_failed += on_connection_failed.callback
-        self.mocker.replay()
-
-        with mock.patch.object(db, 'logger') as mocked_logger:
-            try:
-                self.metadata_provider.connect()
-                self.fail("Expected an SQLAlchemyError")
-            except sa.exc.SQLAlchemyError:
-                pass
-
-            try:
-                yield on_connection_failed
-                self.fail("Expected to a failure")
-            except sa.exc.SQLAlchemyError:
-                pass
-
-        self.mocker.verify()
+        self.failIf(self.events.size > 0)
+        self.assertEquals(self.mocker.mock_calls, [
+            mock.call.engine.connect(),
+            mock.call.engine.dispose(), # The first connect fails, so the engine is disposed.
+            mock.call.engine.connect(),
+            mock.call.connection(),
+            mock.call.connection().execute("SELECT 'ping'"),
+            mock.call.connection().close(),
+            mock.call.engine.dispose(), # and disposed when the service stops.
+            mock.call.engine.dispose() # and disposed when the service stops.
+        ])
 
     @defer.inlineCallbacks
-    def test_reconnect(self):
-        """ When configured to reconnect, the provider should
-        reconnect and eventually call the connection established
-        event. """
-        queue = defer.DeferredQueue()
-        # Hook up subscribers.
-        self.metadata_provider.on_connection_established += lambda *a: queue.put('established')
-        self.metadata_provider.on_connection_lost += lambda *a: queue.put('lost')
+    def test_handling_ping_error_then_reconnecting(self):
+        engine_manager = self.make_engine_manager()
+        engine_manager.engine = mocked_engine = self.mocker.engine
+        mocked_connection = self.mocker.connection
+        fake_error = FakeError()
+        mocked_engine.connect.side_effect=lambda: mocked_connection
+        mocked_connection.execute.side_effect=util.get_callable_with_different_side_effects([None, fake_error, lambda *a, **kw: reactor.callFromThread(reactor.callLater, 0, engine_manager.stopService)])
 
-        # Reconnection logic expects an initial connection to have existed.
-        self.metadata_provider.connect()
-        event = yield queue.get()
-        self.assertEquals(event, 'established')
+        engine_manager.startService()
 
-        # This should call the connection lost events.
-        self.metadata_provider.disconnect()
-        event = yield queue.get()
-        self.assertEquals(event, 'lost')
+        self.assertEquals((yield self.events.get()), ('connected', mocked_engine))
 
-        self.metadata_provider.startService()
-        # This should eventually result in a new connection.
-        self.metadata_provider.keep_reconnecting_and_report()
-        event = yield queue.get()
-        self.assertEquals(event, 'established')
+        event = yield self.events.get()
+        self.assertEquals(event[0], 'lost')
+        self.assertTrue(event[1].value is fake_error)
 
-    @defer.inlineCallbacks
-    def test_reconnect_survives_failure(self):
-        """ Check that the provider survives reconnection failures and
-        eventually succeeds. """
-        queue = defer.DeferredQueue()
-        # Hook up subscribers.
-        self.metadata_provider.on_connection_established += lambda *a: queue.put('established')
-        self.metadata_provider.on_connection_lost += lambda *a: queue.put('lost')
+        self.assertEquals((yield self.events.get()), ('connected', mocked_engine))
 
-        # Reconnection logic expects an initial connection to have existed.
-        self.metadata_provider.connect(reflect=False)
-        self.metadata_provider.disconnect()
+        self.failIf(self.events.size > 0)
+        yield util.wait(0)
 
-        event = yield queue.get()
-        self.assertEquals(event, 'established')
+        self.assertEquals(self.mocker.mock_calls, [
+            # First ping succeeds.
+            mock.call.engine.connect(),
+            mock.call.connection.execute("SELECT 'ping'"),
+            mock.call.connection.close(),
 
-        # Lose the connection.
-        event = yield queue.get()
-        self.assertEquals(event, 'lost')
+            # This one fails. The engine is disposed as a result.
+            mock.call.engine.connect(),
+            mock.call.connection.execute("SELECT 'ping'"),
+            mock.call.connection.close(),
+            mock.call.engine.dispose(),
 
-        self.metadata_provider.reconnect_wait = 0.1 # ... skip the waiting.
-        self.metadata_provider.running = True
-        # Set the provider up to fail.
-        self.metadata_provider = self.mocker.patch(self.metadata_provider)
-
-        self.metadata_provider.test_connectivity()
-        self.mocker.throw(sa.exc.SQLAlchemyError())
-        self.metadata_provider.test_connectivity()
-        self.mocker.passthrough()
-        self.mocker.count(1, max=None)
-
-        self.mocker.replay()
-
-        with mock.patch.object(db, 'logger') as mocked_logger:
-            # Start reconnecting
-            d = self.metadata_provider.keep_reconnecting_and_report()
-            # Check idempotency.
-            d2 = self.metadata_provider.keep_reconnecting_and_report()
-            self.assertEquals(d, d2)
-
-            yield d
-        # Make sure we are really connected when the reconnection-deferred has callbacked.
-        self.metadata_provider.test_connectivity()
-
-    @defer.inlineCallbacks
-    def test_connect_to_nonexisting_host_times_out(self):
-        """ Ensure that connection eventually times out. """
-        # timeout is expected to be an integer, and 0 means no
-        # timeout, so we'll have to spend a second if we want to keep
-        # things simple.
-        timeout = 1
-        wrong_config = dict(user='foo', password='foo', host='127.0.0.2',
-                            database_name='if_this_exists_it_is_my_own_fault_some_tests_fail',
-                            timeout=timeout)
-
-        self.mocker.replay()
-
-        # Make a new provider, since the default one from setUp is correctly configured.
-        self.metadata_provider = db.DatabaseMetadataManager(wrong_config)
-
-        with mock.patch.object(db, 'logger') as mocked_logger:
-            try:
-                self.metadata_provider.connect()
-                self.fail("The connect should fail")
-            except sa.exc.SQLAlchemyError:
-                pass
-            # wait one reactor iteration, so the callFromThread error from the connection-attempt gets executed
-            yield util.wait(0)
-
-    def test_connect_with_existing_metadata(self):
-        """ Test that we can provide our own metadata. """
-        metadata = sa.MetaData()
-
-        self.metadata_provider.connect(reflect=True, existing_metadata=metadata)
-        # Check that reflection has happened:
-        self.assertTrue(metadata.tables, "No tables were reflected")
-
-        self.assertEquals(self.metadata_provider.metadata.bind.pool.checkedin(), 1,
-                          "A connection was not established when we expected it to")
-
-
-class TestDatabaseMetadataProvider(unittest.TestCase):
-    timeout = 2
-
-    def setUp(self):
-        self.mocker = mocker.Mocker()
-        self.provider = database_provider.DatabaseMetadataProvider()
-
-        self.environment = processing.RuntimeEnvironment()
-        self.environment.application = service.MultiService()
-        self.environment.resource_manager = self.resource_manager = self.mocker.mock()
-
-    def tearDown(self):
-        self.mocker.restore()
-
-    def disable_logging(self):
-        log = self.mocker.replace('piped.log')
-        log.error(mocker.ANY)
-        self.mocker.count(0, None)
-
-    def set_profiles(self, database_profiles):
-        self.environment.configuration_manager.set('database.profiles', database_profiles)
-
-    def test_all_profiles_are_provided(self):
-        database_profiles = dict(foo={}, bar={})
-        self.set_profiles(database_profiles)
-
-        for profile_name in database_profiles:
-            self.resource_manager.register('database.%s'%profile_name, provider=self.provider)
-
-        self.mocker.replay()
-
-        self.provider.configure(self.environment)
-
-        self.mocker.restore()
-        self.mocker.verify()
-
-    @defer.inlineCallbacks
-    def test_connection_event_propagates_to_the_consumer(self):
-        provider = database_provider.DatabaseMetadataProvider()
-
-        # Make the connect succeed without actually connecting.
-        fake_manager = provider._manager_for_profile['fake_profile'] = self.mocker.patch(db.DatabaseMetadataManager(dict()))
-        fake_manager.connect()
-        self.mocker.call(lambda: fake_manager.on_connection_established(None))
-
-        # Make sure that success results in an on_resource_ready on the dependency.
-        d = defer.Deferred()
-        resource_dependency = dependencies.ResourceDependency(provider='database.fake_profile')
-        resource_dependency.on_resource_ready += d.callback
-        resource_dependency.on_resource_lost += lambda reason: d.errback(reason)
-
-        self.mocker.replay()
-
-        provider.add_consumer(resource_dependency)
-
-        result = yield d
-        self.assertTrue(result is fake_manager)
-
-        self.mocker.verify()
-
-    @defer.inlineCallbacks
-    def test_on_connection_failed_propagates_to_the_consumer(self):
-        provider = database_provider.DatabaseMetadataProvider()
-
-        # Make the connect succeed without actually connecting.
-        fake_manager = provider._manager_for_profile['fake_profile'] = self.mocker.patch(db.DatabaseMetadataManager(dict()))
-        fake_manager.connect()
-        self.mocker.call(lambda: fake_manager.on_connection_failed(failure.Failure(sa.exc.SQLAlchemyError())))
-
-        # Make sure that success results in an on_resource_ready on the dependency.
-        d = defer.Deferred()
-        resource_dependency = dependencies.ResourceDependency(provider='database.fake_profile')
-        resource_dependency.on_resource_ready += d.callback
-        resource_dependency.on_resource_lost += lambda reason: d.errback(reason)
-
-        self.mocker.replay()
-
-        with mock.patch.object(db, 'logger') as mocked_logger:
-            provider.add_consumer(resource_dependency)
-
-            try:
-                yield d
-                self.fail('Expected the connect call to result in an exception')
-            except sa.exc.SQLAlchemyError:
-                pass
-
-        self.mocker.verify()
-
-
-# Skip these tests if psycopg2 is not installed
-# TODO: Do the tests with SQLite.
-try:
-    import psycopg2
-except ImportError:
-    DatabaseProviderTest.skip = 'Did not find psycopg2'
+            # After this ping we stop the service.
+            mock.call.engine.connect(),
+            mock.call.connection.execute("SELECT 'ping'"),
+            mock.call.connection.close(),
+            mock.call.engine.dispose()
+        ])

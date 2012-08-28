@@ -68,5 +68,5 @@ setup(
 
     tests_require = ['psycopg2'],
 
-    install_requires = ['piped', 'sqlalchemy', 'mocker', 'setuptools']
+    install_requires = ['piped', 'sqlalchemy', 'mocker', 'setuptools', 'txpostgres']
 )
