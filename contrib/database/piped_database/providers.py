@@ -64,14 +64,17 @@ class DatabaseEngineProvider(object, service.MultiService):
     def add_consumer(self, resource_dependency):
         profile_name = resource_dependency.provider.split('.')[2]
 
-        self._ensure_profile_has_manager(profile_name)
+        manager = self._ensure_profile_has_manager(profile_name)
         self._bind_events_for_consumer(resource_dependency, profile_name)
+        if manager.is_connected:
+            resource_dependency.on_resource_ready(manager.engine)
 
     def _ensure_profile_has_manager(self, profile_name):
         if profile_name not in self._manager_for_profile:
             manager = database.EngineManager(self.database_profiles[profile_name], profile_name)
             manager.setServiceParent(self)
             self._manager_for_profile[profile_name] = manager
+        return self._manager_for_profile[profile_name]
 
     def _bind_events_for_consumer(self, resource_dependency, profile_name):
         engine_manager = self._manager_for_profile[profile_name]
@@ -107,14 +110,17 @@ class PostgresListenProvider(object, service.MultiService):
 
         profile_name = resource_dependency.provider.split('.')[2]
 
-        self._ensure_profile_has_listener(profile_name)
+        listener = self._ensure_profile_has_listener(profile_name)
         self._bind_events_for_consumer(resource_dependency, profile_name)
+        if listener.is_connected:
+            resource_dependency.on_resource_ready(listener)
 
     def _ensure_profile_has_listener(self, profile_name):
         if profile_name not in self._listener_for_profile:
             listener = database.PostgresListener(self.database_profiles[profile_name], profile_name)
             listener.setServiceParent(self)
             self._listener_for_profile[profile_name] = listener
+        return self._listener_for_profile[profile_name]
 
     def _bind_events_for_consumer(self, resource_dependency, profile_name):
         engine_listener = self._listener_for_profile[profile_name]
