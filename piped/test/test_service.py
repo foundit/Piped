@@ -15,15 +15,21 @@ class StubServicePluginManager(service.ServicePluginManager):
 class ServicePluginManagerTest(unittest.TestCase):
     def setUp(self):
         self.runtime_environment = processing.RuntimeEnvironment()
+        self.runtime_environment.configure()
         self.manager = StubServicePluginManager()
 
-    def configure_and_get_service(self):
+    def configure_and_get_service(self, service_class=stub.StubService):
         self.manager.configure(self.runtime_environment)
-        return self.manager.services[0]
+        for service in self.manager.services:
+            if isinstance(service, service_class):
+                return service
 
     def test_making_service(self):
         self.manager.configure(self.runtime_environment)
-        self.assertEquals(len(self.manager.services), 1)
+        # the disabled service should not be started
+        self.assertEquals(len(self.manager.services), 2)
+        # .. but its important for the correctness of this test that it is found:
+        self.assertIn(stub.StubDisabledService, self.manager._plugins)
 
     def test_configuring_service(self):
         stub_service = self.configure_and_get_service()
@@ -76,3 +82,55 @@ class PipedServiceTest(unittest.TestCase):
             self.fail('Expected error')
         except defer.CancelledError:
             pass
+
+
+class PipedDependencyServiceTest(unittest.TestCase):
+
+    def setUp(self):
+        self.service = stub.StubDependencyService()
+
+        self.runtime_environment = processing.RuntimeEnvironment()
+        self.runtime_environment.configure()
+        self.dependency_manager = self.runtime_environment.dependency_manager
+
+        self.service.configure(self.runtime_environment)
+
+    def tearDown(self):
+        return self.service.stopService()
+
+    def test_runs_only_when_ready(self):
+        self.assertEquals(self.service.running_with_dependencies, 0)
+        self.service.startService()
+        # since the dependency system has not marked the service as ready, it should not be running:
+        self.assertEquals(self.service.running, True)
+        self.assertEquals(self.service.running_with_dependencies, 0)
+
+        self.dependency_manager.resolve_initial_states()
+        self.assertEquals(self.service.running_with_dependencies, 1)
+
+    def test_runs_only_once(self):
+        self.service.startService()
+        self.dependency_manager.resolve_initial_states()
+        self.assertEquals(self.service.running_with_dependencies, 1)
+
+        self.service.startService()
+        self.assertEquals(self.service.running_with_dependencies, 1)
+
+        self.service.self_dependency.fire_on_ready()
+        self.assertEquals(self.service.running_with_dependencies, 1)
+
+    def test_cancels_when_stopped(self):
+        self.service.startService()
+        self.dependency_manager.resolve_initial_states()
+        self.assertEquals(self.service.running_with_dependencies, 1)
+
+        self.service.stopService()
+        self.assertEquals(self.service.running_with_dependencies, 0)
+
+    def test_cancels_when_dependency_lost(self):
+        self.service.startService()
+        self.dependency_manager.resolve_initial_states()
+        self.assertEquals(self.service.running_with_dependencies, 1)
+
+        self.service.self_dependency.fire_on_lost('reason')
+        self.assertEquals(self.service.running_with_dependencies, 0)
