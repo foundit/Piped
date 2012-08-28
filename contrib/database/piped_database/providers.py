@@ -87,7 +87,26 @@ class DatabaseEngineProvider(object, service.MultiService):
 
 
 class PostgresListenProvider(object, service.MultiService):
-    """ Provides :class:`PostgresListener`s. """
+    """Provides :class:`PostgresListener`s.
+
+    Obviously, this only works with Postgres backends.
+
+    The configuration used to configure the
+    :class:`DatabaseEngineProvider` is also the basis for this
+    provider.
+
+    The listeners are available at "database.listener.engine_name".
+
+    Note that just the *url*-parameter is used from *engine*, and
+    event-wise, only *checkout* is used --- i.e. SQL that should be
+    issued when the connection is established, such as setting a
+    timezone. The *checkin*- and *events*-handlers used by
+    :class:`EngineManager` is *not* used.
+
+    Status: Alpha.
+    API-stability: Unstable.
+
+    """
     interface.classProvides(resource.IResourceProvider)
 
     def __init__(self):
