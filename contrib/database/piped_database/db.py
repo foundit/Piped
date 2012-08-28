@@ -90,7 +90,7 @@ class EngineManager(piped_service.PipedService):
         checking out a connection is common, and if used, releasing
         Postgres advisory locks should be done when checking a
         connection back in.
-    
+
 
     Events:
 
@@ -254,9 +254,9 @@ class PostgresListener(piped_service.PipedService):
         self.ping_interval = ping_interval
         self.retry_interval = retry_interval
         self.txid_poll_interval = txid_poll_interval
-        
+
         self.checkout = [] if checkout is None else checkout
-        
+
         self._lock = defer.DeferredLock()
         self._connection = None
         self._listeners = collections.defaultdict(set)
@@ -328,7 +328,7 @@ class PostgresListener(piped_service.PipedService):
                     if self.is_connected:
                         self.is_connected = False
                         self.on_connection_lost(failure.Failure())
-                    
+
                 except psycopg2.Error:
                     logger.exception('Database failure. Traceback follows')
                     failure_ = failure.Failure()
@@ -337,9 +337,9 @@ class PostgresListener(piped_service.PipedService):
                         self.on_connection_lost(failure_)
                     else:
                         self.on_connection_failed(failure_)
-                    
+
                     yield self.currently(util.wait(self.retry_interval))
-                    
+
                 except defer.CancelledError:
                     if self.is_connected:
                         self.is_connected = False
@@ -365,7 +365,7 @@ class PostgresListener(piped_service.PipedService):
 
                 yield self._run_exclusively(self._connection.runOperation, 'LISTEN "%s"' % event)
                 logger.info('"%s"-listener is now listening to "%s"' % (self.profile_name, event))
-            
+
             self._listeners[event].add(dq)
 
         defer.returnValue(dq)
@@ -412,4 +412,3 @@ class PostgresListener(piped_service.PipedService):
         txid_min = yield self._get_current_txid_min()
         while self.running and self._txid_queue and self._txid_queue[0][0] <= txid_min:
             heapq.heappop(self._txid_queue)[1].callback(txid_min)
-

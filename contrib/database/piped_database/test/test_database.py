@@ -143,7 +143,7 @@ class EngineProviderTest(unittest.TestCase):
             mock.call.engine.connect(),
             mock.call.connection.execute("SELECT 'ping'"),
             mock.call.connection.close(),
-            mock.call.engine.dispose(), 
+            mock.call.engine.dispose(),
 
             # After this ping we stop the service.
             mock.call.engine.connect(),

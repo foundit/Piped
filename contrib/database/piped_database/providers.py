@@ -140,7 +140,7 @@ class PostgresListenProvider(object, service.MultiService):
         if profile_name not in self._listener_for_profile:
             configuration = copy.deepcopy(self.database_profiles[profile_name])
             configuration['url'] = configuration.pop('engine')['url']
-            
+
             listener = database.PostgresListener(profile_name, **configuration)
             listener.setServiceParent(self)
             self._listener_for_profile[profile_name] = listener
@@ -152,4 +152,3 @@ class PostgresListenProvider(object, service.MultiService):
         engine_listener.on_connection_established += resource_dependency.on_resource_ready
         engine_listener.on_connection_failed += resource_dependency.on_resource_lost
         engine_listener.on_connection_lost += resource_dependency.on_resource_lost
-        
