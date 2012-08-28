@@ -1,9 +1,8 @@
 from twisted.internet import defer
 from twisted.plugin import IPlugin
 from twisted.application import service
-from zope import interface
 
-from piped import plugin, exceptions, providers as piped_providers, plugins, util
+from piped import plugin, plugins, util
 
 
 class IPipedService(IPlugin, service.IService):
