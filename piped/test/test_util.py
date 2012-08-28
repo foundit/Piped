@@ -516,4 +516,14 @@ class TestDeferredWithTimeout(unittest.TestCase):
         result_d.addBoth(self._ignore)
 
 
+class TestWait(unittest.TestCase):
+
+    def test_cancellable(self):
+        waiting = util.wait(180)
+        waiting.cancel()
+        # trial will report the reactor as unclean if the call to cancel does not cancel the delayedcall
+
+        waiting.addErrback(lambda failure: failure.trap(defer.CancelledError))
+
+
 __doctests__ = [util]

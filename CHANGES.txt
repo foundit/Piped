@@ -4,6 +4,9 @@ Features:
     - Plugin-loaded services: ``IPipedService``-plugins, with a helper
       ``PipedService``-base class in ``piped.service``.
 
+Internal changes:
+    - ``piped.util.wait(..)`` is now cancellable.
+
 Bug fixes:
     - The ZooKeeper provider could sometimes fail connecting while still
      providing the client.
