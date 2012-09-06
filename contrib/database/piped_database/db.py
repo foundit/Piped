@@ -338,7 +338,7 @@ class PostgresListener(piped_service.PipedService):
                     else:
                         self.on_connection_failed(failure_)
 
-                    yield self.currently(util.wait(self.retry_interval))
+                    yield self.cancellable(util.wait(self.retry_interval))
 
                 except defer.CancelledError:
                     if self.is_connected:
