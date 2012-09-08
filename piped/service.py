@@ -1,3 +1,5 @@
+import functools
+
 from twisted.internet import defer
 from twisted.plugin import IPlugin
 from twisted.application import service
@@ -56,8 +58,8 @@ class PipedService(object, service.MultiService):
 
     def __init__(self):
         service.MultiService.__init__(self)
-        self._might_be_cancelled = None
         self.runtime_environment = None
+        self._deferreds_to_cancel = set()
 
     def configure(self, runtime_environment):
         self.runtime_environment = runtime_environment
@@ -94,35 +96,29 @@ class PipedService(object, service.MultiService):
 
     def cancel(self):
         """ Cancels cancellables. """
-        # Swap it out before actually cancelling, so we don't
-        # accidentally end up in a loop
-        cancellable, self._might_be_cancelled = self._might_be_cancelled, defer.Deferred()
+        deferreds_to_cancel, self._deferreds_to_cancel = self._deferreds_to_cancel, set()
+        for deferred in deferreds_to_cancel:
+            deferred.cancel()
 
-        if cancellable:
-            cancellable.cancel()
-            # In case nobody's actually using it, shut up.
-            cancellable.addErrback(lambda failure: failure.trap(defer.CancelledError))
+    def _remove_deferred_and_passthrough(self, d, result):
+        self._deferreds_to_cancel.discard(d)
+        return result
 
     def cancellable(self, d):
-        """Takes a deferred *d* and returns another deferred that will
-        callback/errback with whatever *d* callbacks/errbacks with, or
-        errback with a `CancelledError` if `cancel()` is invoked.
-
-        If `cancel()` is invoked, then the deferred *d* is also
-        cancelled.
-
+        """ Add's the deferred to the set of deferreds that will be
+        cancelled if `cancel()` is invoked.
+        
         This is useful when you wait for deferreds that do not
         necessarily stop when this service stops --- especially when
         the process will continue on/restart this services and the
         "abandoned" deferreds and their callback-chains consume a lot
         of memory.
         """
-        def _cancel(failure):
-            d.cancel()
-            return failure
-
-        self._might_be_cancelled.addBoth(_cancel)
-        return util.wait_for_first([d, self._might_be_cancelled])
+        self._deferreds_to_cancel.add(d)
+        # If the deferred is callbacked/errbacked, we no longer need
+        # to keep it in the set.
+        d.addBoth(functools.partial(self._remove_deferred_and_passthrough, d))
+        return d
 
 
 class PipedDependencyService(PipedService):

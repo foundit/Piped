@@ -1,5 +1,7 @@
-# Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
+# Copyright (c) 2010-2012, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
+import weakref
+
 from twisted.internet import defer, reactor
 from twisted.trial import unittest
 
@@ -82,6 +84,14 @@ class PipedServiceTest(unittest.TestCase):
             self.fail('Expected error')
         except defer.CancelledError:
             pass
+
+    def test_not_holding_references_to_callbacked_cancellables(self):
+        d = defer.Deferred()
+        ref = weakref.ref(d)
+        self.service.cancellable(d)
+        d.callback(42)
+        del d
+        self.assertIsNone(ref())
 
 
 class PipedDependencyServiceTest(unittest.TestCase):
