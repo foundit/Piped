@@ -86,10 +86,11 @@ class ZookeeperClientProvider(object, service.MultiService):
 
 
 class ZookeeperClient(client.ZookeeperClient):
-    def _check_result(self, result_code, deferred, extra_codes=()):
-        """ Overriden to provide tracebacks on exceptions """
+
+    def _check_result(self, result_code, deferred, extra_codes=(), path=None):
+        """ Overridden to provide tracebacks on exceptions """
         d = defer.Deferred()
-        result = super(ZookeeperClient, self)._check_result(result_code, d, extra_codes)
+        result = super(ZookeeperClient, self)._check_result(result_code, deferred, extra_codes=(), path=None)
         if d.called:
             maybe_error = d.result
             if isinstance(maybe_error, Exception):

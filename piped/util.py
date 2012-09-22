@@ -3,6 +3,7 @@
 # Copyright (c) 2010-2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
 import datetime
+import functools
 import itertools
 import logging
 import operator
@@ -727,3 +728,70 @@ def deferred_with_timeout(d, timeout=None, timeout_exception=Exception('timeout'
 
     return return_deferred.addBoth(cleanup)
 
+
+class Cancellable(object):
+
+    def __init__(self):
+        self._children_cancellables = set()
+        self._deferreds_cancellable = set()
+        self._parent_cancellable = None
+
+    def set_cancellable_parent(self, parent_cancellable):
+        if parent_cancellable == self._parent_cancellable:
+            return
+
+        self.disown_cancellable_parent()
+
+        self._parent_cancellable = parent_cancellable
+
+        if parent_cancellable:
+            parent_cancellable._add_cancellable_child(self)
+
+    def disown_cancellable_parent(self):
+        if not self._parent_cancellable:
+            return
+
+        self._parent_cancellable._remove_cancellable_child(self)
+
+        self._parent_cancellable = None
+
+    def disown_cancellable_parent_callback(self, _, cancel=False):
+        self.disown_cancellable_parent()
+        if cancel:
+            self.cancel()
+        return
+
+    def cancel(self):
+        """ Cancels cancellables. """
+        deferreds_to_cancel, self._deferreds_cancellable = self._deferreds_cancellable, set()
+        for deferred in deferreds_to_cancel:
+            deferred.cancel()
+
+    def _add_cancellable_child(self, child):
+        self._children_cancellables.add(child)
+
+    def _remove_cancellable_child(self, child):
+        self._children_cancellables.remove(child)
+
+    def cancellable(self, d):
+        """ Add's the deferred to the set of deferreds that will be
+        cancelled if `cancel()` is invoked.
+
+        This is useful when you wait for deferreds that do not
+        necessarily stop when this service stops --- especially when
+        the process will continue on/restart this services and the
+        "abandoned" deferreds and their callback-chains consume a lot
+        of memory.
+        """
+        if not isinstance(d, defer.Deferred):
+            return d
+
+        self._deferreds_cancellable.add(d)
+        # If the deferred is callbacked/errbacked, we no longer need
+        # to keep it in the set.
+        d = d.addBoth(functools.partial(self._remove_deferred_and_passthrough, d))
+        return d
+
+    def _remove_deferred_and_passthrough(self, d, result):
+        self._deferreds_cancellable.discard(d)
+        return result
