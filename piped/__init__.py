@@ -1,3 +1,3 @@
 # See http://www.python.org/dev/peps/pep-0386/ for version numbering, especially NormalizedVersion
 from distutils import version
-version = version.LooseVersion('0.4.8-dev')
+version = version.LooseVersion('0.5.1-dev')

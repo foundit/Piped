@@ -53,13 +53,14 @@ class ServicePluginManager(plugin.PluginManager, service.MultiService):
             service_instance.setServiceParent(self)
 
 
-class PipedService(object, service.MultiService):
+class PipedService(util.Cancellable, service.MultiService):
     """ Base-class for `IPipedService`s. """
 
     def __init__(self):
+        util.Cancellable.__init__(self)
         service.MultiService.__init__(self)
+
         self.runtime_environment = None
-        self._deferreds_to_cancel = set()
 
     def configure(self, runtime_environment):
         self.runtime_environment = runtime_environment
@@ -71,7 +72,6 @@ class PipedService(object, service.MultiService):
         if self.running:
             return
 
-        self._might_be_cancelled = defer.Deferred()
         service.MultiService.startService(self)
         self.run()
 
@@ -93,32 +93,6 @@ class PipedService(object, service.MultiService):
 
         service.MultiService.stopService(self)
         self.cancel()
-
-    def cancel(self):
-        """ Cancels cancellables. """
-        deferreds_to_cancel, self._deferreds_to_cancel = self._deferreds_to_cancel, set()
-        for deferred in deferreds_to_cancel:
-            deferred.cancel()
-
-    def _remove_deferred_and_passthrough(self, d, result):
-        self._deferreds_to_cancel.discard(d)
-        return result
-
-    def cancellable(self, d):
-        """ Add's the deferred to the set of deferreds that will be
-        cancelled if `cancel()` is invoked.
-        
-        This is useful when you wait for deferreds that do not
-        necessarily stop when this service stops --- especially when
-        the process will continue on/restart this services and the
-        "abandoned" deferreds and their callback-chains consume a lot
-        of memory.
-        """
-        self._deferreds_to_cancel.add(d)
-        # If the deferred is callbacked/errbacked, we no longer need
-        # to keep it in the set.
-        d.addBoth(functools.partial(self._remove_deferred_and_passthrough, d))
-        return d
 
 
 class PipedDependencyService(PipedService):
