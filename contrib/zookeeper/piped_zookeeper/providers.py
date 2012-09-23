@@ -86,25 +86,7 @@ class ZookeeperClientProvider(object, service.MultiService):
 
 
 class ZookeeperClient(client.ZookeeperClient):
-
-    def _check_result(self, result_code, deferred, extra_codes=(), path=None):
-        """ Overridden to provide tracebacks on exceptions """
-        d = defer.Deferred()
-        result = super(ZookeeperClient, self)._check_result(result_code, deferred, extra_codes=(), path=None)
-        if d.called:
-            maybe_error = d.result
-            if isinstance(maybe_error, Exception):
-                maybe_error = failure.Failure(maybe_error)
-            if isinstance(maybe_error, failure.Failure):
-                try:
-                    raise maybe_error.type, maybe_error.value
-                except Exception as e:
-                    # add an empty errback since we're handling the failure by forwarding the exception
-                    d.addErrback(lambda _: None)
-                    deferred.errback()
-                    return result
-        d.chainDeferred(deferred)
-        return result
+    pass
 
 
 class PipedZookeeperClient(object, service.Service):
