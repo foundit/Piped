@@ -759,7 +759,7 @@ class Cancellable(object):
         self.disown_cancellable_parent()
         if cancel:
             self.cancel()
-        return
+        return _
 
     def cancel(self):
         """ Cancels cancellables. """

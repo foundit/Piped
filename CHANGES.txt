@@ -1,5 +1,8 @@
 ================================ Next release ================================
 
+Bug fixes:
+    - ``p.util.Cancellable.disown_cancellable_parent_callback`` now correctly
+      passes the return value through.
 
 ========================== Release 0.5.0 2012-09-23 ==========================
 
