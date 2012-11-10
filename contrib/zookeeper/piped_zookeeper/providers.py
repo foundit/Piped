@@ -86,7 +86,15 @@ class ZookeeperClientProvider(object, service.MultiService):
 
 
 class ZookeeperClient(client.ZookeeperClient):
-    pass
+
+    def _check_result(self, result_code, deferred, extra_codes=(), path=None):
+        deferred.addErrback(self._include_stack)
+        return super(ZookeeperClient, self)._check_result(result_code, deferred, extra_codes, path)
+
+    def _include_stack(self, error):
+        if not error.getTracebackObject():
+            raise error.type(error.value)
+        return error
 
 
 class PipedZookeeperClient(object, service.Service):
