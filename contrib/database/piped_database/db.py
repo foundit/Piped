@@ -6,6 +6,7 @@ import collections
 import copy
 import functools
 import logging
+import hashlib
 import heapq
 import urlparse
 import warnings
@@ -270,6 +271,10 @@ class PostgresListener(piped_service.PipedService):
         self.on_connection_lost = event.Event()
         self.on_connection_failed = event.Event()
 
+        self._held_advisory_locks = set()
+        self._deferreds_for_advisory_lock = collections.defaultdict(list)
+        
+
     def _connect(self):
         url = urlparse.urlparse(self.url)
         dsn = dict(
@@ -279,6 +284,9 @@ class PostgresListener(piped_service.PipedService):
             host=url.hostname,
             port=url.port
         )
+
+        if self._connection:
+            self._connection.close()
 
         self._connection = txpostgres.Connection()
         return self._connection.connect(**dsn)
@@ -333,6 +341,7 @@ class PostgresListener(piped_service.PipedService):
                     logger.exception('Database failure. Traceback follows')
                     failure_ = failure.Failure()
                     if self.is_connected:
+                        self._cleanup()
                         self.is_connected = False
                         self.on_connection_lost(failure_)
                     else:
@@ -412,3 +421,82 @@ class PostgresListener(piped_service.PipedService):
         txid_min = yield self._get_current_txid_min()
         while self.running and self._txid_queue and self._txid_queue[0][0] <= txid_min:
             heapq.heappop(self._txid_queue)[1].callback(txid_min)
+
+    def _cleanup(self):
+        self._held_advisory_locks.clear()
+        self._deferreds_for_advisory_lock.clear()
+
+    def wait_for_advisory_lock(self, lock_name):
+        """Callbacks when the advisory lock is acquired.
+
+        Note that advisory locks are not the same as usual lock
+        primitives. If two callers use the same listener (which share
+        the underlying connection), they will both "get" the lock.
+        """
+        if lock_name in self._held_advisory_locks:
+            return defer.succeed(lock_name)
+
+        d = defer.Deferred()
+        if self._deferreds_for_advisory_lock[lock_name]:
+            # We're already waiting for it.
+            self._deferreds_for_advisory_lock[lock_name].append(d)
+        else:
+            self._deferreds_for_advisory_lock[lock_name].append(d)
+            self._keep_waiting_for_advisory_lock(lock_name)
+
+        return d
+
+    @defer.inlineCallbacks
+    def _keep_waiting_for_advisory_lock(self, lock_name):
+        lock_id = self._get_hash_for_lock(lock_name)
+
+        # TODO: Get this into the run-loop above?
+        try:
+            while self.running:
+                try:
+                    has_lock = yield self._try_lock(lock_name)
+                except psycopg2.Error:
+                    # It'll be properly dealt with in run()
+                    logger.exception('psycopg-error when waiting for lock [{0}]'.format(lock_name))
+
+                else:
+                    if has_lock:
+                        self._held_advisory_locks.add(lock_name)
+                        for d in self._deferreds_for_advisory_lock.pop(lock_name):
+                            d.callback(lock_name)
+                        return
+
+                yield util.wait(self.retry_interval)
+
+        except Exception:
+            logger.exception('unhandled exception in _keep_waiting_for_advisory_lock')
+            f = failure.Failure()
+            self._lost_lock(lock_name)
+
+    def _get_scalar_result(self, sql):
+        return self._run_exclusively(self._connection.runQuery, sql).addCallback(lambda rs: rs[0][0])
+
+    def _try_lock(self, lock_name):
+        sql = 'SELECT pg_try_advisory_lock(%i)' % self._get_hash_for_lock(lock_name)
+        return self._get_scalar_result(sql)
+
+    def _unlock(self, lock_name):
+        sql = 'SELECT pg_advisory_unlock(%i)' % self._get_hash_for_lock(lock_name)
+        return self._get_scalar_result(sql)
+
+    def _get_hash_for_lock(self, lock_name):
+        return long(hashlib.md5(lock_name).hexdigest()[:16], 16)
+
+    @defer.inlineCallbacks
+    def release_lock(self, lock_name):
+        if not lock_name in self._held_advisory_locks:
+            defer.returnValue(False)
+
+        had_lock = yield self._unlock(lock_name)
+        self._lost_lock(lock_name)
+        defer.returnValue(had_lock)
+
+    def _lost_lock(self, lock_name):
+        self._held_advisory_locks.discard(lock_name)
+        for d in self._deferreds_for_advisory_lock.pop(lock_name, []):
+            d.errback(f)
