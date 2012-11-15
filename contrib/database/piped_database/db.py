@@ -485,7 +485,7 @@ class PostgresListener(piped_service.PipedService):
         return self._get_scalar_result(sql)
 
     def _get_hash_for_lock(self, lock_name):
-        return long(hashlib.md5(lock_name).hexdigest()[:16], 16)
+        return int(hashlib.md5(lock_name).hexdigest()[:8], 16)
 
     @defer.inlineCallbacks
     def release_lock(self, lock_name):
