@@ -6,8 +6,10 @@ import datetime
 import functools
 import itertools
 import logging
+import math
 import operator
 import os
+import random
 import sys
 import xmlrpclib
 import copy
@@ -795,3 +797,51 @@ class Cancellable(object):
     def _remove_deferred_and_passthrough(self, d, result):
         self._deferreds_cancellable.discard(d)
         return result
+
+
+class DeferredLock(defer.DeferredLock):
+    entered = False
+
+    def __enter__(self):
+        self.entered = True
+        return
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.entered:
+            return self.release()
+        return
+
+
+class BackoffWaiter(object):
+    """ waits, longer and longer, until reaching max_delay. """
+    factor = math.e
+    jitter = 0.11962656472
+
+    def __init__(self, initial_delay=1.0, max_delay=300.0):
+        self._waits = 1
+        self._initial_delay = initial_delay
+        self._max_delay = max_delay
+
+    def wait(self):
+        d = defer.Deferred()
+        delay = self._initial_delay * self.factor ** self._waits
+        if delay > self._max_delay:
+            self._waits = 1
+            delay = self._max_delay
+
+        delay = random.normalvariate(delay, delay * self.jitter)
+        self._waits += 1
+        delayed_call = reactor.callLater(delay, d.callback, None)
+
+        def _cancel(failure):
+            failure.trap(defer.CancelledError)
+            if delayed_call.active():
+                delayed_call.cancel()
+            return failure
+
+        d.addErrback(_cancel)
+
+        return d
+
+    def reset():
+        self._waits = 1
