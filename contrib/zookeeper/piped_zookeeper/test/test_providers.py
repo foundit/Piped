@@ -22,7 +22,7 @@ class TestClientProvider(unittest.TestCase):
         cm = self.runtime_environment.configuration_manager
         cm.set('zookeeper.clients.test_client',
             dict(
-                servers='localhost:2181/foo,localhost:2182/bar',
+                servers='localhost:2181/foo,localhost:2182/foo',
             )
         )
 
@@ -53,7 +53,7 @@ class TestClientProvider(unittest.TestCase):
         cm = self.runtime_environment.configuration_manager
         cm.set('zookeeper.clients.test_client',
             dict(
-                servers = 'localhost:2181/foo,localhost:2182/bar',
+                servers = 'localhost:2181/foo,localhost:2182/foo',
                 events = dict(
                     starting = 'processor_name'
                 )
@@ -74,7 +74,7 @@ class TestClient(unittest.TestCase):
 
     def test_invalid_event(self):
         client = providers.PipedZookeeperClient(
-            servers='localhost:2181/foo,localhost:2182/bar',
+            servers='localhost:2181/foo,localhost:2182/foo',
             events=dict(foo='bar')
         )
 
@@ -85,7 +85,7 @@ class TestClient(unittest.TestCase):
             zip(providers.PipedZookeeperClient.possible_events, providers.PipedZookeeperClient.possible_events)
         )
         client = providers.PipedZookeeperClient(
-            servers='localhost:2181/foo,localhost:2182/bar',
+            servers='localhost:2181/foo,localhost:2182/foo',
             events=events
         )
 
@@ -116,7 +116,7 @@ class TestClient(unittest.TestCase):
 
     def test_caching_two_calls_with_same_arguments(self):
         client = providers.PipedZookeeperClient(
-            servers='localhost:2181/foo,localhost:2182/bar'
+            servers='localhost:2181/foo,localhost:2182/foo'
         )
 
         pending, cacheable = self._create_cacheable()
@@ -140,7 +140,7 @@ class TestClient(unittest.TestCase):
 
     def test_exceptions_should_not_be_cached(self):
         client = providers.PipedZookeeperClient(
-            servers='localhost:2181/foo,localhost:2182/bar'
+            servers='localhost:2181/foo,localhost:2182/foo'
         )
 
         pending, cacheable = self._create_cacheable()
@@ -167,7 +167,7 @@ class TestClient(unittest.TestCase):
 
     def test_cache_cleared_when_watch_fired(self):
         client = providers.PipedZookeeperClient(
-            servers='localhost:2181/foo,localhost:2182/bar'
+            servers='localhost:2181/foo,localhost:2182/foo'
         )
 
         pending, cacheable = self._create_cacheable()
@@ -192,7 +192,7 @@ class TestClient(unittest.TestCase):
 
     def test_cache_cleared_when_client_disconnects(self):
         client = providers.PipedZookeeperClient(
-            servers='localhost:2181/foo,localhost:2182/bar'
+            servers='localhost:2181/foo,localhost:2182/foo'
         )
 
         pending, cacheable = self._create_cacheable()
@@ -221,7 +221,7 @@ class TestClient(unittest.TestCase):
         )
 
         client = providers.PipedZookeeperClient(
-            servers='localhost:2181/foo,localhost:2182/bar',
+            servers='localhost:2181/foo,localhost:2182/foo',
             events = events
         )
         client.configure(self.runtime_environment)
@@ -275,3 +275,24 @@ class TestClient(unittest.TestCase):
                     client._watch_connection(client, auth_event)
 
                     self.assertEquals(mocked_warn.call_count, 1)
+
+    def test_parse_servers(self):
+        client = providers.PipedZookeeperClient(servers='foo,bar,baz/v1')
+        self.assertEqual(client.servers, ['foo', 'bar', 'baz'])
+        self.assertEqual(client.chroot, '/v1')
+
+        client = providers.PipedZookeeperClient(servers='foo/v1,bar/v1,baz/v1')
+        self.assertEqual(client.servers, ['foo', 'bar', 'baz'])
+        self.assertEqual(client.chroot, '/v1')
+
+        client = providers.PipedZookeeperClient(servers='foo/v1,bar,baz')
+        self.assertEqual(client.servers, ['foo', 'bar', 'baz'])
+        self.assertEqual(client.chroot, '/v1')
+
+        try:
+            client = providers.PipedZookeeperClient(servers='foo/v1,bar,baz/v2')
+            self.fail('Expected ConfigurationError to be raised')
+        except exceptions.ConfigurationError as ce:
+            self.assertIn(ce.message, 'Multiple differing chroots defined')
+            self.assertIn(ce.message, 'v1')
+            self.assertIn(ce.message, 'v2')

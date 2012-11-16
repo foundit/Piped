@@ -1,8 +1,14 @@
 ================================ Next release ================================
 
+
+========================== Release 0.5.1 2012-11-16 ==========================
+
 Bug fixes:
     - ``p.util.Cancellable.disown_cancellable_parent_callback`` now correctly
       passes the return value through.
+
+    - The ZooKeeper provider should now parse multiple servers with chroots
+      correctly.
 
 ========================== Release 0.5.0 2012-09-23 ==========================
 

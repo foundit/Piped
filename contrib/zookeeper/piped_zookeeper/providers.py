@@ -105,7 +105,7 @@ class PipedZookeeperClient(object, service.Service):
     _currently_reconnecting = None
     
     def __init__(self, servers=None, connect_timeout=86400, reconnect_timeout=30, session_timeout=None, reuse_session=True, events=None):
-        self.servers = self._parse_servers(servers)
+        self.servers, self.chroot = self._parse_servers(servers)
         self.connect_timeout = connect_timeout
         self.reconnect_timeout = reconnect_timeout
         self.session_timeout = self._session_timeout = session_timeout
@@ -125,10 +125,20 @@ class PipedZookeeperClient(object, service.Service):
         self.reconnecting_currently = util.create_deferred_state_watcher(self, '_currently_reconnecting')
 
     def _parse_servers(self, servers):
-        if isinstance(servers, (list, tuple)):
-            return list(servers)
+        if not isinstance(servers, (list, tuple)):
+            servers = servers.split(',')
 
-        return servers.split(',')
+        chroots = set()
+        for i, server in enumerate(servers):
+            server_with_chroot = server.split('/', 1)
+            if len(server_with_chroot) == 2:
+                servers[i], server_chroot = server_with_chroot
+                chroots.add('/' + server_chroot)
+        if len(chroots) > 1:
+            raise exceptions.ConfigurationError('Multiple differing chroots defined: [{}]'.format(list(chroots)))
+        if not chroots:
+            return list(servers), ''
+        return list(servers), list(chroots)[0]
 
     def configure(self, runtime_environment):
         for key, value in self.events.items():
@@ -153,7 +163,7 @@ class PipedZookeeperClient(object, service.Service):
                         for server_list in itertools.combinations(self.servers, server_list_length):
                             self.on_disconnected(failure.Failure(DisconnectException('connecting')))
 
-                            servers = ','.join(list(server_list))
+                            servers = ','.join(list(server_list)) + self.chroot
                             logger.info('Trying to create and connect a ZooKeeper client with the following servers: [{0}]'.format(servers))
                             self._current_client = current_client = self._create_client(servers)
 
