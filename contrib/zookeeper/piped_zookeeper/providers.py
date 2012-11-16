@@ -205,7 +205,7 @@ class PipedZookeeperClient(object, service.Service):
                                 continue
 
                             if self.running:
-                                logger.info('Connected to ZooKeeper ensemble [{0}] with handle [{1}]'.format(server_list, self._current_client.handle))
+                                logger.info('Connected to ZooKeeper ensemble [{0}] using chroot [{}] with handle [{1}]'.format(server_list, self.chroot, self._current_client.handle))
                             return
 
                         yield self.connecting_currently(util.wait(0))
