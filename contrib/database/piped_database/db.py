@@ -285,8 +285,11 @@ class PostgresListener(piped_service.PipedService):
             port=url.port
         )
 
-        if self._connection:
-            self._connection.close()
+        try:
+            if self._connection:
+                self._connection.close().addErrback(lambda failure: None)
+        except Exception:
+            pass
 
         self._connection = txpostgres.Connection()
         return self._connection.connect(**dsn)
@@ -359,8 +362,11 @@ class PostgresListener(piped_service.PipedService):
         except Exception as e:
             logger.exception('Unhandled exception in PostgresListener.run')
         finally:
-            if self._connection:
-                self._connection.close()
+            try:
+                if self._connection:
+                    self._connection.close().addErrback(lambda failure: None)
+            except Exception:
+                pass
 
     @defer.inlineCallbacks
     def listen(self, events):
@@ -485,7 +491,7 @@ class PostgresListener(piped_service.PipedService):
         return self._get_scalar_result(sql)
 
     def _get_hash_for_lock(self, lock_name):
-        return long(hashlib.md5(lock_name).hexdigest()[:16], 16)
+        return int(hashlib.md5(lock_name).hexdigest()[:8], 16)
 
     @defer.inlineCallbacks
     def release_lock(self, lock_name):
@@ -500,3 +506,9 @@ class PostgresListener(piped_service.PipedService):
         self._held_advisory_locks.discard(lock_name)
         for d in self._deferreds_for_advisory_lock.pop(lock_name, []):
             d.errback(f)
+
+    def stopService(self):
+        try:
+            super(PostgresListener, self).stopService()
+        except txpostgres._CancelInProgress:
+            pass

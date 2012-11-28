@@ -1,5 +1,15 @@
 ================================ Next release ================================
 
+Features:
+    - PostgresListener now knows about advisory locks.
+
+    - The database-contrib now has a service-module with two
+      PostgresListener-base-classes, for making services that should react to
+      Postgres-notifications.
+
+    - ``piped.util`` gained a contextual ``DeferredLock`` and a
+      ``BackoffWaiter``.
+
 Bug fixes:
     - ``piped.contrib.zookeeper`` attempted to log a line with formatting errors
       after connecting to ZooKeeper.
