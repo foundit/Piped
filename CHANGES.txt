@@ -1,5 +1,8 @@
 ================================ Next release ================================
 
+Bug fixes:
+    - ``piped.contrib.zookeeper`` attempted to log a line with formatting errors
+      after connecting to ZooKeeper.
 
 ========================== Release 0.5.1 2012-11-16 ==========================
 
