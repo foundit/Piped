@@ -461,6 +461,20 @@ class PipedZookeeperClient(object, service.Service):
 
         return client.create(path, data, acls, flags)
 
+    @defer.inlineCallbacks
+    def create_recursive(self, path, data, acls=Ellipsis, additional_acls=None):
+        parent_path = path.rsplit('/', 1)[0]
+
+        if parent_path and not parent_path == '/':
+            exists = yield self.exists(parent_path)
+            if not exists:
+                try:
+                    yield self.create_recursive(parent_path, '', acls, additional_acls)
+                except zookeeper.NodeExistsException as nee:
+                    pass # if the node suddenly exists, someone else created it, that's fine.
+
+        yield self.create(path, data, acls=acls, additional_acls=additional_acls)
+
     def __getattr__(self, item):
         client = self._current_client
 
