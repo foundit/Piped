@@ -14,11 +14,19 @@ logger = logging.getLogger(__name__)
 
 
 class MetricReporter(object):
+    """ Metric reporter that is invoked periodically by the MetricsReporter-service.
 
-    def __init__(self, prefix, statsd, tags=None):
+    Metrics should be prefixed with `prefix` and tagged with `tags`. The clients are
+    available through "statsd".
+    """
+
+    def __init__(self, prefix, statsd, client_name='default', tags=None):
         self.prefix = prefix
-        self.statsd = statsd
+        self.statsd = getattr(statsd, client_name)
         self.tags = tags
+
+    def __call__(self):
+        raise NotImplementedError()
 
 
 class ProcessInfoReporter(MetricReporter):
@@ -57,6 +65,24 @@ class ProcessInfoReporter(MetricReporter):
 
 
 class MetricsReporter(service.PipedService):
+    """ Service that periodically lets reporters send their gauges to statsd.
+
+    Assumes the service configuration has "metrics.enabled" being true.
+
+    Metrics are prefixed with "metrics.prefix" every "metrics.interval" seconds
+    (defaults to 5) and with "metrics.tags" as tags.
+
+    "metrics.reporters" should be a list of reporter-configurations. The only required
+    value in a reporter-configuration is "reporter", which is the name of the reporter.
+    Any other values are passed to the reporter. "client_name" can be set to use a
+    specific statsd-client.
+
+    Available reporters:
+
+        - "process". Takes "values" as a list of values to report, with possible values
+        being "cpu_percent", "connections", "open_files", "memory" and "threads".
+
+    """
     interface.classProvides(service.IPipedService)
 
     _standard_reporters = dict(
