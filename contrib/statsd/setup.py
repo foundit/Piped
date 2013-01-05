@@ -65,5 +65,5 @@ setup(
     ],
     description = 'StatsD-utilities for Piped.',
 
-    install_requires = ['piped', 'dogstatsd-python', 'setuptools']
+    install_requires = ['piped', 'dogstatsd-python', 'psutil', 'setuptools']
 )
