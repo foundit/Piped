@@ -89,7 +89,7 @@ class PostgresListenerService(service.PipedDependencyService):
 
                 handler = self.get_handler(event.channel)
                 if not handler:
-                    logger.warn('no handler for event [{0}]'.format(channel))
+                    logger.warn('no handler for event [{0}]'.format(event.channel))
                     continue
 
                 try:
