@@ -29,16 +29,25 @@ class StatsdManager(object):
     use the "default"-client, however it is configured.
     """
 
+    _statsd_keywords = set(["decrement", "gauge", "histogram", "increment", "set", "timed", "time_deferred", "timing"])
+
     def __init__(self):
         self._client_by_name = dict()
 
     def configure(self, runtime_environment):
         self.runtime_environment = runtime_environment
+        self.default_config = runtime_environment.get_configuration_value('statsd.default', dict(host='localhost', port=8125))
+        self.default = PipedStatsd(**self.default_config)
 
     def __getattr__(self, item):
-        if item in {"decrement", "gauge", "histogram", "increment", "set", "timed", "time_deferred", "timing"}:
+        if item in self._statsd_keywords:
             return getattr(self.default, item)
 
         if item not in self._client_by_name:
-            self._client_by_name[item] = PipedStatsd(**self.runtime_environment.get_configuration_value('statsd.{0}'.format(item), dict()))
+            config = self.runtime_environment.get_configuration_value('statsd.{0}'.format(item), Ellipsis)
+            if config is not Ellipsis:
+                self._client_by_name[item] = PipedStatsd(**config)
+            else:
+                self._client_by_name[item] = self.default
+
         return self._client_by_name[item]
