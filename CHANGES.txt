@@ -12,6 +12,10 @@ Features:
     - ``piped.util`` gained a contextual ``DeferredLock`` and a
       ``BackoffWaiter``.
 
+    - ZooKeeper-contrib now authenticates and creates nodes with default ACLs.
+
+    - ZooKeeper-client learned create_recursive.
+
 Bug fixes:
     - ``piped.contrib.zookeeper`` attempted to log a line with formatting errors
       after connecting to ZooKeeper.

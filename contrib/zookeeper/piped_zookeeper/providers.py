@@ -1,7 +1,10 @@
 # Copyright (c) 2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
+import base64
 import logging
+import hashlib
 import itertools
+import operator
 
 import zookeeper
 from zope import interface
@@ -104,13 +107,17 @@ class PipedZookeeperClient(object, service.Service):
     _currently_connecting = None
     _currently_reconnecting = None
     
-    def __init__(self, servers=None, connect_timeout=86400, reconnect_timeout=30, session_timeout=None, reuse_session=True, events=None):
+    def __init__(self, servers=None, connect_timeout=86400, reconnect_timeout=30, session_timeout=None, reuse_session=True, events=None,
+                 auth=None, default_acls=None):
         self.servers, self.chroot = self._parse_servers(servers)
         self.connect_timeout = connect_timeout
         self.reconnect_timeout = reconnect_timeout
         self.session_timeout = self._session_timeout = session_timeout
         self.reuse_session = reuse_session
         self.events = events or dict()
+
+        self.auth = auth or dict()
+        self.default_acls = self.make_acls(default_acls or [client.ZOO_OPEN_ACL_UNSAFE])
 
         self.on_connected = event.Event()
         self.on_connected += lambda _: setattr(self, 'connected', True)
@@ -139,6 +146,37 @@ class PipedZookeeperClient(object, service.Service):
         if not chroots:
             return list(servers), ''
         return list(servers), list(chroots)[0]
+
+    def make_acls(self, specs):
+        """Makes ZooKeeper-ACLs from ACL specifications.
+
+        An ACL-specification is a dictionary with "perms" being a list
+        of strings for desired permissions ("read", "write", "delete",
+        "admin", "create" and/or "all"), "scheme" being the scheme and
+        "id" being the identity.
+
+        If scheme is "digest", then the identity is assumed to be
+        "username:password", which is then properly encoded.
+        """
+        if not specs:
+            return specs
+
+        result = []
+        for spec in specs:
+            spec = spec.copy()
+            if not isinstance(spec['perms'], int):
+                spec['perms'] = reduce(operator.or_, [getattr(zookeeper, 'PERM_' + perm.upper()) for perm in spec['perms']])
+
+            if spec['scheme'] == 'digest':
+                spec['id'] = self.get_identity_for_digest(spec['id'])
+
+            result.append(spec)
+
+        return result
+
+    def get_identity_for_digest(self, identity):
+        username, password = identity.split(':', 1)
+        return '{0}:{1}'.format(username, base64.b64encode(hashlib.sha1(identity).digest()))
 
     def configure(self, runtime_environment):
         for key, value in self.events.items():
@@ -205,6 +243,8 @@ class PipedZookeeperClient(object, service.Service):
                                 continue
 
                             if self.running:
+                                yield self._maybe_auth()
+
                                 logger.info('Connected to ZooKeeper ensemble [{0}] using chroot [{1}] with handle [{2}]'.format(server_list, self.chroot, self._current_client.handle))
                             return
 
@@ -228,6 +268,11 @@ class PipedZookeeperClient(object, service.Service):
         zk = ZookeeperClient(servers=servers, session_timeout=self.session_timeout)
         zk.set_session_callback(self._watch_connection)
         return zk
+
+    @defer.inlineCallbacks
+    def _maybe_auth(self):
+        for auth_spec in self.auth:
+            yield self._current_client.add_auth(auth_spec['scheme'], auth_spec['identity'])
 
     def _started(self, client):
         if client != self._current_client:
@@ -401,6 +446,34 @@ class PipedZookeeperClient(object, service.Service):
 
                 except zookeeper.NoNodeException as nne:
                     continue
+
+    def create(self, path, data="", acls=Ellipsis, flags=0, additional_acls=None):
+        client = self._current_client
+
+        if not client:
+            raise zookeeper.ClosingException()
+
+        if acls is Ellipsis:
+            acls = list(self.default_acls)
+
+        if additional_acls:
+            acls += additional_acls
+
+        return client.create(path, data, acls, flags)
+
+    @defer.inlineCallbacks
+    def create_recursive(self, path, data, acls=Ellipsis, additional_acls=None):
+        parent_path = path.rsplit('/', 1)[0]
+
+        if parent_path and not parent_path == '/':
+            exists = yield self.exists(parent_path)
+            if not exists:
+                try:
+                    yield self.create_recursive(parent_path, '', acls, additional_acls)
+                except zookeeper.NodeExistsException as nee:
+                    pass # if the node suddenly exists, someone else created it, that's fine.
+
+        yield self.create(path, data, acls=acls, additional_acls=additional_acls)
 
     def __getattr__(self, item):
         client = self._current_client
