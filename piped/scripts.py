@@ -12,8 +12,6 @@ from twisted.python import util
 from twisted.scripts import twistd
 
 import piped
-from piped import log
-
 
 def run_trial():
     from twisted.python import modules
@@ -66,9 +64,12 @@ def run_piped():
         overrides.append('{"repl.enabled": true}')
     os.environ['PIPED_CONFIGURATION_OVERRIDES'] = json.dumps(overrides+args.override)
 
-    log.configure(args)
-
     twistd_config = _create_configuration_for_twistd(args)
+
+    # If we had this import further up, it'd end up importing twisted.internet.reactor,
+    # and we need to install our own first.
+    from piped import log
+    log.configure(args)
     _run_twistd_with_config(twistd_config)
 
 
@@ -141,7 +142,6 @@ def _create_configuration_for_twistd(args):
 
     config['python'] = util.sibpath(__file__, 'service.tac')
     config['no_save'] = True
-    config['logger'] = lambda: log.observer.emit
 
     conf_without_extension = os.path.basename(config['conf']).rsplit('.', 1)[0]
     default_pidfile = '%s.pid'%conf_without_extension
@@ -160,6 +160,8 @@ def _create_configuration_for_twistd(args):
     if config['reactor']:
         twistd_config.opt_reactor(config['reactor'])
 
+    from piped import log
+    config['logger'] = lambda: log.observer.emit
     return twistd_config
 
 
