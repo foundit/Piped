@@ -116,7 +116,7 @@ class PipedZookeeperClient(object, service.Service):
         self.reuse_session = reuse_session
         self.events = events or dict()
 
-        self.auth = auth or dict()
+        self.auth = self._parse_auth(auth)
         self.default_acls = self.make_acls(default_acls or [client.ZOO_OPEN_ACL_UNSAFE])
 
         self.on_connected = event.Event()
@@ -268,6 +268,27 @@ class PipedZookeeperClient(object, service.Service):
         zk = ZookeeperClient(servers=servers, session_timeout=self.session_timeout)
         zk.set_session_callback(self._watch_connection)
         return zk
+
+    def _parse_auth(self, auths):
+        specs = list()
+
+        if isinstance(auths, basestring):
+            auths = auths.split(',')
+
+        if auths is not None:
+            for auth in auths:
+                if isinstance(auth, dict):
+                    specs.append(auth)
+                elif isinstance(auth, basestring):
+                    specs.append(self._parse_single_auth_from_string(auth))
+                else:
+                    raise NotImplementedError('Cannot parse auth spec from [{0}]'.format(auth))
+
+        return specs
+
+    def _parse_single_auth_from_string(self, auth_string):
+        scheme, identity = auth_string.split(':', 1)
+        return dict(scheme=scheme, identity=identity)
 
     @defer.inlineCallbacks
     def _maybe_auth(self):
