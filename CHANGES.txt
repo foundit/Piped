@@ -1,5 +1,7 @@
 ================================ Next release ================================
 
+========================== Release 0.5.5 2013-04-09 ==========================
+
 Bug fixes:
     - Specifying a custom reactor with the "-r"-argument to piped should now
       work again.
