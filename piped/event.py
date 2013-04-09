@@ -20,8 +20,9 @@ class Event(object):
         >>> print some_list
         ['42', 123]
     """
-    def __init__(self):
+    def __init__(self, async=False):
         self._callbacks = []
+        self.async = async
 
     def handle(self, callback):
         self._callbacks.append(callback)
@@ -39,11 +40,23 @@ class Event(object):
         return callback in self._callbacks
 
     def __call__(self, *args, **kwargs):
+        if self.async:
+            return self._async_call(*args, **kwargs)
+
         # Make a copy in case the callback wants to remove itself from
         # the list, since we can't iterate over a modified list.
         callbacks = self._callbacks[:]
         for callback in callbacks:
             callback(*args, **kwargs)
+
+    def _async_call(self, *args, **kwargs):
+        # Make a copy in case the callback wants to remove itself from
+        # the list, since we can't iterate over a modified list.
+        callbacks = self._callbacks[:]
+        ds = []
+        for callback in callbacks:
+            ds.append(callback(*args, **kwargs))
+        return defer.DeferredList(ds, consumeErrors=True)
 
     def __len__(self):
         return len(self._callbacks)

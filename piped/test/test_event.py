@@ -89,5 +89,24 @@ class TestEvent(unittest.TestCase):
         # have been cancelled. If it is not cancelled, this test will fail with a
         # DirtyReactorAggregateError.
 
+    @defer.inlineCallbacks
+    def test_async_call(self):
+        e = event.Event(async=True)
+
+        def listener():
+            return util.wait(0, 42)
+        e += listener
+
+        result = e()
+        # the event should return a deferred
+        self.assertIsInstance(result, defer.Deferred)
+        # which should not be called
+        self.assertFalse(result.called)
+
+        # .. until the listeners have callbacked
+        yield result
+
+        # at which point it should contain the result from the listeners
+        self.assertEquals(result.result, [(True, 42)])
 
 __doctests__ = [event]
