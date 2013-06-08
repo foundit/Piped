@@ -161,7 +161,7 @@ def _create_configuration_for_twistd(args):
         twistd_config.opt_reactor(config['reactor'])
 
     from piped import log
-    config['logger'] = lambda: log.observer.emit
+    twistd_config['logger'] = lambda: log.observer.emit
     return twistd_config
 
 

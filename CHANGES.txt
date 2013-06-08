@@ -1,5 +1,8 @@
 ================================ Next release ================================
 
+Bug fixes:
+    - A regression in 0.5.5 broke customization of logging.
+
 ========================== Release 0.5.5 2013-04-09 ==========================
 
 Bug fixes:
