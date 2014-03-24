@@ -108,7 +108,7 @@ class PipedZookeeperClient(object, service.Service):
     _currently_reconnecting = None
     
     def __init__(self, servers=None, connect_timeout=86400, reconnect_timeout=30, session_timeout=None, reuse_session=True, events=None,
-                 auth=None, default_acls=None):
+                 auth=None, default_acls=None, default_encoded_acls=None):
         self.servers, self.chroot = self._parse_servers(servers)
         self.connect_timeout = connect_timeout
         self.reconnect_timeout = reconnect_timeout
@@ -118,6 +118,7 @@ class PipedZookeeperClient(object, service.Service):
 
         self.auth = self._parse_auth(auth)
         self.default_acls = self.make_acls(default_acls or [client.ZOO_OPEN_ACL_UNSAFE])
+        self.default_acls = self.default_acls + self.make_acls(default_encoded_acls or [], encoded = True)
 
         self.on_connected = event.Event()
         self.on_connected += lambda _: setattr(self, 'connected', True)
@@ -147,7 +148,7 @@ class PipedZookeeperClient(object, service.Service):
             return list(servers), ''
         return list(servers), list(chroots)[0]
 
-    def make_acls(self, specs):
+    def make_acls(self, specs, encoded=False):
         """Makes ZooKeeper-ACLs from ACL specifications.
 
         An ACL-specification is a dictionary with "perms" being a list
@@ -167,7 +168,7 @@ class PipedZookeeperClient(object, service.Service):
             if not isinstance(spec['perms'], int):
                 spec['perms'] = reduce(operator.or_, [getattr(zookeeper, 'PERM_' + perm.upper()) for perm in spec['perms']])
 
-            if spec['scheme'] == 'digest':
+            if spec['scheme'] == 'digest' and not encoded:
                 spec['id'] = self.get_identity_for_digest(spec['id'])
 
             result.append(spec)

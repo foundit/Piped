@@ -80,6 +80,21 @@ class TestClient(unittest.TestCase):
 
         self.assertRaises(exceptions.ConfigurationError, client.configure, self.runtime_environment)
 
+    def test_default_acls(self):
+        client = providers.PipedZookeeperClient(
+            servers='localhost:2181/foo,localhost:2182/foo',
+            default_acls=[dict(scheme='digest', id='foo:bar', perms=['all'])],
+            default_encoded_acls=[dict(scheme='digest', id='bar:something-encoded', perms=['all'])]
+        )
+
+        self.assertIn(dict(scheme='digest', id='foo:VNy+Z9IdXrOUk9Rtia4fQS071t4=', perms=31), client.default_acls)
+
+        # encoded_acls should not end up double encoded, but the perms should be parsed.
+        self.assertIn(dict(scheme='digest', id='bar:something-encoded', perms=31), client.default_acls)
+
+        # there should be no extra acls we didn't anticipate
+        self.assertEqual(len(client.default_acls), 2)
+
     def test_processors_depended_on(self):
         events = dict(
             zip(providers.PipedZookeeperClient.possible_events, providers.PipedZookeeperClient.possible_events)

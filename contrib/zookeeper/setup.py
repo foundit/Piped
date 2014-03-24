@@ -65,5 +65,5 @@ setup(
     ],
     description = 'Apache ZooKeeper support for Piped.',
 
-    install_requires = ['piped', 'txzookeeper>=0.9.7', 'setuptools']
+    install_requires = ['piped', 'txzookeeper>=0.9.8', 'setuptools']
 )
