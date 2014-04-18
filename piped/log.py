@@ -38,6 +38,10 @@ class PythonLoggingObserver(log.PythonLoggingObserver):
 
         if system == '-':
             system = 'twisted'
+        else:
+            # Prevent logger's with systems like "HTTPConnection,0,127.0.0.1" or "SSHService ssh-userauth on SSHServerTransport,42,127.0.0.1"
+            # to create one logger per connection or whatever else is specific for that specific context.
+            system = system.split(',', 1)[0]
 
         if system not in self.loggers:
             self.loggers[system] = logging.getLogger(system)
