@@ -4,6 +4,12 @@ Bug fixes:
     - Memory leak when making loggers per context-specific logger system, like
       e.g. HTTPConnections or SSHServerTransports.
 
+    - InstanceDependency has been given a ``__hash__`` and ``__eq__`` method
+      that delegates to the underlying instance.
+
+    - DependencyMap stays an InstanceDependency but uses the built-in
+      ``object`` definitions for its ``__hash__`` and ``__eq__`` methods.
+
 ========================== Release 0.5.7 2014-03-24 ==========================
 
 Features:

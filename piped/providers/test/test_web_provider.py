@@ -16,6 +16,7 @@ from piped.providers import web_provider
 
 class DummyRequest(test_web.DummyRequest, server.Request):
     channel = Ellipsis
+    headers = None
 
     def __init__(self, *a, **kw):
         test_web.DummyRequest.__init__(self, *a, **kw)

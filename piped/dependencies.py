@@ -171,6 +171,12 @@ class InstanceDependency(Dependency):
         yield self.on_ready.wait_until_fired(timeout=timeout)
         defer.returnValue(self.get_resource())
 
+    def __hash__(self):
+        return hash(self.instance)
+
+    def __eq__(self, other):
+        return self.instance == other
+
     def __repr__(self):
         if getattr(self.instance, 'name', None):
             return 'Instance(%s at %s)' % (self.instance.name, hex(id(self.instance)))
@@ -701,6 +707,12 @@ class DependencyMap(InstanceDependency):
     def __repr__(self):
         lost = dict([key, dep] for key, dep in  self._dependency_by_key.items() if key not in self._resource_by_key)
         return 'DependencyMap(ready=%s, lost=%s)'%(self._resource_by_key, lost)
+
+    def __hash__(self):
+        return object.__hash__(self)
+
+    def __eq__(self, other):
+        return object.__eq__(self, other)
 
     def __iter__(self):
         return iter(self._resource_by_key)

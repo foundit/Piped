@@ -12,6 +12,7 @@ from twisted.application import service
 from twisted.python import failure
 from twisted.internet import defer
 from txzookeeper import client
+import zookeeper
 
 from piped import resource, event, exceptions, util
 
@@ -19,6 +20,8 @@ from piped_zookeeper import log_stream
 
 
 logger = logging.getLogger(__name__)
+
+from piped_zookeeper import log_stream
 
 
 class DisconnectException(exceptions.PipedError):
