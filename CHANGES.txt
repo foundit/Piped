@@ -1,5 +1,7 @@
 ================================ Next release ================================
 
+========================== Release 0.5.8 2014-04-18 ==========================
+
 Bug fixes:
     - Memory leak when making loggers per context-specific logger system, like
       e.g. HTTPConnections or SSHServerTransports.
