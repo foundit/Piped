@@ -1,5 +1,15 @@
 ================================ Next release ================================
 
+========================== Release 0.5.9 2015-01-27 ==========================
+
+Workaround:
+    - Will temporarily add setContent to twisted.python.zippath.ZipPath while
+      looking for plugins to avoid an excessive amount of logging.
+
+Bug fixes:
+    - Avoid disabling existing loggers if they are created before the logging
+      system was initialized, which might happen if they're imported first.
+
 ========================== Release 0.5.8 2014-04-18 ==========================
 
 Bug fixes:

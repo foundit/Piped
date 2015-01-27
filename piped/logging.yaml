@@ -7,6 +7,10 @@ root:
       - file
       #- graylog2
 
+# avoid disabling existing loggers if they are created before the logging system was initialized,
+# usually due to being imported first.
+disable_existing_loggers: false
+
 loggers:
     piped:
         level: INFO # override to affect logging for piped only

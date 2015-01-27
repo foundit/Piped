@@ -7,7 +7,7 @@ import re
 import warnings
 
 from twisted import plugin as twisted_plugin
-from twisted.python import reflect, failure, log as twisted_log
+from twisted.python import reflect, failure, log as twisted_log, zippath
 
 from piped import event, exceptions, util
 
@@ -63,22 +63,31 @@ class PluginManager(object):
         """ Return the plugins implementing `plugin_interface` found in
         the mentioned `plugin_packages`. """
 
-        if not self.plugins_loaded or reload:
-            self._plugins = set()
-            for package in self.plugin_packages:
-                for plugin in self._get_plugins_from_package(package):
-                    self._plugins.add(plugin)
+        monkey_patched_zippath = False
+        if not hasattr(zippath.ZipPath, 'setContent'):
+            monkey_patched_zippath = True
+            zippath.ZipPath.setContent = lambda *a, **kw: None
 
-            for package in self._get_bundled_packages():
-                for plugin in self._get_plugins_from_package(package):
-                    self._plugins.add(plugin)
+        try:
+            if not self.plugins_loaded or reload:
+                self._plugins = set()
+                for package in self.plugin_packages:
+                    for plugin in self._get_plugins_from_package(package):
+                        self._plugins.add(plugin)
 
-            # Map the plugin's name to the class.
-            self._plugin_factory_by_name = dict()
-            for plugin in self._plugins:
-                self._register_plugin(plugin)
+                for package in self._get_bundled_packages():
+                    for plugin in self._get_plugins_from_package(package):
+                        self._plugins.add(plugin)
 
-            self.plugins_loaded = True
+                # Map the plugin's name to the class.
+                self._plugin_factory_by_name = dict()
+                for plugin in self._plugins:
+                    self._register_plugin(plugin)
+
+                self.plugins_loaded = True
+        finally:
+            if monkey_patched_zippath:
+                delattr(zippath.ZipPath, 'setContent')
 
         self.on_plugins_loaded(self._plugins)
 
