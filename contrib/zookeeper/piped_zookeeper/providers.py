@@ -120,8 +120,9 @@ class PipedZookeeperClient(object, service.Service):
         self.events = events or dict()
 
         self.auth = self._parse_auth(auth)
-        self.default_acls = self.make_acls(default_acls or [client.ZOO_OPEN_ACL_UNSAFE])
+        self.default_acls = self.make_acls(default_acls or [])
         self.default_acls = self.default_acls + self.make_acls(default_encoded_acls or [], encoded = True)
+        self.default_acls = self.default_acls or [client.ZOO_OPEN_ACL_UNSAFE]
 
         self.on_connected = event.Event()
         self.on_connected += lambda _: setattr(self, 'connected', True)
