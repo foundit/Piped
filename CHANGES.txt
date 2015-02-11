@@ -3,6 +3,8 @@
 Contrib:
     piped.contrib.zookeeper: version 0.5.8 fixes an issue where the zookeeper
       default open acl were used if only encoded acls were provided.
+    piped.contrib.zookeeper: version 0.5.9 fixes an issue where the zookeeper
+      client was provided before authing had completed
 
 ========================== Release 0.5.9 2015-01-27 ==========================
 
