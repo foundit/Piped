@@ -213,6 +213,7 @@ class PipedZookeeperClient(object, service.Service):
                             try:
                                 connected_client = yield self.connecting_currently(self._current_client.connect(timeout=self.connect_timeout))
                                 if connected_client == self._current_client:
+                                    yield self._maybe_auth()
                                     yield self.connecting_currently(self._started(connected_client))
                             except client.ConnectionTimeoutException as cte:
                                 logger.error('Connection timeout reached while trying to connect to ZooKeeper [{0}]: [{1!r}]'.format(server_list, cte))
@@ -248,8 +249,6 @@ class PipedZookeeperClient(object, service.Service):
                                 continue
 
                             if self.running:
-                                yield self._maybe_auth()
-
                                 logger.info('Connected to ZooKeeper ensemble [{0}] using chroot [{1}] with handle [{2}]'.format(server_list, self.chroot, self._current_client.handle))
                             return
 
