@@ -1,5 +1,10 @@
 ================================ Next release ================================
 
+Backward-incompatible changes:
+    piped.contrib.zookeeper version 0.5.10 no longer accepts 'default_acls'
+      and now requires acls to be pre-encoded using the 'default_encoded_acls'
+      argument instead.
+
 Contrib:
     piped.contrib.zookeeper: version 0.5.8 fixes an issue where the zookeeper
       default open acl were used if only encoded acls were provided.
