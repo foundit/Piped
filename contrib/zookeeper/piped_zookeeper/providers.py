@@ -112,6 +112,9 @@ class PipedZookeeperClient(object, service.Service):
     
     def __init__(self, servers=None, connect_timeout=86400, reconnect_timeout=30, session_timeout=None, reuse_session=True, events=None,
                  auth=None, default_acls=None, default_encoded_acls=None):
+        if default_acls:
+            raise exceptions.InvalidConfigurationError('Unencoded "default_acls" are no longer supported', 'Encode them and use "default_encoded_acls" instead.')
+
         self.servers, self.chroot = self._parse_servers(servers)
         self.connect_timeout = connect_timeout
         self.reconnect_timeout = reconnect_timeout
@@ -120,9 +123,8 @@ class PipedZookeeperClient(object, service.Service):
         self.events = events or dict()
 
         self.auth = self._parse_auth(auth)
-        self.default_acls = self.make_acls(default_acls or [])
-        self.default_acls = self.default_acls + self.make_acls(default_encoded_acls or [], encoded = True)
-        self.default_acls = self.default_acls or [client.ZOO_OPEN_ACL_UNSAFE]
+
+        self.default_acls = self.make_acls(default_encoded_acls or [], encoded = True)
 
         self.on_connected = event.Event()
         self.on_connected += lambda _: setattr(self, 'connected', True)
