@@ -1,5 +1,9 @@
 ================================ Next release ================================
 
+Features:
+    ``piped`` now supports passing ``--pidfile=`` (an empty string) which
+    in turn causes ``twistd`` to not write a pid file.
+
 Backward-incompatible changes:
     piped.contrib.zookeeper version 0.5.10 no longer accepts 'default_acls'
       and now requires acls to be pre-encoded using the 'default_encoded_acls'

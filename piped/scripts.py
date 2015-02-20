@@ -146,7 +146,7 @@ def _create_configuration_for_twistd(args):
     conf_without_extension = os.path.basename(config['conf']).rsplit('.', 1)[0]
     default_pidfile = '%s.pid'%conf_without_extension
 
-    if not config.get('pidfile'):
+    if not config.get('pidfile') and not config.get('pidfile') == '':
         config['pidfile'] = default_pidfile
 
     config['pidfile'] = config['pidfile'].replace('%d', default_pidfile)
