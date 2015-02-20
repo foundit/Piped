@@ -1,5 +1,7 @@
 ================================ Next release ================================
 
+========================== Release 0.6.0 2015-02-20 ==========================
+
 Features:
     ``piped`` now supports passing ``--pidfile=`` (an empty string) which
     in turn causes ``twistd`` to not write a pid file.
