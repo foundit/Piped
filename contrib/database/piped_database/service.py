@@ -61,19 +61,18 @@ class PostgresListenerService(service.PipedDependencyService):
                 self.listener = yield self.cancellable(self.listener_dependency.wait_for_resource())
 
                 if self.lock_name:
-                    yield self.listener.wait_for_advisory_lock(self.lock_name)
+                    yield self.cancellable(self.listener.wait_for_advisory_lock(self.lock_name))
                 
                 yield self.run_as_leader()
-                
 
             except defer.CancelledError:
-                pass
+                break
 
             except Exception as e:
                 logger.exception('unhandled exception')
-                if self.lock_name:
-                    self.listener.release_lock(self.lock_name)
 
+            finally:
+                self.listener.release_lock(self.lock_name)
                 yield self.wait()
 
     @defer.inlineCallbacks
@@ -101,6 +100,9 @@ class PostgresListenerService(service.PipedDependencyService):
                     result = yield handler(payload)
                 except Exception as e:
                     logger.exception('unhandled exception in run_as_leader')
+
+        except defer.CancelledError:
+            pass
 
         finally:
             self.listener.unlisten(notification_queue)

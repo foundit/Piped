@@ -273,7 +273,12 @@ class PostgresListener(piped_service.PipedService):
 
         self._held_advisory_locks = set()
         self._deferreds_for_advisory_lock = collections.defaultdict(list)
-        
+
+    def _maybe_disconnect(self):
+        if self._connection:
+            d = self._connection.close()
+            if d:
+                d.addErrback(lambda failure: None)
 
     def _connect(self):
         url = urlparse.urlparse(self.url)
@@ -285,11 +290,7 @@ class PostgresListener(piped_service.PipedService):
             port=url.port
         )
 
-        try:
-            if self._connection:
-                self._connection.close().addErrback(lambda failure: None)
-        except Exception:
-            pass
+        self._maybe_disconnect()
 
         self._connection = txpostgres.Connection()
         return self._connection.connect(**dsn)
@@ -362,11 +363,7 @@ class PostgresListener(piped_service.PipedService):
         except Exception as e:
             logger.exception('Unhandled exception in PostgresListener.run')
         finally:
-            try:
-                if self._connection:
-                    self._connection.close().addErrback(lambda failure: None)
-            except Exception:
-                pass
+            self._maybe_disconnect()
 
     @defer.inlineCallbacks
     def listen(self, events):
@@ -378,8 +375,11 @@ class PostgresListener(piped_service.PipedService):
             if not self._listeners[event]:
                 self._listeners[event].add(dq)
 
-                yield self._run_exclusively(self._connection.runOperation, 'LISTEN "%s"' % event)
-                logger.info('"%s"-listener is now listening to "%s"' % (self.profile_name, event))
+                try:
+                    yield self._run_exclusively(self._connection.runOperation, 'LISTEN "%s"' % event)
+                    logger.info('"%s"-listener is now listening to "%s"' % (self.profile_name, event))
+                except Exception as e:
+                    logger.exception('could not listen to "%s"' % event)
 
             self._listeners[event].add(dq)
 
@@ -468,7 +468,7 @@ class PostgresListener(piped_service.PipedService):
                 else:
                     if has_lock:
                         self._held_advisory_locks.add(lock_name)
-                        for d in self._deferreds_for_advisory_lock.pop(lock_name):
+                        for d in self._deferreds_for_advisory_lock.pop(lock_name, []):
                             d.callback(lock_name)
                         return
 
@@ -498,14 +498,18 @@ class PostgresListener(piped_service.PipedService):
         if not lock_name in self._held_advisory_locks:
             defer.returnValue(False)
 
-        had_lock = yield self._unlock(lock_name)
-        self._lost_lock(lock_name)
+        try:
+            had_lock = yield self._unlock(lock_name)
+            self._lost_lock(lock_name)
+        except Exception:
+            had_lock = False
+
         defer.returnValue(had_lock)
 
     def _lost_lock(self, lock_name):
         self._held_advisory_locks.discard(lock_name)
         for d in self._deferreds_for_advisory_lock.pop(lock_name, []):
-            d.errback(f)
+            d.errback()
 
     def stopService(self):
         try:
