@@ -160,8 +160,7 @@ class EngineManager(piped_service.PipedService):
         if not self.engine_configuration.get('url'):
             raise exceptions.ConfigurationError('missing database-URL')
         if not self.ping_interval:
-            detail = 'currently set to [{0!r}]'.format(configuration['ping_interval'])
-            raise exceptions.ConfigurationError('Please specify a non-zero ping-interval', detail)
+            raise exceptions.ConfigurationError('Please specify a non-zero ping-interval')
 
     @defer.inlineCallbacks
     def run(self):
