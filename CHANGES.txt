@@ -1,5 +1,15 @@
 ================================ Next release ================================
 
+Backward-incompatible changes:
+    piped.contrib.database's SerialPostgresListenerService is removed.
+    The remaining PostgresListenerService is also simpler, not caring about
+    txid_min thresholds.
+
+Bug fixes:
+    - Reconnect Postgres listeners more reliably.
+    - Don't cause multiple run_as_leader run-loops to be spawned on certain
+      reconnects.
+
 ========================== Release 0.6.0 2015-02-20 ==========================
 
 Features:
