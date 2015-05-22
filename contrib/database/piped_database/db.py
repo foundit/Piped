@@ -327,12 +327,8 @@ class PostgresListener(piped_service.PipedService):
 
                     while self.running:
                         try:
-                            if self.is_waiting_for_txid_min:
-                                yield self.cancellable(util.wait(self.txid_poll_interval))
-                                yield self._check_txid_threshold()
-                            else:
-                                yield self.currently_pinging(self.cancellable(util.wait(self.ping_interval)))
-                                yield self.currently_pinging(self._ping())
+                            yield self.currently_pinging(self.cancellable(util.wait(self.ping_interval)))
+                            yield self.currently_pinging(self._ping())
                         except defer.CancelledError:
                             pass
 
@@ -395,38 +391,15 @@ class PostgresListener(piped_service.PipedService):
             if queue in queues:
                 queues.discard(queue)
                 if not queues:
-                    yield self._run_exclusively(self._connection.runOperation, 'UNLISTEN "%s"' % listener_name)
-                    logger.info('"%s"-listener is now NOT listening to "%s"' % (self.profile_name, listener_name))
-
-    def wait_for_txid_min(self, txid):
-        """ Returns a Deferred that is callbacked with the current
-        txid_min when txid_min is >= txid. """
-        d = defer.Deferred()
-        heapq.heappush(self._txid_queue, (txid, d))
-
-        if self._currently_pinging:
-            # We don't want to wait a long time when we're waiting for
-            # a txid-min, so cancel any ping-related waiting.
-            self._currently_pinging.cancel()
-        return d
-
-    @property
-    def is_waiting_for_txid_min(self):
-        return bool(self._txid_queue)
+                    try:
+                        yield self._run_exclusively(self._connection.runOperation, 'UNLISTEN "%s"' % listener_name)
+                        logger.info('"%s"-listener is now NOT listening to "%s"' % (self.profile_name, listener_name))
+                    except Exception as e:
+                        # This happens when a connection drops, in which case we're re-establishing it.
+                        pass
 
     def _ping(self):
         return self._run_exclusively(self._connection.runOperation, "SELECT 'ping'")
-
-    @defer.inlineCallbacks
-    def _get_current_txid_min(self):
-        rs = yield self._run_exclusively(self._connection.runQuery, 'SELECT txid_snapshot_xmin(txid_current_snapshot())')
-        defer.returnValue(rs[0][0])
-
-    @defer.inlineCallbacks
-    def _check_txid_threshold(self):
-        txid_min = yield self._get_current_txid_min()
-        while self.running and self._txid_queue and self._txid_queue[0][0] <= txid_min:
-            heapq.heappop(self._txid_queue)[1].callback(txid_min)
 
     def _cleanup(self):
         self._held_advisory_locks.clear()
