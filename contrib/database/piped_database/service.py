@@ -56,33 +56,32 @@ class PostgresListenerService(service.PipedDependencyService):
         if not self.is_enabled():
             return
 
-        while self.running:
-            try:
-                self.listener = yield self.cancellable(self.listener_dependency.wait_for_resource())
+        try:
+            self.listener = yield self.cancellable(self.listener_dependency.wait_for_resource())
 
-                if self.lock_name:
-                    yield self.cancellable(self.listener.wait_for_advisory_lock(self.lock_name))
-                
-                yield self.run_as_leader()
+            if self.lock_name:
+                yield self.cancellable(self.listener.wait_for_advisory_lock(self.lock_name))
 
-            except defer.CancelledError:
-                break
+            yield self.cancellable(self.run_as_leader())
 
-            except Exception as e:
-                logger.exception('unhandled exception')
+        except defer.CancelledError:
+            return
 
-            finally:
-                self.listener.release_lock(self.lock_name)
-                yield self.wait()
+        except Exception as e:
+            logger.exception('unhandled exception')
+
+        finally:
+            self.listener.release_lock(self.lock_name)
+            yield self.wait()
 
     @defer.inlineCallbacks
     def run_as_leader(self):
-        logger.info('Running as leader for service [{0}]'.format(self.service_name))
+        logger.info('Running as leader for service [{0}]. pid: [{1}]'.format(self.service_name, os.getpid()))
 
         try:
-            notification_queue = yield self.listener.listen(self.channels)
+            notification_queue = yield self.cancellable(self.listener.listen(self.channels))
 
-            yield self.process_initial()
+            yield self.cancellable(self.process_initial())
 
             while self.running:
                 event = yield self.cancellable(notification_queue.get())
@@ -99,6 +98,8 @@ class PostgresListenerService(service.PipedDependencyService):
 
                 try:
                     result = yield handler(payload)
+                except defer.CancelledError:
+                    raise
                 except Exception as e:
                     logger.exception('unhandled exception in run_as_leader')
 
