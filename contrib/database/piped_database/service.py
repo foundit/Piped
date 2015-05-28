@@ -1,13 +1,10 @@
-import datetime
-import heapq
-import json
 import logging
-import random
+import json
+import os
 
-import sqlalchemy as sa
-from piped import exceptions, service, util
-from piped import service as piped_service
-from twisted.internet import defer, reactor
+from twisted.internet import defer
+
+from piped import service, util
 
 
 logger = logging.getLogger('piped_database.service')
