@@ -107,7 +107,6 @@ class EngineProviderTest(unittest.TestCase):
             mock.call.connection(),
             mock.call.connection().execute("SELECT 'ping'"),
             mock.call.connection().close(),
-            mock.call.engine.dispose(), # and disposed when the service stops.
             mock.call.engine.dispose() # and disposed when the service stops.
         ])
 
