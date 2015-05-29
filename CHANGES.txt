@@ -1,5 +1,9 @@
 ================================ Next release ================================
 
+========================== Release 0.6.0 2015-05-29 ==========================
+
+This pertains to piped.contrib.database only:
+
 Backward-incompatible changes:
     piped.contrib.database's SerialPostgresListenerService is removed.
     The remaining PostgresListenerService is also simpler, not caring about
