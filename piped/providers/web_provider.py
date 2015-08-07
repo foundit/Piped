@@ -159,11 +159,11 @@ def get_request_proxy(request):
     return instance
 
 
-class WebResourceProvider(object, service.MultiService):
+class WebResourceProvider(service.MultiService):
     """ Provides HTTP interfaces.
 
     .. highlight:: yaml
-    
+
     Example configuration::
 
         web:
@@ -175,7 +175,7 @@ class WebResourceProvider(object, service.MultiService):
     interface.classProvides(piped_resource.IResourceProvider)
 
     def __init__(self):
-        service.MultiService.__init__(self)
+        super(WebResourceProvider, self).__init__()
 
     def configure(self, runtime_environment):
         self.setName('web')
@@ -192,11 +192,11 @@ class WebResourceProvider(object, service.MultiService):
             website.configure(runtime_environment)
 
 
-class WebSite(object, service.MultiService):
+class WebSite(service.MultiService):
     """ A website in Piped.
 
     Example site configuration::
-    
+
         my_site:
             port: 8080
             listen: ssl:1234 # overrides the "port" above, see :mod:`twisted.application.strports`
@@ -212,7 +212,7 @@ class WebSite(object, service.MultiService):
     """
 
     def __init__(self, site_name, site_configuration):
-        service.MultiService.__init__(self)
+        super(WebSite, self).__init__()
         self.site_name = site_name
         self.site_configuration = site_configuration
 
@@ -550,7 +550,7 @@ class WebResource(resource.Resource):
         config = self.routing.get('__config__', dict())
         if not config:
             return
-        
+
         if 'static' in config and 'concatenated' in config:
             raise exceptions.ConfigurationError('Both static and concatenated specified')
 
@@ -618,7 +618,7 @@ class WebResource(resource.Resource):
         # finished.
         request_proxy = get_request_proxy(request)
         processor_dependency = self._get_processor_dependency_for_request(request)
-        
+
         if not processor_dependency:
             # If we don't have a processor to render, see if we have a static_resource to render
             if self.static_resource:

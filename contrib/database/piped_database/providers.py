@@ -16,7 +16,7 @@ except ImportError:
     txpostgres = None
 
 
-class DatabaseEngineProvider(object, service.MultiService):
+class DatabaseEngineProvider(service.MultiService):
     """Provides SQLAlchemy engines.
 
     See :class:`EngineManager` for per-engine configuration options.
@@ -48,7 +48,7 @@ class DatabaseEngineProvider(object, service.MultiService):
     interface.classProvides(resource.IResourceProvider)
 
     def __init__(self):
-        service.MultiService.__init__(self)
+        super(DatabaseEngineProvider, self).__init__()
         self._manager_for_profile = dict()
 
     @property
@@ -86,7 +86,7 @@ class DatabaseEngineProvider(object, service.MultiService):
         engine_manager.on_connection_lost += resource_dependency.on_resource_lost
 
 
-class PostgresListenProvider(object, service.MultiService):
+class PostgresListenProvider(service.MultiService):
     """Provides :class:`PostgresListener`s.
 
     Obviously, this only works with Postgres backends.
@@ -110,7 +110,7 @@ class PostgresListenProvider(object, service.MultiService):
     interface.classProvides(resource.IResourceProvider)
 
     def __init__(self):
-        service.MultiService.__init__(self)
+        super(PostgresListenProvider, self).__init__()
         self._listener_for_profile = dict()
 
     @property

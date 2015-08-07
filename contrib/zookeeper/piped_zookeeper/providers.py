@@ -28,7 +28,7 @@ class DisconnectException(exceptions.PipedError):
     pass
 
 
-class ZookeeperClientProvider(object, service.MultiService):
+class ZookeeperClientProvider(service.MultiService):
     """ Zookeeper support for Piped services.
 
     Configuration example:
@@ -103,13 +103,13 @@ class ZookeeperClient(client.ZookeeperClient):
         return error
 
 
-class PipedZookeeperClient(object, service.Service):
+class PipedZookeeperClient(service.Service):
     possible_events = ('starting', 'stopping', 'connected', 'reconnecting', 'reconnected', 'expired')
     connected = False
     _current_client = None
     _currently_connecting = None
     _currently_reconnecting = None
-    
+
     def __init__(self, servers=None, connect_timeout=86400, reconnect_timeout=30, session_timeout=None, reuse_session=True, events=None,
                  auth=None, default_acls=None, default_encoded_acls=None):
         if default_acls:
@@ -193,7 +193,7 @@ class PipedZookeeperClient(object, service.Service):
                 raise exceptions.ConfigurationError(e_msg, detail)
 
             self.events[key] = dict(provider=value) if isinstance(value, basestring) else value
-        
+
         self.dependencies = runtime_environment.create_dependency_map(self, **self.events)
 
     @defer.inlineCallbacks
@@ -424,7 +424,7 @@ class PipedZookeeperClient(object, service.Service):
             # we're the first one in our process attempting to access this cached result,
             # so we get the honors of setting it up
             self._pending[cache_tuple] = event.Event()
-            
+
             d, watcher = func(*a, **kw)
 
             def _watch_fired(event):

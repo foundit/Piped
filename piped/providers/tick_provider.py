@@ -13,7 +13,7 @@ from piped import event, util, resource
 logger = logging.getLogger(__name__)
 
 
-class TickProvider(object, service.MultiService):
+class TickProvider(service.MultiService):
     """ Provides tick-batons that are sent to processors at regular intervals.
 
     Example configuration::
@@ -30,12 +30,12 @@ class TickProvider(object, service.MultiService):
     longest.
 
     .. seealso:: :mod:`piped.processors.tick_processors`.
-    
+
     """
     interface.classProvides(resource.IResourceProvider)
 
     def __init__(self):
-        service.MultiService.__init__(self)
+        super(TickProvider, self).__init__()
         self.on_start = event.Event()
         self.on_pause = event.Event()
 
@@ -68,7 +68,7 @@ class TickProvider(object, service.MultiService):
         resource_dependency.on_resource_ready(tick_interval)
 
 
-class TickInterval(object, service.Service):
+class TickInterval(service.Service):
     _waiting_for_processor = None
     _sleeping = None
 
@@ -100,7 +100,7 @@ class TickInterval(object, service.Service):
             return
 
         service.Service.startService(self)
-        
+
         if self._waiting_for_processor:
             return
 

@@ -15,7 +15,7 @@ from piped import event, exceptions, util, resource
 logger = logging.getLogger(__name__)
 
 
-class ProcessProvider(object, service.Service):
+class ProcessProvider(service.Service):
     """ Provides processes.
 
     Example configuration:

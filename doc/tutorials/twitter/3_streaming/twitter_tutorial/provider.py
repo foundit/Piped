@@ -6,12 +6,12 @@ from twisted.internet import defer, threads, reactor
 from piped import exceptions, log, resource, util
 
 
-class MyTwitterProvider(object, service.MultiService):
+class MyTwitterProvider(service.MultiService):
     # state that we are a resource provider, so that the piped plugin system finds us
     interface.classProvides(resource.IResourceProvider)
 
     def __init__(self):
-        service.MultiService.__init__(self) # MultiService is an old-style class
+        super(MyTwitterProvider, self).__init__()
 
         # we store the apis by the account name since we might have
         # multiple consumers of the same api.
@@ -34,13 +34,13 @@ class MyTwitterProvider(object, service.MultiService):
                 name = '%s.%s' % (account_name, stream_name)
                 stream_listener = TwitterStreamListener(name, auth, **stream_config)
                 stream_listener.configure(runtime_environment)
-            
+
                 # the service should be started/stopped when we are:
                 stream_listener.setServiceParent(self)
 
     def _get_auth(self, account_name, auth_config):
         """ Returns an auth handler for the given account. """
-        
+
         if 'username' in auth_config:
             return tweepy.BasicAuthHandler(**auth_config)
 
@@ -82,7 +82,6 @@ class TwitterStreamListener(tweepy.StreamListener, service.MultiService):
         :param method: The stream method to use.
         :param method_kwargs: Additional keyword arguments to pass to the method.
         """
-        service.MultiService.__init__(self)
         super(TwitterStreamListener, self).__init__()
 
         self.name = name

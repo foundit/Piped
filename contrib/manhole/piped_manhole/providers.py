@@ -12,7 +12,7 @@ from zope import interface
 from piped import resource
 
 
-class ManholeProvider(object, service.MultiService):
+class ManholeProvider(service.MultiService):
     """ Embeds manholes in Piped services.
 
     Configuration example::
@@ -33,9 +33,6 @@ class ManholeProvider(object, service.MultiService):
                             username: password
     """
     interface.classProvides(resource.IResourceProvider)
-
-    def __init__(self):
-        service.MultiService.__init__(self)
 
     def configure(self, runtime_environment):
         self.setName('manhole')
@@ -102,7 +99,7 @@ class ManholeService(service.MultiService):
     conchFactory = PipedConchFactory
 
     def __init__(self, manhole_configuration):
-        service.MultiService.__init__(self)
+        super(ManholeService, self).__init__()
         self.manhole_configuration = manhole_configuration
 
     def configure(self, runtime_environment):

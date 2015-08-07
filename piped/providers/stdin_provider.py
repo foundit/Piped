@@ -14,7 +14,7 @@ from piped import event, exceptions, util, resource
 logger = logging.getLogger(__name__)
 
 
-class StdinProvider(object, service.MultiService):
+class StdinProvider(service.MultiService):
     """ Provides a batons from stdin.
 
     Configuration example::
@@ -25,14 +25,14 @@ class StdinProvider(object, service.MultiService):
             processor: processor_name
 
     The batons are on the format ``dict(line=received_line)``.
-    
+
     A baton with line set to ``None`` means the connection to stdin was closed and
     no further batons will be produced by this provider.
     """
     interface.classProvides(resource.IResourceProvider)
 
     def __init__(self):
-        service.MultiService.__init__(self)
+        super(StdinProvider, self).__init__()
         self.on_start = event.Event()
         self.on_pause = event.Event()
 

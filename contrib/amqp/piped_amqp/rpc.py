@@ -14,7 +14,7 @@ from piped import resource, util, event, dependencies
 logger = logging.getLogger(__name__)
 
 
-class RPCClientProvider(object, service.MultiService):
+class RPCClientProvider(service.MultiService):
     """ Provides AMQP-based RPC clients.
 
     Configuration example:
@@ -35,7 +35,7 @@ class RPCClientProvider(object, service.MultiService):
     interface.classProvides(resource.IResourceProvider)
 
     def __init__(self):
-        service.MultiService.__init__(self)
+        super(RPCClientProvider, self).__init__()
         self._client_by_name = dict()
 
     def configure(self, runtime_environment):
@@ -75,7 +75,7 @@ class RPCClientProvider(object, service.MultiService):
             resource_dependency.on_resource_ready(client)
 
 
-class RPCClientBase(object, service.Service):
+class RPCClientBase(service.Service):
     """ Base class for RPC client implementations.
 
     """
@@ -93,7 +93,7 @@ class RPCClientBase(object, service.Service):
         :param name: Logical name of this rpc client.
         :param connection: Name of the AMQP connection.
         :param consumer: Configuration options for the consuming:
-            
+
             no_ack
                 Whether the server should require the consumer to ack the responses. Defaults to True.
 
@@ -112,7 +112,7 @@ class RPCClientBase(object, service.Service):
         self.consumer_config = consumer or dict()
         self.consumer_config.setdefault('no_ack', True)
         self.consumer_config.setdefault('exclusive', True)
-        
+
         response_queue = self.consumer_config.pop('queue', None)
         if isinstance(response_queue, basestring):
             response_queue = dict(queue=response_queue)
@@ -178,7 +178,7 @@ class RPCClientBase(object, service.Service):
 
     def stopService(self):
         service.Service.stopService(self)
-        
+
         for current_operation in (self._starting, self._consuming):
             if current_operation:
                 current_operation.cancel()

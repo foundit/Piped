@@ -17,7 +17,7 @@ from piped import resource, util, event, exceptions
 logger = logging.getLogger(__name__)
 
 
-class AMQPConnectionProvider(object, service.MultiService):
+class AMQPConnectionProvider(service.MultiService):
     """ Provides AMQP connections.
 
     Example:
@@ -49,7 +49,7 @@ class AMQPConnectionProvider(object, service.MultiService):
     def configure(self, runtime_environment):
         self.setServiceParent(runtime_environment.application)
         self.runtime_environment = runtime_environment
-        
+
         connections = runtime_environment.get_configuration_value('amqp.connections', dict())
 
         for connection_name, connection_config in connections.items():
@@ -150,7 +150,7 @@ class AMQProtocol(twisted_connection.TwistedProtocolConnection):
             self._pending_named_channels.pop(channel_name, None)
 
 
-class AMQPConnection(object, service.MultiService):
+class AMQPConnection(service.MultiService):
     """ AMQP connection wrapper. """
     ready = False
     protocol = None
@@ -176,12 +176,12 @@ class AMQPConnection(object, service.MultiService):
             See the `pika documenation <http://pika.github.com/connecting.html#connection-parameters>`_.
         """
         service.MultiService.__init__(self)
-        
+
         self.name = name
         self.servers = [servers] if isinstance(servers, basestring) else servers
         self._server_index = -1
         self.reconnect_interval = reconnect_interval
-        
+
         parameters = parameters or dict()
         self.parameters = pika.ConnectionParameters(**parameters)
 
@@ -258,7 +258,7 @@ class AMQPConnection(object, service.MultiService):
     @defer.inlineCallbacks
     def _connect(self, endpoint):
         currently = util.create_deferred_state_watcher(self, '_connecting')
-        
+
         # make sure we're not overwriting an existing protocol without attempting to disconnect it first
         if self.protocol:
             if self.protocol.connection_state not in (connection.CONNECTION_CLOSED, connection.CONNECTION_CLOSING):
@@ -283,7 +283,7 @@ class AMQPConnection(object, service.MultiService):
                 self.on_disconnected(reason)
                 # reconnect automatically if we're still supposed to be the current protocol
                 self._keep_connecting()
-                
+
         self.protocol.on_lost += on_lost
 
     def _disconnect(self, reason='unknown'):
@@ -302,7 +302,7 @@ class AMQPConnection(object, service.MultiService):
         self.on_disconnected(reason)
 
 
-class AMQPConsumerProvider(object, service.MultiService):
+class AMQPConsumerProvider(service.MultiService):
     """ Consumes message from AMQP queues.
 
     Example configuration:
@@ -344,7 +344,7 @@ class AMQPConsumerProvider(object, service.MultiService):
                 self._consumer_by_name[consumer_name] = consumer
 
 
-class AMQPConsumer(object, service.Service):
+class AMQPConsumer(service.Service):
     """ Consumes messages from an AMQP queue and processes them with a processor. """
     _working = None
 

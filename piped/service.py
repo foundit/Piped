@@ -35,8 +35,8 @@ class ServicePluginManager(plugin.PluginManager, service.MultiService):
     plugin_interface = IPipedService
 
     def __init__(self):
-        plugin.PluginManager.__init__(self)
         service.MultiService.__init__(self)
+        plugin.PluginManager.__init__(self)
 
     def configure(self, runtime_environment):
         plugin.PluginManager.configure(self, runtime_environment)
@@ -57,9 +57,8 @@ class PipedService(util.Cancellable, service.MultiService):
     """ Base-class for `IPipedService`s. """
 
     def __init__(self):
-        util.Cancellable.__init__(self)
         service.MultiService.__init__(self)
-
+        util.Cancellable.__init__(self)
         self.runtime_environment = None
 
     def configure(self, runtime_environment):

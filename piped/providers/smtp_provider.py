@@ -98,7 +98,7 @@ def send_mail(from_addr, to_addr, file, host='localhost', port=25, timeout=60, r
     return deferred
 
 
-class SMTPProvider(object, service.MultiService):
+class SMTPProvider(service.MultiService):
     """ Provides an SMTP interface.
 
     This provider uses ``strports`` to specify listening ports. For more information, see
@@ -166,9 +166,6 @@ class SMTPProvider(object, service.MultiService):
         The username of the authenticated user. This key is only set if a checker was configured.
     """
     interface.classProvides(resource.IResourceProvider)
-
-    def __init__(self):
-        service.MultiService.__init__(self)
 
     def configure(self, runtime_environment):
         self.setServiceParent(runtime_environment.application)
@@ -246,14 +243,14 @@ class PipedESMTP(smtp.ESMTP):
     @defer.inlineCallbacks
     def validateFrom(self, helo, origin):
         self.from_addr = str(origin)
-        
+
         if self.delivery:
             result = yield self.delivery.validateFrom(helo, origin)
             defer.returnValue(result)
         elif self.portal:
             # we have a portal, but no configured delivery, so we try to let our superclass
             # perform an anonymous login, which will set our delivery and retry this method
-            
+
             result = yield smtp.ESMTP.validateFrom(self, helo, origin)
             defer.returnValue(result)
 
@@ -265,7 +262,7 @@ class PipedESMTP(smtp.ESMTP):
 
     @defer.inlineCallbacks
     def validateTo(self, user):
-        
+
         validated = yield self.server.validate_to(self, user)
         if validated:
             message = ProcessorMessage(self.server, self.from_addr, to_addr=str(user.dest))
@@ -275,7 +272,7 @@ class PipedESMTP(smtp.ESMTP):
                 message.avatar_id = self.delivery.avatar_id
 
             defer.returnValue(lambda: message)
-        
+
         raise smtp.SMTPBadRcpt(user.dest)
 
     def receivedHeader(self, helo, origin, recipients):
@@ -307,7 +304,7 @@ class PipedSMTPRealm(object):
 
             # a tuple of the implemented interface, an instance implementing it and a logout callable
             return smtp.IMessageDelivery, delivery, lambda: None
-        
+
         raise NotImplementedError()
 
 
@@ -333,7 +330,7 @@ class PipedSMTPServer(service.MultiService):
                     '"Received: from %s by %s with ESMTP"%(protocol.transport.getPeer().host, protocol.host)',
                  checker=None,
                  tls = None):
-        service.MultiService.__init__(self)
+        super(PipedSMTPServer, self).__init__()
 
         if isinstance(listen, basestring):
             listen = [listen]
@@ -400,7 +397,7 @@ class PipedSMTPServer(service.MultiService):
             # the ESMTP protocol requires a ctx which is a ContextFactory
             # instance in order to perform a STARTTLS
             protocol.ctx = self.context_factory
-        
+
         return protocol
 
     @defer.inlineCallbacks

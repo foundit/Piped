@@ -17,7 +17,7 @@ from piped import resource, event, exceptions, util
 logger = logging.getLogger(__name__)
 
 
-class PBClientProvider(object, service.MultiService):
+class PBClientProvider(service.MultiService):
     """ Provides twisted.spread.pb clients.
 
     For details on how perspective broker works, see the Perspective Broker section of the
@@ -45,7 +45,7 @@ class PBClientProvider(object, service.MultiService):
     name = 'spread-client-provider'
 
     def __init__(self):
-        service.MultiService.__init__(self)
+        super(PBClientProvider, self).__init__()
 
         self._client_factories_by_name = dict()
 
@@ -82,7 +82,7 @@ class PBClientProvider(object, service.MultiService):
 
         # this isn't required, but creates a nicer looking dependency graph
         self.dependency_manager.add_dependency(resource_dependency, factory)
-    
+
     def _get_or_create_client_factory(self, resource_name):
         if not resource_name in self._client_factories_by_name:
             factory = PipedPBClientFactory(**self.resource_configurations[resource_name])
@@ -94,7 +94,7 @@ class PBClientProvider(object, service.MultiService):
         return self._client_factories_by_name[resource_name]
 
 
-class PBServerProvider(object, service.MultiService):
+class PBServerProvider(service.MultiService):
     """ Provides batons from a twisted.spread.pb server.
 
     For details on how perspective broker works, see the Perspective Broker section of the
@@ -148,18 +148,18 @@ class PBServerProvider(object, service.MultiService):
     name = 'spread-server-provider'
 
     def __init__(self):
-        service.MultiService.__init__(self)
+        super(PBServerProvider, self).__init__()
 
         self._servers_by_name = dict()
 
     def configure(self, runtime_environment):
         self.setName('PB server provider')
         self.setServiceParent(runtime_environment.application)
-        
+
         self.runtime_environment = runtime_environment
 
         self.resource_configurations = runtime_environment.get_configuration_value('pb.servers', dict())
-        
+
         for resource_name, resource_config in self.resource_configurations.items():
             runtime_environment.resource_manager.register('pb.server.%s'%resource_name, provider=self)
 
@@ -191,7 +191,7 @@ class PipedPBServerFactory(pb.PBServerFactory):
         # if we stop the service
         self.protocols.add(protocol)
         protocol.notifyOnDisconnect(lambda: self.protocols.remove(protocol))
-        
+
         return protocol
 
 
@@ -200,7 +200,7 @@ class PipedPBRoot(pb.Root):
 
     def __init__(self, server):
         self.server = server
-    
+
     def remoteMessageReceived(self, broker, message, args, kwargs):
         """ A remote message has been received.  Dispatch it appropriately. """
         args = broker.unserialize(args)
@@ -216,7 +216,7 @@ class PipedPBRoot(pb.Root):
 
 class PipedUserPerspective(pb.Avatar):
     """ An authenticated clients perspective. """
-    
+
     def __init__(self, avatar_id, server):
         self.avatar_id = avatar_id
         self.server = server
@@ -225,7 +225,7 @@ class PipedUserPerspective(pb.Avatar):
         """ A remote message has been received.  Dispatch it appropriately. """
         args = broker.unserialize(args, self)
         kwargs = broker.unserialize(kwargs, self)
-        
+
         baton = dict(message=message, args=args, kwargs=kwargs, avatar_id=self.avatar_id)
 
         d = self.server.handle_baton(baton)
@@ -299,7 +299,7 @@ class PipedPBService(pb.Root, service.MultiService):
         # aggressively close all active connections
         for protocol in self.factory.protocols:
             protocol.transport.loseConnection()
-        
+
         # this is a workaround that enables stopped endpoint services to be restarted, since
         # they will have to request their port again in order to start properly.
         for serv in self.services:
@@ -411,14 +411,14 @@ class PipedPBClientFactory(pb.PBClientFactory, service.Service):
     max_retries = None
 
     _connecting = None
-    
+
     def __init__(self, endpoint, username=None, password=None):
         pb.PBClientFactory.__init__(self)
-        
+
         self.endpoint = endpoint
         self.username = username
         self.password = password
-        
+
         self.on_connected = event.Event()
         self.on_got_root_object = event.Event()
         self.on_failed_getting_root_object = event.Event()
@@ -464,7 +464,7 @@ class PipedPBClientFactory(pb.PBClientFactory, service.Service):
     def stopService(self):
         if self.running:
             self.disconnect()
-        
+
         service.Service.stopService(self)
 
     def _consider_retrying(self):
