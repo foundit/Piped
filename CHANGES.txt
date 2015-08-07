@@ -1,5 +1,10 @@
 ================================ Next release ================================
 
+========================== Release 0.7.0 2015-08-07 ==========================
+
+Upgraded to Twisted 15.3, updated Service subclasses to reflect the new-style
+Service classes in this version.
+
 ========================== Release 0.6.0 2015-05-29 ==========================
 
 This pertains to piped.contrib.database only:
@@ -438,4 +443,4 @@ Internal changes:
     - ConcatenatedFile is no longer a subclass of StaticFile, but rather a
         twisted.web.resource.Resource subclass.
     - DummyRequest moved from test_web_provider to web_provider, as it might
-        prove useful outside of 
+        prove useful outside of
