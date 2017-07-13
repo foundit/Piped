@@ -1,5 +1,7 @@
 # Copyright (c) 2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
+from urllib2 import urlparse
+
 import mock
 import zookeeper
 from mock import patch
@@ -226,7 +228,7 @@ class TestClient(unittest.TestCase):
         client.on_disconnected('test disconnect')
         foo_3 = cached_call(foo=True)
         self.assertEquals(len(pending), 1)
-        
+
     def test_events(self):
         events = dict(
             zip(providers.PipedZookeeperClient.possible_events, providers.PipedZookeeperClient.possible_events)
@@ -300,6 +302,11 @@ class TestClient(unittest.TestCase):
         client = providers.PipedZookeeperClient(servers='foo/v1,bar,baz')
         self.assertEqual(client.servers, ['foo', 'bar', 'baz'])
         self.assertEqual(client.chroot, '/v1')
+
+        found_servers = 'found+http://localhost/foo?namespace=/bar'
+        client = providers.PipedZookeeperClient(servers=found_servers)
+        self.assertEqual(client.servers, [urlparse.urlparse('found+http://localhost/foo?namespace=/bar')])
+        self.assertEqual(client.chroot, '/bar')
 
         try:
             client = providers.PipedZookeeperClient(servers='foo/v1,bar,baz/v2')

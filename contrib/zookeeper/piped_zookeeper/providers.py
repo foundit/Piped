@@ -1,23 +1,21 @@
 # Copyright (c) 2011, Found IT A/S and Piped Project Contributors.
 # See LICENSE for details.
 import base64
-import logging
 import hashlib
 import itertools
+import logging
 import operator
+from urllib2 import urlparse
 
 import zookeeper
-from zope import interface
 from twisted.application import service
-from twisted.python import failure
 from twisted.internet import defer
+from twisted.python import failure
+from twisted.web import client as web_client
 from txzookeeper import client
-import zookeeper
+from zope import interface
 
 from piped import resource, event, exceptions, util
-
-from piped_zookeeper import log_stream
-
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +137,17 @@ class PipedZookeeperClient(service.Service):
         self.reconnecting_currently = util.create_deferred_state_watcher(self, '_currently_reconnecting')
 
     def _parse_servers(self, servers):
+        if isinstance(servers, basestring) and servers.startswith('found+http'):
+            parsed = urlparse.urlparse(servers)
+            parsed_qs = urlparse.parse_qs(parsed.query)
+            namespaces = parsed_qs.pop('namespace', [])
+            namespace = '/'
+
+            if len(namespaces) >= 1:
+                namespace = namespaces[0]
+
+            return [parsed], namespace
+
         if not isinstance(servers, (list, tuple)):
             servers = servers.split(',')
 
@@ -208,7 +217,20 @@ class PipedZookeeperClient(service.Service):
                         for server_list in itertools.combinations(self.servers, server_list_length):
                             self.on_disconnected(failure.Failure(DisconnectException('connecting')))
 
-                            servers = ','.join(list(server_list)) + self.chroot
+                            if isinstance(server_list[0], urlparse.ParseResult):
+                                pr = server_list[0]
+                                url = '{}://{}{}?{}'.format(pr.scheme[len('found+'):], pr.netloc, pr.path, pr.query)
+                                logger.info('Resolving connection-string from [{}]'.format(url))
+                                connection_string_without_namespace = (yield web_client.getPage(url)).strip()
+                                logger.info(
+                                    'Resolved connection-string from [{}] to [{}] using namespace [{}]'.format(
+                                        url, connection_string_without_namespace, self.chroot
+                                    )
+                                )
+                                servers = '{}{}'.format(connection_string_without_namespace, self.chroot)
+                            else:
+                                servers = ','.join(list(server_list)) + self.chroot
+
                             logger.info('Trying to create and connect a ZooKeeper client with the following servers: [{0}]'.format(servers))
                             self._current_client = current_client = self._create_client(servers)
 
